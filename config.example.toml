@@ -1,0 +1,3 @@
+# The main prefix key for all commands.
+# Use "C-a", "C-b", etc. for Ctrl key combinations.
+prefix = "C-a"
