@@ -9,12 +9,10 @@ import (
 	"github.com/creack/pty"
 )
 
-// linuxPty implements the Pty interface for Linux systems.
 type linuxPty struct {
 	ptmx *os.File
 }
 
-// New creates a new Pty instance for Linux.
 func New() (Pty, error) {
 	return &linuxPty{}, nil
 }
