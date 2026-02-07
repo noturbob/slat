@@ -1,3 +1,28 @@
+# Slat Configuration
+# Place this file at ~/.config/slat/config.toml
+
 # The main prefix key for all commands.
-# Use "C-a", "C-b", etc. for Ctrl key combinations.
-prefix = "C-a"
+# Use "C-a", "C-b", "C-s", etc. for Ctrl key combinations.
+prefix = "C-s"
+
+# Shell to launch (defaults to $SHELL or /bin/sh)
+shell = "/bin/bash"
+
+# Show the status bar at the bottom
+status_bar = true
+
+# Keybindings (activated after pressing the prefix key)
+[keybinds]
+split-vertical   = "v"
+split-horizontal = "h"
+next-pane        = "o"
+prev-pane        = "O"
+close-pane       = "x"
+new-tab          = "c"
+next-tab         = "n"
+prev-tab         = "p"
+new-workspace    = "W"
+next-workspace   = "w"
+zoom             = "z"
+quit             = "q"
+detach           = "d"
