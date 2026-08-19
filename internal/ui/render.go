@@ -7,7 +7,6 @@ import (
 	"github.com/noturbob/slat/internal/session"
 )
 
-// ANSI escape codes.
 const (
 	Reset     = "\033[0m"
 	Bold      = "\033[1m"
@@ -27,28 +26,39 @@ const (
 
 	HideCursor = "\033[?25l"
 	ShowCursor = "\033[?25h"
+	SaveCursor = "\0337"
+	RestCursor = "\0338"
 	Clear      = "\033[2J\033[H"
 
-	// Box drawing characters.
-	BoxH = "\u2500"
-	BoxV = "\u2502"
+	BoxH  = "\u2500"
+	BoxV  = "\u2502"
+	BoxTL = "\u250c"
+	BoxTR = "\u2510"
+	BoxBL = "\u2514"
+	BoxBR = "\u2518"
 )
 
-// GetBanner returns the startup banner.
-func GetBanner() string {
-	return FgCyan + Bold + `
-   _____ __      ___  _______
-  / ___// /     /   |/_  __/
-  \__ \/ /     / /| | / /   
- ___/ / /___  / ___ |/ /    
-/____/_____/ /_/  |_/_/     
-` + Reset + Dim + `
-  Terminal Multiplexer v0.1.0
-  Press your prefix key + ? for help
-` + Reset
+func SetScrollRegion(top, bottom int) string {
+	return fmt.Sprintf("\033[%d;%dr", top, bottom)
 }
 
-// DrawStatusBar renders the status bar at the bottom of the terminal.
+func ResetScrollRegion() string {
+	return "\033[r"
+}
+
+func GetBanner() string {
+	return FgCyan + Bold + `
+     _____ __      ___  _______
+    / ___// /     /   |/_  __/
+    \__ \/ /     / /| | / /   
+   ___/ / /___  / ___ |/ /    
+  /____/_____/ /_/  |_/_/     
+` + Reset + "\r\n" + Dim + `
+  Terminal Multiplexer v0.1.0` + Reset + "\r\n" + Dim + `  Press Ctrl-S then ? for help` + Reset + "\r\n"
+}
+
+// DrawStatusBar renders the status bar. Width-budgeted so tabs never
+// collide with the right-hand mode/pane indicator on narrow terminals.
 func DrawStatusBar(cols, rows int, mode string, manager *session.Manager, prefixActive bool) string {
 	if rows < 2 || cols < 2 {
 		return ""
@@ -59,83 +69,161 @@ func DrawStatusBar(cols, rows int, mode string, manager *session.Manager, prefix
 	}
 
 	var bar strings.Builder
-
-	// Move to last line
+	bar.WriteString(SaveCursor)
+	bar.WriteString(HideCursor)
 	bar.WriteString(fmt.Sprintf("\033[%d;1H", rows))
-
-	// Background fill
+	bar.WriteString("\033[2K")
+	// LINT FIX: was bar.WriteString(BgDark + FgWhite)
 	bar.WriteString(BgDark)
-	bar.WriteString(strings.Repeat(" ", cols))
-	bar.WriteString(fmt.Sprintf("\033[%d;1H", rows))
+	bar.WriteString(FgWhite)
 
-	// Left side: workspace indicator
-	bar.WriteString(fmt.Sprintf(" %s[%s]%s ", FgGreen+Bold, ws.Name, Reset+BgDark))
-
-	// Separator
-	bar.WriteString(FgGray + "\u2502" + Reset + BgDark + " ")
-
-	// Tabs
-	for i, tab := range ws.Tabs {
-		name := fmt.Sprintf(" %d:%s ", i+1, tab.Name)
-		if i == ws.ActiveTabIdx {
-			bar.WriteString(BgBlue + FgWhite + Bold + name + Reset + BgDark)
-		} else {
-			bar.WriteString(BgDarkAlt + FgGray + name + Reset + BgDark)
-		}
-		bar.WriteString(" ")
-	}
-
-	// Right side: mode + pane info
 	activePane := manager.GetActivePane()
 	paneID := 0
 	if activePane != nil {
 		paneID = activePane.ID
 	}
 
-	modeStr := ""
+	var right strings.Builder
+	rightVisLen := 0
 	if prefixActive {
-		modeStr = BgGreen + FgBlack + Bold + " PREFIX " + Reset + BgDark + " "
+		// LINT FIX: split concatenated WriteString into sequential calls
+		right.WriteString(BgGreen)
+		right.WriteString(FgBlack)
+		right.WriteString(Bold)
+		right.WriteString(" PREFIX ")
+		right.WriteString(Reset)
+		right.WriteString(BgDark)
+		right.WriteString(" ")
+		rightVisLen += 9
 	} else if mode != "" && mode != "NORMAL" {
-		modeStr = BgGreen + FgBlack + Bold + fmt.Sprintf(" %s ", mode) + Reset + BgDark + " "
+		label := " " + mode + " "
+		right.WriteString(BgGreen)
+		right.WriteString(FgBlack)
+		right.WriteString(Bold)
+		right.WriteString(label)
+		right.WriteString(Reset)
+		right.WriteString(BgDark)
+		right.WriteString(" ")
+		rightVisLen += len(label) + 1
+	}
+	paneLabel := fmt.Sprintf("Pn:%d ", paneID)
+	// LINT FIX: was right.WriteString(FgGray + paneLabel)
+	right.WriteString(FgGray)
+	right.WriteString(paneLabel)
+	rightVisLen += len(paneLabel)
+
+	leftBudget := cols - rightVisLen - 1
+	if leftBudget < 1 {
+		leftBudget = 1
 	}
 
-	rightSide := fmt.Sprintf("%s%sPane:%d%s ", modeStr, FgGray, paneID, Reset+BgDark)
+	var left strings.Builder
+	leftVisLen := 0
 
-	// Position the right side near the right edge
-	rightPos := cols - 20
-	if rightPos < 1 {
-		rightPos = 1
+	wsLabel := fmt.Sprintf("[%s]", ws.Name)
+	// LINT FIX: was left.WriteString(" " + FgGreen + Bold + BgDark + wsLabel + Reset + BgDark + FgWhite)
+	left.WriteString(" ")
+	left.WriteString(FgGreen)
+	left.WriteString(Bold)
+	left.WriteString(BgDark)
+	left.WriteString(wsLabel)
+	left.WriteString(Reset)
+	left.WriteString(BgDark)
+	left.WriteString(FgWhite)
+	leftVisLen += 1 + len(wsLabel)
+
+	// LINT FIX: was left.WriteString(" " + FgGray + BoxV + Reset + BgDark + FgWhite + " ")
+	left.WriteString(" ")
+	left.WriteString(FgGray)
+	left.WriteString(BoxV)
+	left.WriteString(Reset)
+	left.WriteString(BgDark)
+	left.WriteString(FgWhite)
+	left.WriteString(" ")
+	leftVisLen += 3
+
+	for i, tab := range ws.Tabs {
+		name := fmt.Sprintf(" %d:%s ", i+1, tab.Name)
+		if leftVisLen+len(name) > leftBudget {
+			if leftVisLen < leftBudget {
+				// LINT FIX: was left.WriteString(FgGray + "…" + Reset + BgDark)
+				left.WriteString(FgGray)
+				left.WriteString("…")
+				left.WriteString(Reset)
+				left.WriteString(BgDark)
+				leftVisLen++
+			}
+			break
+		}
+		if i == ws.ActiveTabIdx {
+			// LINT FIX: was left.WriteString(BgBlue + FgWhite + Bold + name + Reset + BgDark)
+			left.WriteString(BgBlue)
+			left.WriteString(FgWhite)
+			left.WriteString(Bold)
+			left.WriteString(name)
+			left.WriteString(Reset)
+			left.WriteString(BgDark)
+		} else {
+			// LINT FIX: was left.WriteString(BgDarkAlt + FgGray + name + Reset + BgDark)
+			left.WriteString(BgDarkAlt)
+			left.WriteString(FgGray)
+			left.WriteString(name)
+			left.WriteString(Reset)
+			left.WriteString(BgDark)
+		}
+		left.WriteString(" ")
+		leftVisLen += len(name) + 1
 	}
-	bar.WriteString(fmt.Sprintf("\033[%d;%dH", rows, rightPos))
-	bar.WriteString(rightSide)
+
+	bar.WriteString(left.String())
+
+	rightPos := cols - rightVisLen + 1
+	if rightPos < leftVisLen+2 {
+		rightPos = leftVisLen + 2
+	}
+	if rightPos >= 1 && rightPos <= cols {
+		bar.WriteString(fmt.Sprintf("\033[%d;%dH", rows, rightPos))
+		bar.WriteString(right.String())
+	}
 
 	bar.WriteString(Reset)
+	bar.WriteString(RestCursor)
+	bar.WriteString(ShowCursor)
 	return bar.String()
 }
 
-// DrawActivePaneIndicator draws a marker next to the active pane.
-func DrawActivePaneIndicator(row, col int, active bool) string {
-	if !active {
-		return ""
-	}
-	return fmt.Sprintf("\033[%d;%dH%s\u258e%s", row, col, FgCyan+Bold, Reset)
-}
-
-// MoveCursorToPane returns an escape sequence to move the cursor to a pane's position.
 func MoveCursorToPane(row, col int) string {
 	return fmt.Sprintf("\033[%d;%dH", row, col)
 }
 
-// DrawVerticalBorder draws a vertical border line.
 func DrawVerticalBorder(row, col, height int) string {
 	var b strings.Builder
+	b.WriteString(SaveCursor)
 	for i := 0; i < height; i++ {
-		b.WriteString(fmt.Sprintf("\033[%d;%dH%s%s%s", row+i, col, FgGray, BoxV, Reset))
+		b.WriteString(fmt.Sprintf("\033[%d;%dH%s%s%s", row+i, col, FgGray+Dim, BoxV, Reset))
 	}
+	b.WriteString(RestCursor)
 	return b.String()
 }
 
-// DrawHorizontalBorder draws a horizontal border line.
 func DrawHorizontalBorder(row, col, width int) string {
-	return fmt.Sprintf("\033[%d;%dH%s%s%s", row, col, FgGray, strings.Repeat(BoxH, width), Reset)
+	var b strings.Builder
+	b.WriteString(SaveCursor)
+	b.WriteString(fmt.Sprintf("\033[%d;%dH%s%s%s", row, col, FgGray+Dim, strings.Repeat(BoxH, width), Reset))
+	b.WriteString(RestCursor)
+	return b.String()
+}
+
+func DrawActivePaneIndicator(row, col, rows, cols int, active bool) string {
+	if !active {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(SaveCursor)
+	color := FgCyan + Bold
+	for i := 0; i < rows && i < 3; i++ {
+		b.WriteString(fmt.Sprintf("\033[%d;%dH%s\u258e%s", row+i, col, color, Reset))
+	}
+	b.WriteString(RestCursor)
+	return b.String()
 }

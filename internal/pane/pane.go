@@ -39,12 +39,10 @@ func New(id int, rows, cols uint16, shell string) (*Pane, error) {
 	}
 	cmd := exec.Command(shell)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
-
 	pt, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: rows, Cols: cols})
 	if err != nil {
 		return nil, err
 	}
-
 	p := &Pane{
 		ID:     id,
 		Cmd:    cmd,
@@ -53,7 +51,6 @@ func New(id int, rows, cols uint16, shell string) (*Pane, error) {
 		Cols:   cols,
 		Output: make(chan []byte, 8192),
 	}
-
 	go p.readLoop()
 	go p.waitLoop()
 	return p, nil
@@ -94,8 +91,15 @@ func (p *Pane) waitLoop() {
 		_ = p.Cmd.Wait()
 	}
 	p.mu.Lock()
+	wasAlreadyDead := p.IsDead
 	p.IsDead = true
 	p.mu.Unlock()
+	// BUG FIX: previously, if the shell exited on its own (not via
+	// Close()), the PTY master file descriptor was never closed — a real
+	// fd leak for every pane that ran `exit` instead of being force-closed.
+	if !wasAlreadyDead {
+		p.Pty.Close()
+	}
 }
 
 // Write sends input data to the pane's PTY.
@@ -128,6 +132,15 @@ func (p *Pane) SetPosition(row, col int) {
 	p.Col = col
 }
 
+// Rect returns the pane's position and size as a single consistent snapshot.
+// BUG FIX: callers used to read p.Row/p.Col/p.Rows/p.Cols directly without
+// locking, racing with SetPosition/Resize. Use this instead.
+func (p *Pane) Rect() (row, col int, rows, cols uint16) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.Row, p.Col, p.Rows, p.Cols
+}
+
 // Dead returns whether the pane's process has exited.
 func (p *Pane) Dead() bool {
 	p.mu.Lock()
@@ -138,13 +151,14 @@ func (p *Pane) Dead() bool {
 // Close terminates the pane's process and closes the PTY.
 func (p *Pane) Close() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if !p.IsDead {
-		p.IsDead = true
-		p.Pty.Close()
-		if p.Cmd.Process != nil {
-			_ = p.Cmd.Process.Signal(os.Interrupt)
-			_ = p.Cmd.Process.Kill()
-		}
+	if p.IsDead {
+		p.mu.Unlock()
+		return
+	}
+	p.IsDead = true
+	p.mu.Unlock()
+	p.Pty.Close()
+	if p.Cmd.Process != nil {
+		_ = p.Cmd.Process.Kill()
 	}
 }

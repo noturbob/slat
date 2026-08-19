@@ -55,13 +55,11 @@ func (m *Manager) addWorkspaceLocked(name string, rows, cols uint16) error {
 
 func (m *Manager) createTabLocked(name string, rows, cols uint16) error {
 	ws := m.Workspaces[m.ActiveWorkspaceIdx]
-
 	m.nextPaneID++
 	p, err := pane.New(m.nextPaneID, rows, cols, m.shell)
 	if err != nil {
 		return fmt.Errorf("failed to create pane: %w", err)
 	}
-
 	tab := &Tab{
 		Name:       name,
 		Layout:     layout.NewLeaf(p),
@@ -72,12 +70,76 @@ func (m *Manager) createTabLocked(name string, rows, cols uint16) error {
 	return nil
 }
 
+// ─── Shutdown ───────────────────────────────────────────────────────────────
+
+// Shutdown terminates every pane in every tab in every workspace.
+// BUG FIX: previously nothing ever called this — quitting slat left every
+// spawned shell process (and its PTY) running as an orphan.
+func (m *Manager) Shutdown() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, ws := range m.Workspaces {
+		for _, tab := range ws.Tabs {
+			for _, p := range layout.CollectPanes(tab.Layout) {
+				p.Close()
+			}
+		}
+	}
+}
+
+// ─── Workspace ──────────────────────────────────────────────────────────────
+
 // AddWorkspace creates a new workspace with one tab.
 func (m *Manager) AddWorkspace(name string, rows, cols uint16) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.addWorkspaceLocked(name, rows, cols)
 }
+
+// NextWorkspace cycles to the next workspace.
+func (m *Manager) NextWorkspace() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.Workspaces) <= 1 {
+		return
+	}
+	m.ActiveWorkspaceIdx = (m.ActiveWorkspaceIdx + 1) % len(m.Workspaces)
+}
+
+// PrevWorkspace cycles to the previous workspace.
+func (m *Manager) PrevWorkspace() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.Workspaces) <= 1 {
+		return
+	}
+	m.ActiveWorkspaceIdx--
+	if m.ActiveWorkspaceIdx < 0 {
+		m.ActiveWorkspaceIdx = len(m.Workspaces) - 1
+	}
+}
+
+// RenameWorkspace renames the active workspace.
+func (m *Manager) RenameWorkspace(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.Workspaces) == 0 {
+		return
+	}
+	m.Workspaces[m.ActiveWorkspaceIdx].Name = name
+}
+
+// GetCurrentWorkspace returns the currently active workspace.
+func (m *Manager) GetCurrentWorkspace() *Workspace {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.Workspaces) == 0 {
+		return nil
+	}
+	return m.Workspaces[m.ActiveWorkspaceIdx]
+}
+
+// ─── Tab ────────────────────────────────────────────────────────────────────
 
 // CreateTab creates a new tab in the current workspace.
 func (m *Manager) CreateTab(name string, rows, cols uint16) error {
@@ -86,57 +148,74 @@ func (m *Manager) CreateTab(name string, rows, cols uint16) error {
 	return m.createTabLocked(name, rows, cols)
 }
 
-// SplitPane splits the active pane in the given direction.
-func (m *Manager) SplitPane(dir pane.SplitDirection, rows, cols uint16) (*pane.Pane, error) {
+// NextTab cycles to the next tab in the current workspace.
+func (m *Manager) NextTab() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	tab := m.activeTabLocked()
-	if tab == nil {
-		return nil, fmt.Errorf("no active tab")
+	ws := m.Workspaces[m.ActiveWorkspaceIdx]
+	if len(ws.Tabs) <= 1 {
+		return
 	}
-
-	node := layout.FindLeaf(tab.Layout, tab.ActivePane)
-	if node == nil {
-		return nil, fmt.Errorf("active pane not found in layout")
-	}
-
-	m.nextPaneID++
-	var pRows, pCols uint16
-	if dir == pane.SplitVertical {
-		pRows = rows
-		pCols = cols / 2
-	} else {
-		pRows = rows / 2
-		pCols = cols
-	}
-	if pRows < 1 {
-		pRows = 1
-	}
-	if pCols < 1 {
-		pCols = 1
-	}
-
-	newP, err := pane.New(m.nextPaneID, pRows, pCols, m.shell)
-	if err != nil {
-		return nil, err
-	}
-
-	layout.SplitNode(node, dir, newP)
-	tab.ActivePane = newP
-
-	return newP, nil
+	ws.ActiveTabIdx = (ws.ActiveTabIdx + 1) % len(ws.Tabs)
 }
 
-// GetActivePane returns the currently focused pane.
-func (m *Manager) GetActivePane() *pane.Pane {
+// PrevTab cycles to the previous tab in the current workspace.
+func (m *Manager) PrevTab() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ws := m.Workspaces[m.ActiveWorkspaceIdx]
+	if len(ws.Tabs) <= 1 {
+		return
+	}
+	ws.ActiveTabIdx--
+	if ws.ActiveTabIdx < 0 {
+		ws.ActiveTabIdx = len(ws.Tabs) - 1
+	}
+}
+
+// GoToTab switches to the tab at 0-based index. No-op if out of range.
+func (m *Manager) GoToTab(idx int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ws := m.Workspaces[m.ActiveWorkspaceIdx]
+	if idx >= 0 && idx < len(ws.Tabs) {
+		ws.ActiveTabIdx = idx
+	}
+}
+
+// RenameTab renames the active tab.
+func (m *Manager) RenameTab(name string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	tab := m.activeTabLocked()
 	if tab == nil {
-		return nil
+		return
 	}
-	return tab.ActivePane
+	tab.Name = name
+}
+
+// CloseTab closes the entire active tab (all its panes).
+// Returns true if the workspace is now empty (caller should quit).
+func (m *Manager) CloseTab() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	tab := m.activeTabLocked()
+	if tab == nil {
+		return false
+	}
+	panes := layout.CollectPanes(tab.Layout)
+	for _, p := range panes {
+		p.Close()
+	}
+	ws := m.Workspaces[m.ActiveWorkspaceIdx]
+	ws.Tabs = append(ws.Tabs[:ws.ActiveTabIdx], ws.Tabs[ws.ActiveTabIdx+1:]...)
+	if len(ws.Tabs) == 0 {
+		return true
+	}
+	if ws.ActiveTabIdx >= len(ws.Tabs) {
+		ws.ActiveTabIdx = len(ws.Tabs) - 1
+	}
+	return false
 }
 
 // GetActiveTab returns the currently active tab.
@@ -157,14 +236,53 @@ func (m *Manager) activeTabLocked() *Tab {
 	return ws.Tabs[ws.ActiveTabIdx]
 }
 
-// GetCurrentWorkspace returns the currently active workspace.
-func (m *Manager) GetCurrentWorkspace() *Workspace {
+// ─── Pane ───────────────────────────────────────────────────────────────────
+
+// SplitPane splits the active pane in the given direction.
+func (m *Manager) SplitPane(dir pane.SplitDirection, rows, cols uint16) (*pane.Pane, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if len(m.Workspaces) == 0 {
+	tab := m.activeTabLocked()
+	if tab == nil {
+		return nil, fmt.Errorf("no active tab")
+	}
+	node := layout.FindLeaf(tab.Layout, tab.ActivePane)
+	if node == nil {
+		return nil, fmt.Errorf("active pane not found in layout")
+	}
+	m.nextPaneID++
+	var pRows, pCols uint16
+	if dir == pane.SplitVertical {
+		pRows = rows
+		pCols = cols / 2
+	} else {
+		pRows = rows / 2
+		pCols = cols
+	}
+	if pRows < 1 {
+		pRows = 1
+	}
+	if pCols < 1 {
+		pCols = 1
+	}
+	newP, err := pane.New(m.nextPaneID, pRows, pCols, m.shell)
+	if err != nil {
+		return nil, err
+	}
+	layout.SplitNode(node, dir, newP)
+	tab.ActivePane = newP
+	return newP, nil
+}
+
+// GetActivePane returns the currently focused pane.
+func (m *Manager) GetActivePane() *pane.Pane {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	tab := m.activeTabLocked()
+	if tab == nil {
 		return nil
 	}
-	return m.Workspaces[m.ActiveWorkspaceIdx]
+	return tab.ActivePane
 }
 
 // KillActivePane closes the active pane and adjusts the layout.
@@ -172,27 +290,21 @@ func (m *Manager) GetCurrentWorkspace() *Workspace {
 func (m *Manager) KillActivePane() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
 	tab := m.activeTabLocked()
 	if tab == nil {
 		return false
 	}
-
 	activeP := tab.ActivePane
 	if activeP == nil {
 		return false
 	}
-
 	activeP.Close()
-
 	tab.Layout = layout.RemovePane(tab.Layout, activeP)
-
 	if tab.Layout == nil {
-		// Tab has no more panes — remove the tab
 		ws := m.Workspaces[m.ActiveWorkspaceIdx]
 		ws.Tabs = append(ws.Tabs[:ws.ActiveTabIdx], ws.Tabs[ws.ActiveTabIdx+1:]...)
 		if len(ws.Tabs) == 0 {
-			return true // workspace empty — signal exit
+			return true
 		}
 		if ws.ActiveTabIdx >= len(ws.Tabs) {
 			ws.ActiveTabIdx = len(ws.Tabs) - 1
@@ -204,13 +316,10 @@ func (m *Manager) KillActivePane() bool {
 		}
 		return false
 	}
-
-	// Focus the first remaining pane
 	panes := layout.CollectPanes(tab.Layout)
 	if len(panes) > 0 {
 		tab.ActivePane = panes[0]
 	}
-
 	return false
 }
 
@@ -258,40 +367,131 @@ func (m *Manager) PrevPane() {
 	}
 }
 
-// NextTab cycles to the next tab in the current workspace.
-func (m *Manager) NextTab() {
+// SelectPaneInDirection selects the nearest pane in the given direction.
+// Direction: "up", "down", "left", "right"
+func (m *Manager) SelectPaneInDirection(direction string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	ws := m.Workspaces[m.ActiveWorkspaceIdx]
-	if len(ws.Tabs) <= 1 {
+	tab := m.activeTabLocked()
+	if tab == nil {
 		return
 	}
-	ws.ActiveTabIdx = (ws.ActiveTabIdx + 1) % len(ws.Tabs)
+	panes := layout.CollectPanes(tab.Layout)
+	if len(panes) <= 1 {
+		return
+	}
+	cur := tab.ActivePane
+	if cur == nil {
+		return
+	}
+	curRow, curCol, curRows, curCols := cur.Rect()
+	curCenterRow := curRow + int(curRows)/2
+	curCenterCol := curCol + int(curCols)/2
+
+	var best *pane.Pane
+	bestDist := 999999
+	for _, p := range panes {
+		if p == cur {
+			continue
+		}
+		pRow, pCol, pRows, pCols := p.Rect()
+		pCenterRow := pRow + int(pRows)/2
+		pCenterCol := pCol + int(pCols)/2
+		ok := false
+		switch direction {
+		case "up":
+			ok = pCenterRow < curCenterRow
+		case "down":
+			ok = pCenterRow > curCenterRow
+		case "left":
+			ok = pCenterCol < curCenterCol
+		case "right":
+			ok = pCenterCol > curCenterCol
+		}
+		if !ok {
+			continue
+		}
+		dr := pCenterRow - curCenterRow
+		dc := pCenterCol - curCenterCol
+		dist := dr*dr + dc*dc
+		if dist < bestDist {
+			bestDist = dist
+			best = p
+		}
+	}
+	if best != nil {
+		tab.ActivePane = best
+	}
 }
 
-// PrevTab cycles to the previous tab in the current workspace.
-func (m *Manager) PrevTab() {
+// SwapPanes swaps the active pane with the next one in the layout.
+func (m *Manager) SwapPanes() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	ws := m.Workspaces[m.ActiveWorkspaceIdx]
-	if len(ws.Tabs) <= 1 {
+	tab := m.activeTabLocked()
+	if tab == nil {
 		return
 	}
-	ws.ActiveTabIdx--
-	if ws.ActiveTabIdx < 0 {
-		ws.ActiveTabIdx = len(ws.Tabs) - 1
+	panes := layout.CollectPanes(tab.Layout)
+	if len(panes) <= 1 {
+		return
+	}
+	activeIdx := -1
+	for i, p := range panes {
+		if p == tab.ActivePane {
+			activeIdx = i
+			break
+		}
+	}
+	if activeIdx < 0 {
+		return
+	}
+	otherIdx := (activeIdx + 1) % len(panes)
+	a := panes[activeIdx]
+	b := panes[otherIdx]
+	leafA := layout.FindLeaf(tab.Layout, a)
+	leafB := layout.FindLeaf(tab.Layout, b)
+	if leafA != nil && leafB != nil {
+		leafA.Pane, leafB.Pane = leafB.Pane, leafA.Pane
 	}
 }
 
-// NextWorkspace cycles to the next workspace.
-func (m *Manager) NextWorkspace() {
+// ResizeRatio adjusts the active pane's parent split ratio by delta.
+func (m *Manager) ResizeRatio(delta float64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if len(m.Workspaces) <= 1 {
+	tab := m.activeTabLocked()
+	if tab == nil {
 		return
 	}
-	m.ActiveWorkspaceIdx = (m.ActiveWorkspaceIdx + 1) % len(m.Workspaces)
+	if tab.ActivePane == nil {
+		return
+	}
+	parent, _ := layout.FindParent(tab.Layout, tab.ActivePane)
+	if parent == nil {
+		return
+	}
+	parent.Ratio += delta
+	if parent.Ratio < 0.1 {
+		parent.Ratio = 0.1
+	}
+	if parent.Ratio > 0.9 {
+		parent.Ratio = 0.9
+	}
 }
+
+// EqualizeLayout resets all split ratios to 0.5.
+func (m *Manager) EqualizeLayout() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	tab := m.activeTabLocked()
+	if tab == nil {
+		return
+	}
+	layout.Equalize(tab.Layout)
+}
+
+// ─── Layout ─────────────────────────────────────────────────────────────────
 
 // ApplyLayout recalculates positions and sizes for all panes in the active tab.
 func (m *Manager) ApplyLayout(area layout.Rect) {
@@ -320,12 +520,10 @@ func (m *Manager) GetAllPanesInActiveTab() []*pane.Pane {
 func (m *Manager) CleanupDeadPanes() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
 	tab := m.activeTabLocked()
 	if tab == nil {
 		return false
 	}
-
 	panes := layout.CollectPanes(tab.Layout)
 	for _, p := range panes {
 		if p.Dead() {

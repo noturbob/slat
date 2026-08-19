@@ -12,17 +12,38 @@ shell = "/bin/bash"
 status_bar = true
 
 # Keybindings (activated after pressing the prefix key)
+# All keybinds are single characters pressed AFTER the prefix key.
+# Number keys 1-9 are always bound to "jump to tab N".
 [keybinds]
-split-vertical   = "v"
-split-horizontal = "h"
-next-pane        = "o"
-prev-pane        = "O"
-close-pane       = "x"
-new-tab          = "c"
-next-tab         = "n"
-prev-tab         = "p"
-new-workspace    = "W"
-next-workspace   = "w"
-zoom             = "z"
-quit             = "q"
-detach           = "d"
+# ── Panes ──
+split-vertical   = "v"    # Split pane left/right
+split-horizontal = "h"    # Split pane top/bottom
+next-pane        = "o"    # Cycle focus to next pane
+prev-pane        = "O"    # Cycle focus to previous pane
+select-pane-up   = "k"    # Focus pane above
+select-pane-down = "j"    # Focus pane below
+select-pane-left = "H"    # Focus pane to the left
+select-pane-right= "L"    # Focus pane to the right
+swap-pane        = "s"    # Swap active pane with the next one
+resize-grow      = "+"    # Grow the active pane
+resize-shrink    = "-"    # Shrink the active pane
+equalize         = "="    # Reset all pane sizes to equal
+close-pane       = "x"    # Close the active pane
+zoom             = "z"    # Toggle zoom (fullscreen) for active pane
+
+# ── Tabs ──
+new-tab          = "c"    # Create a new tab
+next-tab         = "n"    # Switch to next tab
+prev-tab         = "p"    # Switch to previous tab
+rename-tab       = ","    # Rename the current tab
+close-tab        = "X"    # Close the entire tab (all panes)
+
+# ── Workspaces ──
+new-workspace    = "W"    # Create a new workspace
+next-workspace   = "w"    # Switch to next workspace
+prev-workspace   = "P"    # Switch to previous workspace
+rename-workspace = "$"    # Rename the current workspace
+
+# ── Session ──
+quit             = "q"    # Quit slat
+detach           = "d"    # Detach (same as quit for now)

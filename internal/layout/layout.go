@@ -166,3 +166,16 @@ func CollectPanes(n *Node) []*pane.Pane {
 	result = append(result, CollectPanes(n.Children[1])...)
 	return result
 }
+
+// Equalize recursively resets all split ratios to 0.5.
+func Equalize(n *Node) {
+	if n == nil {
+		return
+	}
+	if n.Pane != nil {
+		return // leaf
+	}
+	n.Ratio = 0.5
+	Equalize(n.Children[0])
+	Equalize(n.Children[1])
+}
