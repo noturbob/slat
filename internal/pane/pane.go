@@ -30,6 +30,7 @@ type Pane struct {
 	IsDead bool
 	Zoomed bool
 	mu     sync.Mutex
+	cursor cursorState
 }
 
 // New creates and starts a new pane with the given shell.
@@ -121,7 +122,30 @@ func (p *Pane) Resize(rows, cols uint16) error {
 	}
 	p.Rows = rows
 	p.Cols = cols
+	p.cursor.clamp(int(rows), int(cols))
 	return pty.Setsize(p.Pty, &pty.Winsize{Rows: rows, Cols: cols})
+}
+
+// AdvanceCursor updates the pane's tracked cursor position by interpreting
+// the control/escape sequences in data, as if it had just been written to
+// a rows x cols terminal starting at the pane's current tracked position.
+//
+// The host calls this after writing a pane's output to the real terminal,
+// so it can explicitly reposition the physical cursor to match this pane's
+// own idea of where its cursor is before the next write -- see cursorState
+// for why that explicit tracking is necessary.
+func (p *Pane) AdvanceCursor(data []byte) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.cursor.feed(int(p.Rows), int(p.Cols), data)
+}
+
+// CursorRC returns the pane's tracked cursor position, 0-based and
+// relative to the pane's own top-left cell.
+func (p *Pane) CursorRC() (row, col int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.cursor.row, p.cursor.col
 }
 
 // SetPosition sets the pane's top-left position in the terminal.

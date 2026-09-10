@@ -46,15 +46,84 @@ func ResetScrollRegion() string {
 	return "\033[r"
 }
 
-func GetBanner() string {
-	return FgCyan + Bold + `
-     _____ __      ___  _______
-    / ___// /     /   |/_  __/
-    \__ \/ /     / /| | / /   
-   ___/ / /___  / ___ |/ /    
-  /____/_____/ /_/  |_/_/     
-` + Reset + "\r\n" + Dim + `
-  Terminal Multiplexer v0.1.0` + Reset + "\r\n" + Dim + `  Press Ctrl-S then ? for help` + Reset + "\r\n"
+// EnableHMargins/DisableHMargins toggle DECLRMM (left/right margin mode).
+// DECSLRM (SetHMargins) is only honored by the terminal while this mode is
+// on, and while it's on, a bare "CSI s" from pane content is reinterpreted
+// as DECSLRM instead of the (rarely used) ANSI save-cursor. To keep that
+// window as small as possible, callers should enable margins, set them,
+// write, then reset margins to full width and disable immediately after --
+// mirroring how SetScrollRegion is already toggled around each pane write.
+func EnableHMargins() string {
+	return "\033[?69h"
+}
+
+func DisableHMargins() string {
+	return "\033[?69l"
+}
+
+// SetHMargins confines cursor addressing, autowrap, and scrolling to the
+// column range [left, right] (1-based, inclusive) via DECSLRM. Panes are
+// rendered by streaming raw shell output directly onto the real terminal
+// with no per-pane screen buffer, so nothing stops a shell that thinks its
+// window is narrower than the physical terminal from auto-wrapping (or
+// simply printing) past its pane's right edge into a neighboring pane.
+// DECSLRM makes the real terminal enforce the same width the pane's shell
+// was told it has, so wrapping happens at the pane boundary instead of
+// bleeding into whatever pane happens to sit to its right.
+func SetHMargins(left, right int) string {
+	return fmt.Sprintf("\033[%d;%ds", left, right)
+}
+
+// bannerArt is the plain ASCII-art lines of the startup banner, kept
+// separate from ANSI styling so their visible width can be measured for
+// centering.
+var bannerArt = []string{
+	`     _____ __      ___  _______`,
+	`    / ___// /     /   |/_  __/`,
+	`    \__ \/ /     / /| | / /`,
+	`   ___/ / /___  / ___ |/ /`,
+	`  /____/_____/ /_/  |_/_/`,
+}
+
+// GetBanner renders the startup ASCII banner, centered for a terminal that
+// is cols columns wide.
+func GetBanner(cols int) string {
+	width := 0
+	for _, l := range bannerArt {
+		if len(l) > width {
+			width = len(l)
+		}
+	}
+	pad := (cols - width) / 2
+	if pad < 0 {
+		pad = 0
+	}
+	indent := strings.Repeat(" ", pad)
+
+	var b strings.Builder
+	b.WriteString(FgCyan)
+	b.WriteString(Bold)
+	for _, l := range bannerArt {
+		b.WriteString(indent)
+		b.WriteString(l)
+		b.WriteString("\r\n")
+	}
+	b.WriteString(Reset)
+	b.WriteString("\r\n")
+
+	for _, sub := range []string{"Terminal Multiplexer v0.1.0", "Press Ctrl-S then ? for help"} {
+		subPad := (cols - len(sub)) / 2
+		if subPad < 0 {
+			subPad = 0
+		}
+		b.WriteString(Dim)
+		b.WriteString(strings.Repeat(" ", subPad))
+		b.WriteString(sub)
+		b.WriteString(Reset)
+		b.WriteString("\r\n")
+	}
+
+	return b.String()
 }
 
 // DrawStatusBar renders the status bar. Width-budgeted so tabs never
@@ -214,16 +283,39 @@ func DrawHorizontalBorder(row, col, width int) string {
 	return b.String()
 }
 
-func DrawActivePaneIndicator(row, col, rows, cols int, active bool) string {
-	if !active {
-		return ""
-	}
+// DrawActivePaneIndicator highlights the border segments touching the
+// active pane's rectangle (row, col, rows, cols) in the given
+// totalRows x totalCols terminal.
+//
+// BUG FIX: this used to draw a solid bar glyph directly into the pane's own
+// top-left content cells (the shell's actual output area), permanently
+// corrupting whatever the pane had drawn there -- visible as a stray thick
+// "cursor-like" mark that never went away after a split. Highlighting only
+// ever touches border cells, which drawBorders() unconditionally repaints
+// on every call, so switching the active pane always fully erases the
+// previous highlight instead of leaving a stale mark behind.
+func DrawActivePaneIndicator(row, col, rows, cols, totalRows, totalCols int) string {
 	var b strings.Builder
 	b.WriteString(SaveCursor)
 	color := FgCyan + Bold
-	for i := 0; i < rows && i < 3; i++ {
-		b.WriteString(fmt.Sprintf("\033[%d;%dH%s\u258e%s", row+i, col, color, Reset))
+
+	if col > 1 {
+		for i := 0; i < rows; i++ {
+			b.WriteString(fmt.Sprintf("\033[%d;%dH%s%s%s", row+i, col-1, color, BoxV, Reset))
+		}
 	}
+	if col+cols <= totalCols {
+		for i := 0; i < rows; i++ {
+			b.WriteString(fmt.Sprintf("\033[%d;%dH%s%s%s", row+i, col+cols, color, BoxV, Reset))
+		}
+	}
+	if row > 1 {
+		b.WriteString(fmt.Sprintf("\033[%d;%dH%s%s%s", row-1, col, color, strings.Repeat(BoxH, cols), Reset))
+	}
+	if row+rows <= totalRows {
+		b.WriteString(fmt.Sprintf("\033[%d;%dH%s%s%s", row+rows, col, color, strings.Repeat(BoxH, cols), Reset))
+	}
+
 	b.WriteString(RestCursor)
 	return b.String()
 }

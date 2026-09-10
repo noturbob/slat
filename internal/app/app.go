@@ -43,6 +43,16 @@ type App struct {
 	// showHelp controls whether the help overlay is currently visible.
 	showHelp atomic.Bool
 
+	// bannerOnce ensures the startup banner is shown at most once per
+	// session, triggered by the first client attach (see showBanner).
+	bannerOnce sync.Once
+
+	// showingBanner is true for the brief window showBanner is displaying
+	// the startup banner. While true, HandleResize's redraw and
+	// forwardPaneOutput's pane-content writes stand down so they can't
+	// race the banner and overwrite it before it's been shown.
+	showingBanner atomic.Bool
+
 	// zoomedPane tracks the pane currently shown fullscreen, if any.
 	zoomedPane *pane.Pane
 
@@ -126,19 +136,6 @@ func (a *App) write(s string) {
 	a.stdout.Flush()
 }
 
-// writeBytes atomically writes raw bytes to the configured output.
-func (a *App) writeBytes(b []byte) {
-	a.outMu.Lock()
-	defer a.outMu.Unlock()
-
-	if a.stdout == nil {
-		return
-	}
-
-	a.stdout.Write(b)
-	a.stdout.Flush()
-}
-
 // getSize returns the current terminal dimensions.
 func (a *App) getSize() (cols, rows int) {
 	a.sizeMu.RLock()
@@ -214,6 +211,41 @@ func (a *App) Start(cols, rows int) error {
 	return nil
 }
 
+// showBanner displays the startup ASCII banner once, the first time a
+// client actually attaches, then hands off to the normal screen.
+//
+// BUG FIX: GetBanner() used to be dead code -- defined but never called
+// from anywhere, so the banner never actually appeared. The natural-looking
+// place to trigger it would be App.Start(), but in the daemon/client
+// architecture the daemon calls Start() (and the session's shells are
+// already running) well before any client has connected; a host's output
+// sink silently discards writes until a client attaches (see
+// daemon/sink.go), so anything written during Start() would never reach
+// anyone. HandleResize's first-ever call corresponds to the first real
+// client attach -- the first point anyone can actually see output -- so
+// that's what triggers this, exactly once per session (bannerOnce), via
+// a.showBanner().
+//
+// While this holds a.showingBanner true, HandleResize's own redraw and
+// forwardPaneOutput's pane-content writes both stand down so they can't
+// race the banner and clobber it before the user has had a chance to see
+// it; see the checks in both.
+func (a *App) showBanner() {
+	defer a.showingBanner.Store(false)
+
+	cols, _ := a.getSize()
+
+	a.write(ui.Clear)
+	a.write(ui.GetBanner(cols))
+	time.Sleep(700 * time.Millisecond)
+
+	// Pick up any resize a client's attach delivered while the banner was
+	// showing, since HandleResize's own redraw was suppressed for it.
+	a.applyLayout()
+	a.setupScrollRegion()
+	a.fullRedraw()
+}
+
 // setupScrollRegion configures the terminal scroll region according to the
 // currently configured pane area.
 func (a *App) setupScrollRegion() {
@@ -254,6 +286,24 @@ func (a *App) HandleResize(cols, rows int) {
 		a.applyLayout()
 	}
 
+	// The first-ever HandleResize call corresponds to the first real
+	// client attach -- see showBanner for why that's the right trigger
+	// point rather than Start(). a.showingBanner is set synchronously here
+	// (sync.Once.Do runs its function before returning) so the check right
+	// below always sees it if this call is the one that triggered it.
+	a.bannerOnce.Do(func() {
+		a.showingBanner.Store(true)
+		go a.showBanner()
+	})
+
+	if a.showingBanner.Load() {
+		// Panes are already sized correctly above; skip the redraw itself
+		// so this resize (or the one that just triggered the banner)
+		// can't clear it before the user has had a chance to see it.
+		// showBanner will draw against this updated size once it's done.
+		return
+	}
+
 	a.setupScrollRegion()
 	a.fullRedraw()
 
@@ -285,16 +335,68 @@ func (a *App) visiblePanes() []*pane.Pane {
 	return a.manager.GetAllPanesInActiveTab()
 }
 
+// maxOutputBatch caps how much buffered PTY output is drained and written
+// in one go for a single pane before moving on to the next pane in the
+// sweep, so one very chatty pane can't starve its siblings indefinitely.
+const maxOutputBatch = 65536
+
+// drainPaneOutput collects all output currently buffered for a pane into a
+// single byte slice instead of forwarding one small chunk at a time.
+//
+// BUG FIX ("not fluent" under heavy output): the old loop only pulled one
+// queued chunk (up to 4096 bytes, one PTY read's worth) off a pane per
+// sweep, then went back to re-scanning every pane before it would read
+// that same pane again. Under sustained output (e.g. `cat` on a large
+// file) that meant a scroll-region set/restore and a flush for every
+// single 4KB chunk. Draining everything currently queued lets one such
+// batch serve many chunks, cutting the escape-sequence and flush overhead
+// per byte transferred by a large factor.
+func drainPaneOutput(p *pane.Pane) []byte {
+	var out []byte
+
+	for len(out) < maxOutputBatch {
+		select {
+		case chunk := <-p.Output:
+			if len(chunk) > 0 {
+				out = append(out, chunk...)
+			}
+		default:
+			return out
+		}
+	}
+
+	return out
+}
+
 // forwardPaneOutput reads PTY output from all visible panes and forwards it
 // to the configured output writer.
 //
 // This is the only goroutine responsible for forwarding pane content.
+//
+// Every pane is rendered by streaming its raw PTY bytes directly onto the
+// shared real terminal -- there's no per-pane screen buffer to redraw from.
+// That only produces correct output if, immediately before writing a
+// pane's bytes, the real cursor is placed exactly where that pane's shell
+// last left it (tracked via Pane.CursorRC/AdvanceCursor) and the terminal's
+// scroll/wrap boundaries are confined to that pane's rectangle. Without
+// both of those, the previous implementation let the physical cursor drift
+// out of sync with any pane the instant something else touched the shared
+// screen (a focus switch, a split, the status bar) -- surfacing as output
+// landing in the wrong pane, prompts overwriting themselves, and text
+// failing to wrap and instead running into a neighboring pane.
 func (a *App) forwardPaneOutput() {
 	for {
 		select {
 		case <-a.quit:
 			return
 		default:
+		}
+
+		if a.showingBanner.Load() {
+			// Let the startup banner hold the screen; PTY output just
+			// queues up in each pane's buffered Output channel meanwhile.
+			time.Sleep(20 * time.Millisecond)
+			continue
 		}
 
 		panes := a.visiblePanes()
@@ -304,8 +406,8 @@ func (a *App) forwardPaneOutput() {
 			continue
 		}
 
-		activePane := a.manager.GetActivePane()
-		singlePane := len(panes) == 1
+		totalCols, _ := a.getSize()
+		fullPaneRows, _ := a.paneArea()
 		didWork := false
 
 		for _, p := range panes {
@@ -313,89 +415,91 @@ func (a *App) forwardPaneOutput() {
 				continue
 			}
 
-			select {
-			case data := <-p.Output:
-				if len(data) == 0 {
-					continue
-				}
-
-				didWork = true
-
-				pRow, pCol, pRows, _ := p.Rect()
-
-				if singlePane || p == activePane {
-					if singlePane {
-						a.writeBytes(data)
-					} else {
-						a.outMu.Lock()
-
-						if a.stdout != nil {
-							a.stdout.WriteString(ui.SaveCursor)
-							a.stdout.WriteString(
-								ui.SetScrollRegion(
-									pRow,
-									pRow+int(pRows)-1,
-								),
-							)
-							a.stdout.WriteString(ui.RestCursor)
-							a.stdout.Write(data)
-
-							paneRows, _ := a.paneArea()
-
-							a.stdout.WriteString(
-								ui.SetScrollRegion(1, paneRows),
-							)
-
-							a.stdout.Flush()
-						}
-
-						a.outMu.Unlock()
-					}
-				} else {
-					a.outMu.Lock()
-
-					if a.stdout != nil {
-						a.stdout.WriteString(ui.SaveCursor)
-
-						a.stdout.WriteString(
-							ui.SetScrollRegion(
-								pRow,
-								pRow+int(pRows)-1,
-							),
-						)
-
-						a.stdout.WriteString(
-							fmt.Sprintf(
-								"\033[%d;%dH",
-								pRow,
-								pCol,
-							),
-						)
-
-						a.stdout.Write(data)
-
-						paneRows, _ := a.paneArea()
-
-						a.stdout.WriteString(
-							ui.SetScrollRegion(1, paneRows),
-						)
-
-						a.stdout.WriteString(ui.RestCursor)
-
-						a.stdout.Flush()
-					}
-
-					a.outMu.Unlock()
-				}
-
-			default:
+			data := drainPaneOutput(p)
+			if len(data) == 0 {
+				continue
 			}
+
+			didWork = true
+
+			pRow, pCol, pRows, pCols := p.Rect()
+			row, col := p.CursorRC()
+
+			// A pane confined horizontally (it has a neighbor to its
+			// left and/or right) needs DECSLRM to stop its content from
+			// auto-wrapping past its own edge into that neighbor; a
+			// full-width pane already wraps at the real terminal edge on
+			// its own, so skip the extra escape sequences for it.
+			fullWidth := pCol == 1 && pCol+int(pCols)-1 == totalCols
+
+			a.outMu.Lock()
+
+			if a.stdout != nil {
+				a.stdout.WriteString(ui.HideCursor)
+				a.stdout.WriteString(ui.SetScrollRegion(pRow, pRow+int(pRows)-1))
+
+				if !fullWidth {
+					a.stdout.WriteString(ui.EnableHMargins())
+					a.stdout.WriteString(ui.SetHMargins(pCol, pCol+int(pCols)-1))
+				}
+
+				a.stdout.WriteString(fmt.Sprintf("\033[%d;%dH", pRow+row, pCol+col))
+				a.stdout.Write(data)
+
+				if !fullWidth {
+					a.stdout.WriteString(ui.SetHMargins(1, totalCols))
+					a.stdout.WriteString(ui.DisableHMargins())
+				}
+
+				a.stdout.WriteString(ui.SetScrollRegion(1, fullPaneRows))
+				a.stdout.Flush()
+			}
+
+			a.outMu.Unlock()
+
+			p.AdvanceCursor(data)
 		}
 
-		if !didWork {
+		if didWork {
+			a.parkCursorAtActivePane()
+		} else {
 			time.Sleep(5 * time.Millisecond)
 		}
 	}
+}
+
+// parkCursorAtActivePane leaves the real, visible terminal cursor resting
+// at the active pane's tracked position.
+//
+// Every pane write above hides the cursor while it repositions across
+// (potentially several) panes' rectangles; without a final step to park it
+// back at the active pane, the physical cursor would end each sweep
+// wherever the last pane to produce output happened to be -- flashing at
+// background panes and generally looking wrong -- instead of steadily
+// sitting where the user is actually typing.
+func (a *App) parkCursorAtActivePane() {
+	if a.showHelp.Load() || a.promptMode != "" {
+		return
+	}
+
+	active := a.manager.GetActivePane()
+	if active == nil {
+		return
+	}
+
+	pRow, pCol, _, _ := active.Rect()
+	row, col := active.CursorRC()
+
+	a.outMu.Lock()
+	defer a.outMu.Unlock()
+
+	if a.stdout == nil {
+		return
+	}
+
+	a.stdout.WriteString(fmt.Sprintf("\033[%d;%dH", pRow+row, pCol+col))
+	a.stdout.WriteString(ui.ShowCursor)
+	a.stdout.Flush()
 }
 
 // statusLoop periodically updates the status bar and cleans up dead panes.
@@ -1126,6 +1230,8 @@ func (a *App) drawBorders() {
 		return
 	}
 
+	totalCols, totalRows := a.getSize()
+
 	a.outMu.Lock()
 	defer a.outMu.Unlock()
 
@@ -1133,6 +1239,7 @@ func (a *App) drawBorders() {
 		return
 	}
 
+	a.stdout.WriteString(ui.HideCursor)
 	a.stdout.WriteString(ui.SaveCursor)
 
 	for _, p := range panes {
@@ -1171,13 +1278,15 @@ func (a *App) drawBorders() {
 					col,
 					int(rows),
 					int(cols),
-					true,
+					totalRows,
+					totalCols,
 				),
 			)
 		}
 	}
 
 	a.stdout.WriteString(ui.RestCursor)
+	a.stdout.WriteString(ui.ShowCursor)
 	a.stdout.Flush()
 }
 
