@@ -1,6 +1,4 @@
-# Slat
-
-A modern terminal multiplexer with tiling panes, tabs, and workspaces — built in Go.
+<div align="center">
 
 ```text
      _____ __      ___  _______
@@ -10,23 +8,31 @@ A modern terminal multiplexer with tiling panes, tabs, and workspaces — built 
   /____/_____/ /_/  |_/_/
 ```
 
+### A modern terminal multiplexer with tiling panes, tabs, and workspaces — built in Go.
+
+[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://golang.org/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-blue?style=for-the-badge)](#requirements)
+
+[Features](#features) • [Quick Start](#quick-start) • [Keybindings](#keybindings) • [Configuration](#configuration) • [Architecture](#architecture)
+
+</div>
+
+---
+
 ## Features
 
 * **Tiling pane management** — split vertically / horizontally, resize, swap, equalize, zoom
 * **Directional navigation** — move between panes with hjkl (vim-style) or arrow-style keys
-* **Tabs** — create, rename, close, jump to tabs by number (1-9)
+* **Tabs** — create, rename, close, jump to tabs by number (1–9)
 * **Workspaces** — organize sessions into named workspaces, switch freely
 * **Interactive rename** — rename tabs and workspaces inline with a prompt bar
 * **Prefix-key system** — one leader key, then a single keystroke for every action
 * **Fully configurable** — TOML config for prefix key, shell, status bar, and keybinds
-* **Beautiful status bar** — workspace, tabs, mode indicator, pane information
-* **Help overlay** — press `?` for a categorized keybind reference
-* **Zoom mode** — fullscreen the active pane and toggle back to the previous layout
-* **Session engine** — application state is separated from terminal I/O, allowing a host/daemon to manage sessions independently from clients
-* **Detach support** — clients can request a detach without terminating the underlying session
-* **Lightweight** — minimal dependencies and fast startup
-
-> **Current status:** Slat's application layer is now structured as a host-driven session engine. The `App` no longer owns stdin/stdout or terminal signal handling directly. A daemon/client layer can attach to it through its input, output, resize, detach, and lifecycle APIs.
+* **Persistent sessions** — a background daemon owns your shells; the client is just the window onto them, so closing your terminal doesn't kill your work
+* **Detach / reattach** — disconnect without ending the session, then `slat` back in later exactly where you left off
+* **Status bar & help overlay** — workspace, tabs, mode indicator, pane info, and a `?` keybind reference
+* **Lightweight** — minimal dependencies, fast startup
 
 ## Quick Start
 
@@ -34,13 +40,15 @@ A modern terminal multiplexer with tiling panes, tabs, and workspaces — built 
 # Build
 make build
 
-# Run
+# Run — auto-starts the background daemon on first launch
 ./bin/slat
 
-# Or install to ~/go/bin
+# Or install to $GOPATH/bin (or ~/go/bin, or /usr/local/bin)
 make install
 slat
 ```
+
+The first time you run `slat`, it spawns a small background daemon (over a per-user Unix socket) that owns your workspaces, tabs, and shells. Running `slat` again from any terminal attaches a fresh client to that same session — close the terminal, and the daemon keeps everything running for you to reattach to later.
 
 ## Keybindings
 
@@ -51,15 +59,15 @@ All commands use a **prefix key** (default: **`Ctrl-S`**). Press the prefix, the
 ### Panes
 
 | Key | Action                                    |
-| --- | ----------------------------------------- |
+| --- | ------------------------------------------ |
 | `v` | Split pane vertically (left / right)      |
 | `h` | Split pane horizontally (top / bottom)    |
 | `o` | Cycle focus to next pane                  |
-| `O` | Cycle focus to previous pane              |
+| `O` | Cycle focus to previous pane               |
 | `k` | Focus pane **above**                      |
 | `j` | Focus pane **below**                      |
 | `H` | Focus pane to the **left**                |
-| `L` | Focus pane to the **right**               |
+| `L` | Focus pane to the **right**                |
 | `s` | Swap active pane with the next pane       |
 | `+` | Grow active pane (increase split ratio)   |
 | `-` | Shrink active pane (decrease split ratio) |
@@ -70,7 +78,7 @@ All commands use a **prefix key** (default: **`Ctrl-S`**). Press the prefix, the
 ### Tabs
 
 | Key     | Action                                |
-| ------- | ------------------------------------- |
+| ------- | -------------------------------------- |
 | `c`     | Create a new tab                      |
 | `n`     | Switch to next tab                    |
 | `p`     | Switch to previous tab                |
@@ -81,7 +89,7 @@ All commands use a **prefix key** (default: **`Ctrl-S`**). Press the prefix, the
 ### Workspaces
 
 | Key | Action                                      |
-| --- | ------------------------------------------- |
+| --- | -------------------------------------------- |
 | `W` | Create a new workspace                      |
 | `w` | Switch to next workspace                    |
 | `P` | Switch to previous workspace                |
@@ -90,32 +98,19 @@ All commands use a **prefix key** (default: **`Ctrl-S`**). Press the prefix, the
 ### Session
 
 | Key          | Action                                 |
-| ------------ | -------------------------------------- |
+| ------------ | --------------------------------------- |
 | `?`          | Show / dismiss the help overlay        |
-| `d`          | Request detach from the current client |
+| `d`          | Detach — disconnect, leave session running |
 | `q`          | Quit slat and end the session          |
 | *prefix × 2* | Send the prefix key to the shell       |
 
+`Ctrl-C` and every other key not listed above are passed straight through to whatever's running in the active pane — slat only intercepts input right after the prefix key, so you can still interrupt a running program the normal way. To close things you use `x` (pane) or `q` (session), not `Ctrl-C`.
+
 ### Detach vs. Quit
 
-`d` and `q` have different meanings:
-
-* **`d` — Detach:** requests that the current client disconnect while leaving the session running.
-* **`q` — Quit:** terminates the Slat session.
-* **Shell exits / last pane dies:** the session reports that it is finished.
-
-The application layer exposes separate lifecycle channels for these events:
-
-```text
-Done()
-    └── Session has ended
-
-DetachRequested()
-    └── Current client should disconnect
-        but the session remains alive
-```
-
-The host/daemon is responsible for deciding how clients attach, detach, reconnect, and where session output is delivered.
+* **`d` — Detach:** disconnects the current client while leaving the session running in the background daemon. Run `slat` again later to reattach.
+* **`q` — Quit:** terminates the daemon's session and every shell in it.
+* **Shell exits / last pane dies:** the session ends on its own, same as quitting.
 
 ## Configuration
 
@@ -168,180 +163,91 @@ quit              = "q"
 detach            = "d"
 ```
 
-> Keys `1`–`9` are always hard-bound to "jump to tab N" and cannot be remapped.
+> Keys `1`–`9` are always hard-bound to "jump to tab N" and cannot be remapped. An empty or partial `[keybinds]` table is fine — any keys you don't set fall back to their defaults.
 
 ## Architecture
 
-Slat's application layer is separated from terminal/client I/O. The `App` owns the session state and can be driven by a host such as a terminal daemon.
+Slat is a proper client/daemon multiplexer: a single background daemon owns the session (workspaces, tabs, panes, and every shell's PTY), and lightweight clients attach to it over a per-user Unix socket to drive it interactively.
 
 ```text
                     ┌─────────────────────┐
-                    │     Client / TTY     │
-                    │                     │
-                    │ keyboard            │
-                    │ terminal size       │
-                    │ output              │
-                    └──────────┬──────────┘
+                    │   Terminal / Client   │
+                    │                       │
+                    │  raw-mode stdin/stdout │
+                    └──────────┬────────────┘
+                               │ Unix socket
+                               │ (length-prefixed frames: hello, input, resize)
+                               ▼
+                    ┌───────────────────────┐
+                    │        Daemon         │
+                    │                       │
+                    │  session lifecycle    │
+                    │  client attach/detach │
+                    └──────────┬────────────┘
                                │
-                         host / daemon
+                    FeedInput([]byte) / HandleResize(...)
                                │
-              ┌────────────────┴────────────────┐
-              │                                 │
-              ▼                                 ▼
-       FeedInput([]byte)                 HandleResize(...)
-              │                                 │
-              └──────────────┬──────────────────┘
-                             ▼
-                    ┌─────────────────┐
-                    │      App        │
-                    │                 │
-                    │ Workspaces      │
-                    │ Tabs            │
-                    │ Panes           │
-                    │ Layout          │
-                    │ Input handling  │
-                    │ Rendering       │
-                    └────────┬────────┘
-                             │
-                    SetOutput(io.Writer)
-                             │
-                             ▼
-                         Client
+                    ┌──────────▼────────────┐
+                    │         App           │
+                    │                       │
+                    │  Workspaces           │
+                    │  Tabs                 │
+                    │  Panes (PTY-backed)   │
+                    │  Layout engine        │
+                    │  Input dispatch       │
+                    │  ANSI rendering       │
+                    └───────────────────────┘
 ```
+
+Running `slat` re-execs itself once as a detached background daemon (`slat __daemon`, hidden — you never invoke it directly) if one isn't already running for your user, then connects to it as a client. Only one client is attached at a time; attaching while another client is connected disconnects the previous one, the same way `tmux attach` does.
 
 ### Internal structure
 
 ```text
-cmd/slat/          — Entry point / host
+cmd/slat/          — Entry point: daemon bootstrap + client connect
 internal/
-  app/             — Session engine, rendering, input dispatch, lifecycle
+  daemon/          — Unix socket server, client attach/detach, session lifecycle
+  client/          — Terminal raw mode, stdin/stdout <-> daemon framing
+  proto/           — Length-prefixed frame protocol between client and daemon
+  app/             — Session engine: rendering, input dispatch, lifecycle
   config/          — TOML configuration loading with defaults
   input/           — Prefix-key handler and keybind action mapping
   layout/          — Binary-tree tiling layout engine
-  pane/            — PTY-backed terminal panes
+  pane/            — PTY-backed terminal panes, per-pane cursor tracking
   session/         — Workspace / tab / pane manager
-  ui/              — ANSI rendering, status bar, help overlay
+  ui/              — ANSI rendering, status bar, help overlay, banner
 ```
+
+### Rendering model
+
+Each pane streams its shell's raw output directly onto the shared terminal — there's no full per-pane screen buffer to redraw from. To keep that correct, slat tracks a lightweight cursor position per pane (`internal/pane/cursor.go`) so it always knows exactly where a pane's shell believes its own cursor is, and explicitly repositions the real terminal cursor there before every write. It also confines each pane's scroll region and, for panes that don't span the full terminal width, its left/right margins (DECSLRM, on terminals that support it) — so a pane's content wraps and scrolls within its own borders instead of bleeding into its neighbors.
 
 ### App lifecycle
 
-The application is driven by its host rather than directly reading from a terminal.
+The application layer doesn't own a terminal directly — it's driven entirely by its host (the daemon):
 
 ```go
 cfg, err := config.Load()
-if err != nil {
-    return err
-}
-
 app, err := app.New(cfg)
-if err != nil {
-    return err
-}
 
 app.SetOutput(clientWriter)
+app.Start(cols, rows)
 
-if err := app.Start(cols, rows); err != nil {
-    return err
-}
-```
-
-Input is supplied by the host:
-
-```go
+// Host feeds input and resize events as they arrive:
 app.FeedInput(data)
-```
-
-Terminal resize events are supplied by the host:
-
-```go
 app.HandleResize(cols, rows)
-```
 
-The host can monitor session lifecycle events:
-
-```go
+// Host watches lifecycle events:
 select {
 case <-app.Done():
-    // Session ended.
-
+    // Session has ended entirely.
 case <-app.DetachRequested():
-    // Disconnect the current client.
-    // Keep the session alive.
+    // Disconnect the current client; session stays alive.
 }
-```
 
-The host can explicitly terminate all shell processes with:
-
-```go
+// On shutdown, the host terminates every shell:
 app.Shutdown()
 ```
-
-> **Note:** The application layer supports the lifecycle required for persistent sessions, but persistence across client connections depends on the host/daemon implementation. Unix-socket transport and automatic reattachment should only be considered available once implemented by the host.
-
-## Bug Fixes
-
-This version fixes several correctness, stability, and lifecycle issues discovered during development.
-
-### Configuration
-
-* **Panic on custom config** — if `config.toml` omitted `[keybinds]`, the decoded keybind map could be nil and writes to it could panic during startup. Configuration handling now safely handles missing keybind configuration.
-
-### Input and shutdown
-
-* **App could hang on exit** — direct `os.Stdin.Read` could block indefinitely after the application had already decided to quit. Input handling was moved away from the application layer so the host controls input delivery and session shutdown.
-* **Input fast-path bug** — bulk-forwarding an entire input buffer could swallow a prefix byte that arrived in the middle of the buffer. Input forwarding now stops before the next prefix byte so prefix commands remain reliable during fast typing and paste operations.
-* **Detach support** — detach is now a distinct lifecycle event from quitting. Detaching does not close the session's `Done()` channel or terminate the shell processes.
-
-### Process and PTY lifecycle
-
-* **Orphaned shell processes** — quitting previously did not reliably terminate spawned shell processes and PTYs. `Manager.Shutdown()` is now exposed through `App.Shutdown()` so the host can explicitly terminate the entire session.
-* **PTY file descriptor leak** — PTY master file descriptors could remain open when shells exited naturally instead of being closed through an explicit pane-close operation.
-
-### Zoom
-
-* **Fake zoom** — `z` previously resized the active pane but did not track its zoom state, making it impossible to restore the previous layout. Zoom is now a real toggle with explicit state tracking.
-* **Zoomed pane resize** — terminal resizing while zoomed now keeps the zoomed pane fullscreen instead of applying the normal layout tree.
-* **Dead zoomed pane** — if a zoomed shell exits, the zoom state is cleared before the layout is restored.
-
-### Concurrency
-
-* **Data race on help state** — help visibility was accessed from multiple execution paths without synchronization. It now uses `atomic.Bool`.
-* **Terminal/output ownership** — terminal output is synchronized through a single buffered writer and mutex, allowing the host to provide the output destination instead of `App` directly owning `os.Stdout`.
-
-### Layout and rendering
-
-* **Status bar disabled but still consumed a row** — `status_bar = false` previously still reserved one terminal row. Pane dimensions now correctly use the full terminal height when the status bar is disabled.
-* **Status bar overflow** — a large number of tabs could cause status-bar content to overlap or wrap. Status rendering now budgets available width and truncates content where necessary.
-* **Help overlay lost on resize** — resizing the terminal previously cleared the help overlay without redrawing it.
-* **Rename prompt lost on resize** — the active rename prompt is now redrawn after terminal resizing.
-* **Banner line count** — banner positioning previously relied on a hardcoded line count. The actual banner contents are now used to determine its dimensions.
-
-## Current Architecture Status
-
-Slat is being developed toward a persistent client/server architecture.
-
-The application/session layer already exposes the core lifecycle required by a daemon:
-
-* `Start(cols, rows)`
-* `SetOutput(io.Writer)`
-* `FeedInput([]byte)`
-* `HandleResize(cols, rows)`
-* `Done()`
-* `DetachRequested()`
-* `Shutdown()`
-
-The remaining host-side responsibilities for full persistence include:
-
-* Unix socket server
-* Client attach protocol
-* Client detach/reattach
-* Session identification
-* Session discovery/listing
-* Routing input/output between clients and sessions
-* Surviving client terminal crashes
-* Daemon lifecycle management
-
-Until those pieces are implemented, Slat should **not** be considered a fully persistent tmux-style daemon.
 
 ## Requirements
 
