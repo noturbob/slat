@@ -1,0 +1,62 @@
+# Publishes the website (docs/) and the signed apt repository (/apt) to
+# GitHub Pages. Repo settings: Pages → Source → "GitHub Actions".
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**", "packaging/apt/**", ".github/workflows/pages.yml"]
+  workflow_dispatch: # also started by release.yml after each release
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download .deb packages from the latest releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p debs
+          for tag in $(gh release list --limit 3 --exclude-drafts --exclude-pre-releases --json tagName -q '.[].tagName'); do
+            gh release download "$tag" --pattern '*.deb' --dir "debs/$tag"
+          done
+
+      - name: Build the site and the apt repository
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+        run: |
+          cp -r docs _site
+          if ! find debs -name '*.deb' | grep -q .; then
+            echo "No released .deb yet; publishing the site only."
+            exit 0
+          fi
+          command -v apt-ftparchive || sudo apt-get install -y apt-utils
+          export GNUPGHOME=$(mktemp -d)
+          echo "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+          key=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
+          packaging/apt/build-repo.sh debs _site/apt "$key"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

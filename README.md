@@ -44,12 +44,17 @@ output included.
 yay -S slat        # or: paru -S slat
 ```
 
-**Debian / Ubuntu:**
+**Debian / Ubuntu** (signed apt repository; `apt upgrade` keeps it current):
 
 ```bash
-curl -LO https://github.com/noturbob/slat/releases/latest/download/slat_linux_amd64.deb
-sudo apt install ./slat_linux_amd64.deb
+curl -fsSL https://noturbob.github.io/slat/apt/slat.gpg | sudo tee /usr/share/keyrings/slat.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/slat.gpg] https://noturbob.github.io/slat/apt stable main" | sudo tee /etc/apt/sources.list.d/slat.list
+sudo apt update && sudo apt install slat
 ```
+
+The repository key's fingerprint is `9040 A503 5BDC A04A 55C3  719A D1A8 1309 D2F2 0668`.
+Or install a single `.deb` without the repository:
+`curl -LO https://github.com/noturbob/slat/releases/latest/download/slat_linux_amd64.deb && sudo apt install ./slat_linux_amd64.deb`
 
 **Fedora / RHEL:**
 
@@ -221,10 +226,13 @@ internal/
   config/        TOML loading and validation
 docs/            the website (GitHub Pages)
 packaging/aur/   the AUR package
+packaging/apt/   builds the signed apt repository
 ```
 
 Releases are built by [GoReleaser](.goreleaser.yaml) when a `v*` tag is pushed:
 binaries, `.deb`, `.rpm` and Arch packages for Linux and macOS on amd64 and arm64.
+The release then republishes the website and the apt repository to GitHub Pages
+([`pages.yml`](.github/workflows/pages.yml)), signed with the `APT_GPG_PRIVATE_KEY` secret.
 
 `make test` runs `go vet` and the tests with the race detector. The tests in
 `internal/app` drive real shells through splits, closes, overlays and
