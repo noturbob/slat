@@ -11,6 +11,7 @@ A terminal multiplexer with tiling panes, tabs and workspaces, written in Go.
 [![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-blue?style=flat-square)](#requirements)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-support%20slat-ff5e5b?style=flat-square&logo=ko-fi&logoColor=white)](https://ko-fi.com/bobbyanthene)
 
 [Website](https://noturbob.github.io/slat/) · [Install](#install) · [Keys](#keys) · [Configuration](#configuration) · [How it works](#how-it-works)
 
@@ -251,6 +252,11 @@ workspace changes and check what a terminal would display.
 
 - Go 1.23+ to build
 - Linux or macOS
+
+## Support
+
+slat is free and always will be. If it saves you time, you can
+[buy me a coffee on Ko-fi](https://ko-fi.com/bobbyanthene).
 
 ## License
 
