@@ -9,6 +9,6 @@ pkgbase = slat
 	makedepends = go
 	depends = glibc
 	source = slat-0.2.0.tar.gz::https://github.com/noturbob/slat/archive/refs/tags/v0.2.0.tar.gz
-	sha256sums = SKIP
+	sha256sums = 9f3850f706ddf04ac8ddb116ae3f9726c8fdc5b96c584bccc0c34c5dd056eab0
 
 pkgname = slat

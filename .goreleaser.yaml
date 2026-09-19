@@ -51,7 +51,6 @@ nfpms:
         dst: /usr/share/doc/slat/config.example.toml
 
 changelog:
-  sort: asc
   filters:
     exclude: ["^docs:", "^test:"]
 
