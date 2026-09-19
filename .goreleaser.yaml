@@ -1,5 +1,6 @@
 # Release build: `git tag v0.2.0 && git push origin v0.2.0` runs this in CI.
-# Local dry run: goreleaser release --snapshot --clean
+# Local dry run: goreleaser release --snapshot --clean --skip=docker
+# (snapshots load one platform at a time, which rejects the image's index annotations)
 version: 2
 project_name: slat
 
