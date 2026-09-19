@@ -1,0 +1,6 @@
+# Demo media for the README and website: kept in the repo, but left out of
+# source archives (GitHub "Source code" downloads, Debian's orig tarball),
+# which don't need them.
+assets/demo.gif export-ignore
+docs/demo.mp4 export-ignore
+docs/demo-poster.jpg export-ignore
