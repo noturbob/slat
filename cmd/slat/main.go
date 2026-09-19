@@ -33,7 +33,13 @@ func socketPath() string {
 	if dir == "" {
 		dir = os.TempDir()
 	}
-	return filepath.Join(dir, fmt.Sprintf("slat-%d.sock", os.Getuid()))
+	name := fmt.Sprintf("slat-%d.sock", os.Getuid())
+	// Socket paths can't exceed 104 bytes (macOS; 108 on Linux), and a
+	// long $TMPDIR would otherwise fail with "bind: invalid argument".
+	if p := filepath.Join(dir, name); len(p) < 104 {
+		return p
+	}
+	return filepath.Join("/tmp", name)
 }
 
 func main() {
