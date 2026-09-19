@@ -52,6 +52,19 @@ nfpms:
       - src: slat.1
         dst: /usr/share/man/man1/slat.1
 
+# Container image on ghcr.io (shows in the repo's Packages section).
+dockers_v2:
+  - images: [ghcr.io/noturbob/slat]
+    tags: ["v{{ .Version }}", latest]
+    platforms: [linux/amd64, linux/arm64]
+    labels:
+      org.opencontainers.image.source: https://github.com/noturbob/slat
+    annotations:
+      "index,manifest:org.opencontainers.image.source": https://github.com/noturbob/slat
+      "index,manifest:org.opencontainers.image.description": "slat terminal multiplexer: try it with docker run -it ghcr.io/noturbob/slat"
+      "index,manifest:org.opencontainers.image.licenses": MIT
+      "index,manifest:org.opencontainers.image.version": "{{ .Version }}"
+
 changelog:
   filters:
     exclude: ["^docs:", "^test:"]

@@ -45,6 +45,7 @@ output included.
 | Arch Linux | [package from the latest release](#arch-linux) |
 | Fedora / RHEL | [one `dnf` command](#fedora--rhel) |
 | macOS, anything with Go | [`go install`](#with-go) |
+| Try it without installing | [Docker](#try-it-in-docker) |
 
 Every package comes for both `amd64` and `arm64`.
 
@@ -127,6 +128,16 @@ make install    # into $(go env GOPATH)/bin
 ```
 
 </details>
+
+### Try it in Docker
+
+```bash
+docker run -it --rm ghcr.io/noturbob/slat
+```
+
+The shells run inside the container, not on your machine, and the container
+stops when you detach, so this is for trying slat out. Install it natively for
+real use. (The image is published from the next release onwards.)
 
 ### First run
 
