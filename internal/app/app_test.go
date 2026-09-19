@@ -162,3 +162,42 @@ func TestOverlaysSwallowEscapeSequences(t *testing.T) {
 	a.FeedInput([]byte("echo ok\r"))
 	waitFor(t, term, "slat$ echo ok", 1) // no stray "[A"/"[B" before it
 }
+
+func TestScrollMode(t *testing.T) {
+	a, term := start(t)
+	a.FeedInput([]byte("for i in $(seq 1 200); do echo row-$i; done\r"))
+	waitFor(t, term, "row-200", 1)
+
+	a.FeedInput([]byte{prefix, '['})
+	waitFor(t, term, "SCROLL 0/", 1)
+	a.FeedInput([]byte("g")) // oldest line
+	waitFor(t, term, "row-1\n", 1)
+	waitGone(t, term, "row-200")
+
+	// New output doesn't move a scrolled-back view.
+	a.mu.Lock()
+	a.manager.ActivePane().Write([]byte("echo fresh-output\r"))
+	a.mu.Unlock()
+	time.Sleep(300 * time.Millisecond)
+	waitFor(t, term, "row-1\n", 1)
+	waitGone(t, term, "fresh-output")
+
+	// Search down from the top, then up again with N.
+	a.FeedInput([]byte("?row-150\r"))
+	waitFor(t, term, "row-150", 1)
+	waitGone(t, term, "row-1\n")
+	a.FeedInput([]byte("/ROW-99\r")) // capitals: case-sensitive, no match
+	waitFor(t, term, "not found: ROW-99", 1)
+
+	a.FeedInput([]byte("q"))
+	waitGone(t, term, "SCROLL")
+	waitFor(t, term, "fresh-output", 2)
+
+	// Keys typed in scroll mode never reach the shell.
+	a.FeedInput([]byte{prefix, '['})
+	waitFor(t, term, "SCROLL", 1)
+	a.FeedInput([]byte("kkjj\x1b[A\x1b"))
+	waitGone(t, term, "SCROLL")
+	a.FeedInput([]byte("echo clean\r"))
+	waitFor(t, term, "slat$ echo clean", 1)
+}

@@ -26,6 +26,7 @@ output included.
 - **Panes** — split left/right or top/bottom, move between them by direction, swap, resize, zoom
 - **Tabs and workspaces** — group tabs into named workspaces, rename them in place
 - **Detach and reattach** — `d` disconnects; running `slat` from any terminal reattaches
+- **Scroll mode** — page back through each pane's output and search it, vim-style
 - **Every pane keeps its own screen** — `clear`, vim or htop in one pane never touch another, and nothing is lost when you split, close or switch
 - **Fast** — only changed cells are sent to your terminal; half a million lines of output render in about a quarter of a second
 - **New panes open where you are** — a split starts in the directory of the pane you split from (Linux)
@@ -66,6 +67,7 @@ every key inside slat.
 | `=` | Equalize all sizes |
 | `z` | Zoom the pane to full size (toggle) |
 | `x` | Close the pane |
+| `[` or PageUp | Scroll mode (see below) |
 
 ### Tabs
 
@@ -93,6 +95,26 @@ every key inside slat.
 | `q` | Quit — ends every shell |
 | `?` | Show all keys |
 
+### Scroll mode
+
+Prefix then `[` (or PageUp) shows the active pane's earlier output. The view
+stays put while new output arrives. Your mouse wheel scrolls too, in terminals
+that send arrow keys for it.
+
+| Key | Action |
+| --- | --- |
+| `k` `j`, arrows | Up / down a line |
+| `Ctrl-U` `Ctrl-D`, `u` `d` | Up / down half a page |
+| `Ctrl-B` `Ctrl-F`, PageUp PageDown, `b` `f` space | Up / down a page |
+| `g` `G`, Home End | Oldest output / live screen |
+| `/` `?` | Search up / down (a query with no capitals ignores case) |
+| `n` `N` | Next match in the same / opposite direction |
+| `q`, Esc | Leave scroll mode |
+
+Each pane keeps 2000 lines by default (`scrollback` in the config). Full-screen
+programs like vim and less use their own screen and add nothing to it, and
+`clear` wipes it, as in most terminals.
+
 In a rename prompt: <kbd>Enter</kbd> saves, <kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd>
 cancels, <kbd>Ctrl</kbd>+<kbd>U</kbd> clears.
 
@@ -108,6 +130,7 @@ Every setting is optional:
 prefix     = "C-a"        # Ctrl + a letter, or C-\ C-] C-^ C-_
 shell      = "/bin/zsh"   # default: $SHELL
 status_bar = true
+scrollback = 5000         # lines kept per pane; 0 turns it off
 
 [keybinds]
 split-vertical   = "|"
@@ -177,8 +200,7 @@ workspace changes and check what a terminal would display.
 
 ## Limitations
 
-- No scrollback or copy mode yet: use your program's own paging (`less`, vim)
-  for long output.
+- Scroll mode can't select and copy text yet.
 - Mouse events aren't passed to programs in panes.
 - Windows isn't supported.
 

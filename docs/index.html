@@ -237,6 +237,7 @@
       <div class="facts">
         <div><h3>Every pane has its own screen</h3><p>slat emulates a terminal per pane, so <code>clear</code>, vim or htop in one pane never touches its neighbours, and nothing is lost when you split, close or switch tabs.</p></div>
         <div><h3>Only what changed is sent</h3><p>Each frame is compared with the last and only the differing cells reach your terminal. Fast over SSH; half a million lines of output take a quarter of a second.</p></div>
+        <div><h3>Scroll back and search</h3><p>Every pane keeps its recent output. Page back through it with vim keys or your mouse wheel, and search it with <kbd>/</kbd> while new output keeps arriving underneath.</p></div>
         <div><h3>New panes start where you are</h3><p>A split opens in the directory of the pane you split from, not back in your home folder.</p></div>
         <div><h3>One setting file, checked</h3><p>A typo or an unknown key in your config is reported the moment you run <code>slat</code>, instead of being silently ignored.</p></div>
       </div>
@@ -256,6 +257,7 @@
             <tr><td><kbd>+</kbd> <kbd>-</kbd> <kbd>=</kbd></td><td>Grow, shrink, equalize</td></tr>
             <tr><td><kbd>z</kbd></td><td>Zoom the pane to full size</td></tr>
             <tr><td><kbd>x</kbd></td><td>Close the pane</td></tr>
+            <tr><td><kbd>[</kbd></td><td>Scroll back through the pane's output, and search it with <kbd>/</kbd></td></tr>
           </table>
           <table>
             <caption>Session</caption>

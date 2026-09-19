@@ -82,6 +82,7 @@ const (
 	ActionQuit
 	ActionDetach
 	ActionSendPrefix
+	ActionScrollMode
 )
 
 // Binding describes one configurable command.
@@ -108,6 +109,7 @@ var Bindings = []Binding{
 	{"equalize", "Panes", "Equalize sizes", ActionEqualizeLayout},
 	{"zoom", "Panes", "Toggle zoom", ActionZoom},
 	{"close-pane", "Panes", "Close pane", ActionClosePane},
+	{"scroll-mode", "Panes", "Scroll back (q exits)", ActionScrollMode},
 	{"new-tab", "Tabs", "New tab", ActionNewTab},
 	{"next-tab", "Tabs", "Next tab", ActionNextTab},
 	{"prev-tab", "Tabs", "Previous tab", ActionPrevTab},

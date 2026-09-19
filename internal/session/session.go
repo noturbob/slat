@@ -31,21 +31,22 @@ type Manager struct {
 	Workspaces         []*Workspace
 	ActiveWorkspaceIdx int
 
-	shell    string
-	onChange func()
-	nextPane int
-	nextWS   int
+	shell      string
+	scrollback int
+	onChange   func()
+	nextPane   int
+	nextWS     int
 }
 
-// NewManager creates a session manager whose panes run shell; onChange is
-// passed through to pane.New.
-func NewManager(shell string, onChange func()) *Manager {
-	return &Manager{shell: shell, onChange: onChange}
+// NewManager creates a session manager whose panes run shell and keep
+// scrollback lines of history; onChange is passed through to pane.New.
+func NewManager(shell string, scrollback int, onChange func()) *Manager {
+	return &Manager{shell: shell, scrollback: scrollback, onChange: onChange}
 }
 
 func (m *Manager) newPane(rows, cols int, dir string) (*pane.Pane, error) {
 	m.nextPane++
-	p, err := pane.New(m.nextPane, rows, cols, m.shell, dir, m.onChange)
+	p, err := pane.New(m.nextPane, rows, cols, m.shell, dir, m.scrollback, m.onChange)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start %s: %w", m.shell, err)
 	}

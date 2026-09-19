@@ -154,6 +154,7 @@ func BenchmarkScrolling(b *testing.B) {
 	b.SetBytes(int64(len(data)))
 	for range b.N {
 		term := New(99, 49)
+		term.SetScrollback(2000)
 		for off := 0; off < len(data); off += 4096 {
 			term.Write(data[off:min(off+4096, len(data))])
 		}
@@ -169,6 +170,7 @@ func BenchmarkColoredText(b *testing.B) {
 	b.SetBytes(int64(len(data)))
 	for range b.N {
 		term := New(99, 49)
+		term.SetScrollback(2000)
 		for off := 0; off < len(data); off += 4096 {
 			term.Write(data[off:min(off+4096, len(data))])
 		}

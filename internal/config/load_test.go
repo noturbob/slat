@@ -41,6 +41,7 @@ func TestInvalidConfigsAreRejected(t *testing.T) {
 	for toml, want := range map[string]string{
 		"prefix = \"Ctrl+S\"\n":                     "invalid prefix",
 		"prefix = \"C-[\"\n":                        "Escape key",
+		"scrollback = -5\n":                         "between 0 and",
 		"[keybinds]\nsplit-sideways = \"v\"\n":      "unknown keybind",
 		"[keybinds]\nnew-tab = \"ct\"\n":            "single character",
 		"[keybinds]\nnew-tab = \"a\"\nquit = \"a\"": "bound to both",

@@ -163,6 +163,11 @@ type Terminal struct {
 	strEsc  bool   // saw ESC inside a string; waiting for '\'
 
 	replies []byte
+
+	// Scrollback ring; see history.go.
+	hist                        [][]Cell
+	histStart, histLen, histMax int
+	pushed                      int
 }
 
 // New returns a cols x rows terminal.
@@ -298,6 +303,9 @@ func (t *Terminal) Resize(cols, rows int) {
 		mainShift = max(t.saved[0].y-(rows-1), 0)
 	} else {
 		altShift = 0
+	}
+	for _, l := range t.main[:mainShift] {
+		t.pushHistory(l) // rows pushed off the top by a shrink
 	}
 	t.main, t.alt = resize(t.main, mainShift), resize(t.alt, altShift)
 	t.lines = t.main
@@ -1021,6 +1029,11 @@ func (t *Terminal) scrollUp(top, bot, n int) {
 		return
 	}
 	region := t.lines[top : bot+1]
+	if top == 0 && !t.altScreen {
+		for _, l := range region[:n] {
+			t.pushHistory(l)
+		}
+	}
 	rotate(region, n)
 	for _, l := range region[len(region)-n:] {
 		fillCells(l, t.blank())
@@ -1083,10 +1096,12 @@ func (t *Terminal) eraseDisplay(mode int) {
 			t.fill(y, 0, t.cols)
 		}
 		t.fill(c.y, 0, c.x+1)
-	case 2, 3:
+	case 2:
 		for y := 0; y < t.rows; y++ {
 			t.fill(y, 0, t.cols)
 		}
+	case 3: // xterm: erase the scrollback only
+		t.ClearHistory()
 	}
 	c.wrapNext = false
 }

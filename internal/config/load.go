@@ -14,10 +14,11 @@ import (
 
 // Config holds the full application configuration.
 type Config struct {
-	Prefix    string            `toml:"prefix"`
-	Shell     string            `toml:"shell"`
-	StatusBar bool              `toml:"status_bar"`
-	Keybinds  map[string]string `toml:"keybinds"`
+	Prefix     string            `toml:"prefix"`
+	Shell      string            `toml:"shell"`
+	StatusBar  bool              `toml:"status_bar"`
+	Scrollback int               `toml:"scrollback"` // lines of history per pane
+	Keybinds   map[string]string `toml:"keybinds"`
 
 	PrefixByte byte `toml:"-"` // parsed Prefix
 }
@@ -29,6 +30,7 @@ func DefaultConfig() *Config {
 		PrefixByte: 0x13,
 		Shell:      defaultShell(),
 		StatusBar:  true,
+		Scrollback: 2000,
 		Keybinds:   defaultKeybinds(),
 	}
 }
@@ -64,6 +66,8 @@ func defaultKeybinds() map[string]string {
 		// Session
 		"detach": "d",
 		"quit":   "q",
+		// Scrollback
+		"scroll-mode": "[",
 	}
 }
 
@@ -124,6 +128,12 @@ func (cfg *Config) merge(user *Config, md toml.MetaData) error {
 		cfg.Shell = user.Shell
 	}
 	cfg.StatusBar = user.StatusBar
+	if md.IsDefined("scrollback") {
+		if n := user.Scrollback; n < 0 || n > 1_000_000 {
+			return fmt.Errorf("scrollback = %d: must be between 0 and 1000000", n)
+		}
+		cfg.Scrollback = user.Scrollback
+	}
 
 	known := map[string]bool{}
 	for _, b := range input.Bindings {

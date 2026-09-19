@@ -42,10 +42,10 @@ type Pane struct {
 	onChange  func()
 }
 
-// New starts shell on a rows x cols PTY in directory dir ("" = inherit).
-// onChange is called from another goroutine whenever the pane's screen
-// changes or its process exits.
-func New(id int, rows, cols int, shell, dir string, onChange func()) (*Pane, error) {
+// New starts shell on a rows x cols PTY in directory dir ("" = inherit),
+// keeping scrollback lines of history. onChange is called from another
+// goroutine whenever the pane's screen changes or its process exits.
+func New(id int, rows, cols int, shell, dir string, scrollback int, onChange func()) (*Pane, error) {
 	rows, cols = max(rows, 1), max(cols, 1)
 	if shell == "" {
 		shell = "/bin/sh"
@@ -61,6 +61,7 @@ func New(id int, rows, cols int, shell, dir string, onChange func()) (*Pane, err
 		onChange = func() {}
 	}
 	p := &Pane{ID: id, cmd: cmd, pty: pt, term: vt.New(cols, rows), onChange: onChange}
+	p.term.SetScrollback(scrollback)
 	go p.readLoop()
 	go p.waitLoop()
 	return p, nil
@@ -169,17 +170,46 @@ func (p *Pane) Rect() (row, col, rows, cols int) {
 func (p *Pane) Draw(screen [][]vt.Cell) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.draw(screen, p.term.Line)
+}
+
+// DrawHistory is Draw for a view scrolled back through history: the view's
+// first row is the line with absolute index top (see History).
+func (p *Pane) DrawHistory(screen [][]vt.Cell, top int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.draw(screen, func(y int) []vt.Cell { return p.term.LineAt(top + y) })
+}
+
+func (p *Pane) draw(screen [][]vt.Cell, line func(y int) []vt.Cell) {
 	cols, rows := p.term.Size()
 	for y := 0; y < rows && p.row+y < len(screen); y++ {
 		if p.row+y < 0 || p.col >= len(screen[p.row+y]) {
 			continue
 		}
 		dst := screen[p.row+y][p.col:]
-		copy(dst[:min(cols, len(dst))], p.term.Line(y))
-		if n := len(dst); n < cols && dst[n-1].Wide == vt.WideHead {
+		dst = dst[:min(cols, len(dst))]
+		n := copy(dst, line(y)) // history lines may be shorter or longer
+		if n > 0 && dst[n-1].Wide == vt.WideHead {
 			dst[n-1] = vt.Cell{Style: dst[n-1].Style} // clipped wide char
 		}
 	}
+}
+
+// History reports the absolute line indexes of the oldest line kept and of
+// the screen's first row, and whether a full-screen program is using the
+// alternate screen (which has no history).
+func (p *Pane) History() (first, screenTop int, alt bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.term.FirstLine(), p.term.Pushed(), p.term.AltScreen()
+}
+
+// Search finds query in the pane's history and screen; see vt.Search.
+func (p *Pane) Search(query string, from, dir int) (abs, col, width int, ok bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.term.Search(query, from, dir)
 }
 
 // Cursor returns where the pane's cursor is (relative to the pane) and

@@ -48,6 +48,7 @@ type App struct {
 	screen      *ui.Screen
 	cols, rows  int
 	zoomed      *pane.Pane
+	scroll      *scroll // scroll mode, or nil
 	showHelp    bool
 	prompt      *prompt
 	message     string
@@ -77,7 +78,7 @@ func New(cfg *config.Config) (*App, error) {
 		handler:  input.NewHandler(cfg.PrefixByte, cfg.Keybinds),
 		screen:   ui.NewScreen(io.Discard),
 	}
-	a.manager = session.NewManager(cfg.Shell, a.markDirty)
+	a.manager = session.NewManager(cfg.Shell, cfg.Scrollback, a.markDirty)
 	return a, nil
 }
 
@@ -201,6 +202,9 @@ func (a *App) render() {
 	if !slices.Contains(visible, a.zoomed) {
 		a.zoomed = nil // closed, or on another tab
 	}
+	if a.scroll != nil && a.scroll.pane != a.manager.ActivePane() {
+		a.scroll = nil // closed, or focus moved
+	}
 	area := a.paneArea()
 	var borders []layout.Rect
 	if a.zoomed != nil {
@@ -224,7 +228,11 @@ func (a *App) render() {
 
 	active := a.manager.ActivePane()
 	for _, p := range visible {
-		p.Draw(frame.Lines)
+		if a.scroll != nil && p == a.scroll.pane {
+			a.drawScroll(frame)
+		} else {
+			p.Draw(frame.Lines)
+		}
 	}
 	ar, ac, arows, acols := active.Rect()
 	ui.DrawBorders(frame, borders, layout.Rect{Row: ar, Col: ac, Rows: arows, Cols: acols})
@@ -233,6 +241,9 @@ func (a *App) render() {
 	cur := ui.Cursor{X: ac + x, Y: ar + y, Visible: vis, Style: style}
 	var modes ui.Modes
 	modes.AppCursor, modes.BracketedPaste = active.Modes()
+	if a.scroll != nil {
+		cur.Visible = false
+	}
 
 	if a.cfg.StatusBar {
 		ui.DrawStatusBar(frame, a.rows-1, a.status(now))
@@ -267,6 +278,8 @@ func (a *App) status(now time.Time) ui.Status {
 		st.Badge = "PREFIX"
 	case a.showHelp:
 		st.Badge = "HELP"
+	case a.scroll != nil:
+		st.Badge = a.scrollBadge()
 	case a.zoomed != nil:
 		st.Badge = "ZOOM"
 	}
@@ -299,9 +312,25 @@ func (a *App) FeedInput(buf []byte) {
 			return
 		}
 
+		if a.scroll != nil {
+			if b != a.handler.PrefixByte() {
+				i = a.scrollKey(buf, i)
+				continue
+			}
+			a.scroll = nil // any command leaves scroll mode
+		}
+
 		if b == 0x1b && a.handler.IsPrefixActive() {
-			// prefix + arrow key selects a pane in that direction.
+			// prefix + arrow key selects a pane in that direction;
+			// prefix + PageUp scrolls back.
 			a.handler.CancelPrefix()
+			if i+3 < len(buf) && string(buf[i+1:i+4]) == "[5~" {
+				if a.enterScroll() {
+					a.scrollBy(-max(a.scrollRows()-1, 1))
+				}
+				i += 3
+				continue
+			}
 			if i+2 < len(buf) && (buf[i+1] == '[' || buf[i+1] == 'O') {
 				if act, ok := arrowActions[buf[i+2]]; ok {
 					a.do(act, b)
@@ -425,6 +454,10 @@ func (a *App) do(action input.Action, b byte) bool {
 		a.manager.PrevWorkspace()
 	case input.ActionRenameWorkspace:
 		a.startPrompt("rename workspace", a.manager.ActiveWorkspace().Name, a.manager.RenameWorkspace)
+
+	case input.ActionScrollMode:
+		a.zoomed = nil
+		a.enterScroll()
 
 	// ── Session
 	case input.ActionShowHelp:

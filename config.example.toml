@@ -12,6 +12,9 @@ shell = "/bin/bash"
 # Show the status bar at the bottom
 status_bar = true
 
+# Lines of output each pane keeps for scroll mode (0 turns it off)
+scrollback = 2000
+
 # Keybindings (activated after pressing the prefix key)
 # All keybinds are single characters pressed AFTER the prefix key.
 # Set only the ones you want to change; the rest keep their defaults.
@@ -34,6 +37,7 @@ resize-shrink    = "-"    # Shrink the active pane
 equalize         = "="    # Reset all pane sizes to equal
 close-pane       = "x"    # Close the active pane
 zoom             = "z"    # Toggle zoom (fullscreen) for active pane
+scroll-mode      = "["    # Scroll back through output (q to leave)
 
 # ── Tabs ──
 new-tab          = "c"    # Create a new tab
