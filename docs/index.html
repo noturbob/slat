@@ -130,6 +130,16 @@
     font: 600 .85rem/1.3 var(--sans); pointer-events: none;
   }
   .term:focus .overlay-hint { display: none; }
+  .help { position: absolute; inset: 0 0 26px; display: grid; place-items: center; background: rgba(14, 26, 31, .55); }
+  .help[hidden] { display: none; }
+  .help-box { background: #262626; color: #d0d0d0; border: 1px solid var(--cyan); border-radius: 8px; padding: 18px 24px; max-width: calc(100% - 32px); }
+  .help-title { color: var(--cyan); font-weight: 700; text-align: center; margin-bottom: 12px; }
+  .help-cols { display: flex; flex-wrap: wrap; gap: 4px 36px; }
+  .help dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 0; }
+  .help dt { color: #fff; font-weight: 700; }
+  .help dd { margin: 0; }
+  .help-foot { margin-top: 14px; color: #9a9a9a; text-align: center; }
+  .status .msg { color: var(--green); padding: 0 8px; overflow: hidden; text-overflow: ellipsis; }
   .keys { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
   .keys button {
     font: 500 .88rem var(--sans); color: var(--ink); background: #fff;
@@ -211,12 +221,35 @@
       <div class="demo">
         <div class="demo-hint">
           <span>This is slat, running in your browser. Click it, then press <kbd>Ctrl</kbd> <kbd>S</kbd> followed by <kbd>v</kbd>.</span>
-          <span>Prefix, then <kbd>?</kbd> in the real thing lists every key.</span>
+          <span>Prefix, then <kbd>?</kbd> lists the keys.</span>
         </div>
         <div class="term" id="term" tabindex="0" role="application" aria-label="Interactive slat demo. Press Control S, then a command key.">
           <div class="panes" id="panes"></div>
           <div class="status" id="status"></div>
           <div class="overlay-hint">Click to try it</div>
+          <div class="help" id="help" hidden>
+            <div class="help-box">
+              <div class="help-title">slat · keys after Ctrl-S</div>
+              <div class="help-cols">
+                <dl>
+                  <dt>v</dt><dd>Split left / right</dd>
+                  <dt>h</dt><dd>Split top / bottom</dd>
+                  <dt>o O</dt><dd>Next / previous pane</dd>
+                  <dt>arrows</dt><dd>Pane in that direction</dd>
+                  <dt>z</dt><dd>Zoom pane</dd>
+                  <dt>x</dt><dd>Close pane</dd>
+                </dl>
+                <dl>
+                  <dt>c</dt><dd>New tab</dd>
+                  <dt>n p</dt><dd>Next / previous tab</dd>
+                  <dt>1-9</dt><dd>Go to tab</dd>
+                  <dt>X</dt><dd>Close tab</dd>
+                  <dt>?</dt><dd>This help</dd>
+                </dl>
+              </div>
+              <div class="help-foot">The real slat also has workspaces, scrollback search, resizing and detach.<br>Press any key to close.</div>
+            </div>
+          </div>
         </div>
         <div class="keys" aria-label="Demo commands">
           <button type="button" data-key="v">Split left / right<kbd>v</kbd></button>
@@ -226,6 +259,7 @@
           <button type="button" data-key="x">Close pane<kbd>x</kbd></button>
           <button type="button" data-key="c">New tab<kbd>c</kbd></button>
           <button type="button" data-key="n">Next tab<kbd>n</kbd></button>
+          <button type="button" data-key="?">Help<kbd>?</kbd></button>
         </div>
       </div>
     </section>
@@ -338,7 +372,17 @@
   const tabs = [{ name: "code", root: { dir: "v", a: left, b: right } }, { name: "server", root: newPane() }];
   tabs[0].active = right.pane;
   tabs[1].active = tabs[1].root.pane;
-  let tabIdx = 0, prefix = false, zoomed = null;
+  let tabIdx = 0, prefix = false, zoomed = null, msg = "", msgTimer = 0;
+  const helpEl = document.getElementById("help");
+  // Keys the real slat has that this demo doesn't simulate.
+  const realOnly = { s: "swap panes", "+": "resize", "-": "resize", "=": "equalize", ",": "rename tab",
+    W: "workspaces", w: "workspaces", P: "workspaces", $: "rename workspace", "[": "scrollback search",
+    d: "detach", q: "quit", k: "pane above", j: "pane below", H: "pane left", L: "pane right" };
+  function note(text) {
+    msg = text;
+    clearTimeout(msgTimer);
+    msgTimer = setTimeout(() => { msg = ""; render(); }, 2600);
+  }
   const tab = () => tabs[tabIdx];
 
   const leaves = (n) => n.pane ? [n.pane] : [...leaves(n.a), ...leaves(n.b)];
@@ -406,7 +450,13 @@
       case "c": tabs.push({ name: "shell", root: newPane() }); tabIdx = tabs.length - 1; tab().active = tab().root.pane; zoomed = null; break;
       case "n": tabIdx = (tabIdx + 1) % tabs.length; zoomed = null; break;
       case "p": tabIdx = (tabIdx - 1 + tabs.length) % tabs.length; zoomed = null; break;
-      default: if (/^[1-9]$/.test(key) && +key <= tabs.length) { tabIdx = +key - 1; zoomed = null; }
+      case "X":
+        if (tabs.length === 1) { note("that's the last tab; the real slat would end the session here"); break; }
+        tabs.splice(tabIdx, 1); tabIdx = Math.max(0, tabIdx - 1); zoomed = null; break;
+      case "?": helpEl.hidden = false; break;
+      default:
+        if (/^[1-9]$/.test(key)) { if (+key <= tabs.length) { tabIdx = +key - 1; zoomed = null; } }
+        else if (realOnly[key]) note(`${key}: ${realOnly[key]} works in the real slat; this demo covers the basics (press ? for its keys)`);
     }
   }
 
@@ -425,11 +475,16 @@
     const ps = leaves(tab().root);
     const tabsHTML = tabs.map((t, i) => `<span class="tab${i === tabIdx ? " on" : ""}">${i + 1}:${t.name}</span>`).join("");
     const badge = prefix ? "PREFIX" : zoomed ? "ZOOM" : "";
-    statusEl.innerHTML = `<span class="ws">main</span><span class="sep">│</span>${tabsHTML}<span class="grow"></span><span class="badge">${badge}</span><span>pane ${ps.indexOf(tab().active) + 1}/${ps.length}</span>`;
+    const middle = msg ? `<span class="msg">${esc(msg)}</span>` : tabsHTML;
+    statusEl.innerHTML = `<span class="ws">main</span><span class="sep">│</span>${middle}<span class="grow"></span><span class="badge">${badge}</span><span>pane ${ps.indexOf(tab().active) + 1}/${ps.length}</span>`;
   }
 
   const arrows = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -1, ArrowDown: 1 };
   term.addEventListener("keydown", (e) => {
+    if (!helpEl.hidden) {
+      if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
+      e.preventDefault(); helpEl.hidden = true; prefix = false; render(); return;
+    }
     if (e.ctrlKey && (e.key === "s" || e.key === "S")) { e.preventDefault(); prefix = !prefix; render(); return; }
     if (e.metaKey || e.altKey || (e.ctrlKey && e.key !== "c")) return;
     const p = tab().active;
@@ -445,7 +500,8 @@
     render();
   });
   document.querySelectorAll(".keys button").forEach((b) =>
-    b.addEventListener("click", () => { command(b.dataset.key); render(); }));
+    b.addEventListener("click", () => { command(b.dataset.key); render(); term.focus(); }));
+  helpEl.addEventListener("click", () => { helpEl.hidden = true; render(); });
 
   document.getElementById("copy").addEventListener("click", async (e) => {
     try {
