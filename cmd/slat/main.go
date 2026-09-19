@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -43,6 +44,11 @@ func socketPath() string {
 }
 
 func main() {
+	// Release builds stamp app.Version; `go install …@v1.2.3` records the
+	// module version in the binary instead.
+	if info, ok := debug.ReadBuildInfo(); ok && app.Version == "dev" && info.Main.Version != "(devel)" && info.Main.Version != "" {
+		app.Version = info.Main.Version
+	}
 	args := os.Args[1:]
 	switch {
 	case len(args) == 0:

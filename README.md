@@ -38,11 +38,35 @@ output included.
 
 ## Install
 
+**Arch Linux** (AUR):
+
+```bash
+yay -S slat        # or: paru -S slat
+```
+
+**Debian / Ubuntu:**
+
+```bash
+curl -LO https://github.com/noturbob/slat/releases/latest/download/slat_linux_amd64.deb
+sudo apt install ./slat_linux_amd64.deb
+```
+
+**Fedora / RHEL:**
+
+```bash
+sudo dnf install https://github.com/noturbob/slat/releases/latest/download/slat_linux_amd64.rpm
+```
+
+**With Go** (any platform):
+
 ```bash
 go install github.com/noturbob/slat/cmd/slat@latest
 ```
 
-or from a checkout:
+**macOS / other Linux:** grab a binary from the [releases page](https://github.com/noturbob/slat/releases).
+Every package above also comes in an `arm64` build.
+
+**From a checkout:**
 
 ```bash
 make build      # ./bin/slat
@@ -196,7 +220,11 @@ internal/
   input/         prefix key and command table
   config/        TOML loading and validation
 docs/            the website (GitHub Pages)
+packaging/aur/   the AUR package
 ```
+
+Releases are built by [GoReleaser](.goreleaser.yaml) when a `v*` tag is pushed:
+binaries, `.deb`, `.rpm` and Arch packages for Linux and macOS on amd64 and arm64.
 
 `make test` runs `go vet` and the tests with the race detector. The tests in
 `internal/app` drive real shells through splits, closes, overlays and

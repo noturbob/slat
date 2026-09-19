@@ -76,6 +76,7 @@
     background: var(--ink); color: var(--mist); border-radius: 10px; padding: 12px 12px 12px 18px;
     font: 500 .9rem/1.4 var(--mono); overflow-x: auto;
   }
+  .also { margin: 14px 0 0; font-size: .95rem; color: var(--ink-soft); }
   .cmd span::before { content: "$ "; color: var(--green); }
   .cmd button {
     flex: none; font: 600 .8rem var(--sans); color: var(--ink); background: var(--cyan);
@@ -205,6 +206,7 @@
       <div class="install" id="install">
         <div class="cmd"><span id="install-cmd">go install github.com/noturbob/slat/cmd/slat@latest</span><button type="button" id="copy">Copy</button></div>
       </div>
+      <p class="also">On Arch: <code>yay -S slat</code>. On Debian, Ubuntu and Fedora: a <a href="https://github.com/noturbob/slat/releases/latest">.deb or .rpm from the latest release</a>.</p>
 
       <div class="demo">
         <div class="demo-hint">

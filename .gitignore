@@ -18,3 +18,5 @@ pkg/
 # Slat binary
 /slat
 /slat.exe
+# goreleaser output
+/dist/

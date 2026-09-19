@@ -19,8 +19,11 @@ import (
 	"github.com/noturbob/slat/internal/ui"
 )
 
-// Version is shown on the startup banner.
-const Version = "v0.2.0"
+// Version is shown on the startup banner and by `slat --version`. Release
+// builds set it from the git tag:
+//
+//	go build -ldflags "-X github.com/noturbob/slat/internal/app.Version=v1.2.3"
+var Version = "dev"
 
 const (
 	frameInterval = 8 * time.Millisecond // caps redraws at ~120/s

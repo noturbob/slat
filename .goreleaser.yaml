@@ -1,0 +1,61 @@
+# Release build: `git tag v0.2.0 && git push origin v0.2.0` runs this in CI.
+# Local dry run: goreleaser release --snapshot --clean
+version: 2
+project_name: slat
+
+builds:
+  - main: ./cmd/slat
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X github.com/noturbob/slat/internal/app.Version=v{{ .Version }}
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, README.md, config.example.toml]
+
+checksum:
+  name_template: checksums.txt
+
+# .deb, .rpm and Arch packages, attached to each GitHub release.
+nfpms:
+  - package_name: slat
+    # No version in the name, so releases/latest/download/slat_linux_amd64.deb
+    # always points at the newest package.
+    file_name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    homepage: https://noturbob.github.io/slat/
+    maintainer: noturbob <142563527+noturbob@users.noreply.github.com>
+    description: |-
+      Terminal multiplexer with tiling panes, tabs and workspaces.
+      Sessions keep running after you close the window; detach and
+      reattach any time. Includes scrollback with search.
+    license: MIT
+    section: utils
+    formats: [deb, rpm, archlinux]
+    bindir: /usr/bin
+    contents:
+      # Debian keeps the license as doc/<pkg>/copyright; Arch and RPM use licenses/.
+      - src: LICENSE
+        dst: /usr/share/doc/slat/copyright
+        packager: deb
+      - src: LICENSE
+        dst: /usr/share/licenses/slat/LICENSE
+        packager: rpm
+      - src: LICENSE
+        dst: /usr/share/licenses/slat/LICENSE
+        packager: archlinux
+      - src: config.example.toml
+        dst: /usr/share/doc/slat/config.example.toml
+
+changelog:
+  sort: asc
+  filters:
+    exclude: ["^docs:", "^test:"]
+
+release:
+  github:
+    owner: noturbob
+    name: slat
