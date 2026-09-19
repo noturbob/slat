@@ -1,0 +1,120 @@
+.TH SLAT 1 "September 2026" "slat" "User Commands"
+.SH NAME
+slat \- terminal multiplexer with tiling panes, tabs and workspaces
+.SH SYNOPSIS
+.B slat
+.br
+.B slat
+.RB [ \-\-help | \-\-version ]
+.SH DESCRIPTION
+.B slat
+splits one terminal into panes, tabs and workspaces.
+The first run starts a background daemon that owns every shell;
+.B slat
+itself is only a view onto it.
+Closing the terminal, or losing an SSH connection, detaches instead of
+ending the session, and running
+.B slat
+again reattaches with every pane as it was.
+Attaching from a second terminal takes over from the first.
+.PP
+Each pane has its own terminal emulator, so full\-screen programs stay
+inside their pane, and each keeps a scrollback history that can be
+searched.
+The session ends when its last shell exits.
+.SH OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Show a short usage summary.
+.TP
+.BR \-v ", " \-\-version
+Print the version.
+.SH KEYS
+Commands are given by pressing the prefix key, by default
+.BR Ctrl\-S ,
+followed by one key.
+Every other key goes to the program in the active pane.
+Press the prefix twice to send it to the program.
+Prefix then
+.B ?
+shows all bindings.
+.TP
+.BR v ", " h
+Split the pane left/right or top/bottom.
+.TP
+.BR o ", " O
+Focus the next or previous pane.
+.TP
+.RB "arrow keys, " k ", " j ", " H ", " L
+Focus the pane in that direction.
+.TP
+.BR + ", " \- ", " =
+Grow, shrink or equalize panes.
+.TP
+.B z
+Zoom the active pane to full size, or back.
+.TP
+.B x
+Close the pane.
+.TP
+.BR [ " or PageUp"
+Scroll mode: move with
+.BR k / j ,
+PageUp/PageDown or
+.BR g / G ,
+search with
+.B /
+and
+.BR ? ,
+repeat with
+.BR n / N ,
+leave with
+.B q
+or Escape.
+.TP
+.BR c ", " n ", " p ", " 1 \- 9 ", " , ", " X
+New tab, next, previous, go to tab N, rename, close.
+.TP
+.BR W ", " w ", " P ", " $
+New workspace, next, previous, rename.
+.TP
+.B d
+Detach; the session keeps running.
+.TP
+.B q
+Quit and end every shell.
+.SH FILES
+.TP
+.I $XDG_CONFIG_HOME/slat/config.toml
+Configuration (prefix key, shell, status bar, scrollback length and key
+bindings); defaults to
+.IR ~/.config/slat/config.toml .
+Errors in it are reported when
+.B slat
+starts.
+See
+.I /usr/share/doc/slat/config.example.toml
+for every setting.
+.TP
+.I $XDG_RUNTIME_DIR/slat\-UID.sock
+The daemon's socket, accessible only to its user; the temporary directory
+is used when
+.B XDG_RUNTIME_DIR
+is unset.
+The daemon writes its errors to the
+.I .log
+file next to it.
+.SH ENVIRONMENT
+.TP
+.B SHELL
+The shell started in new panes, unless the configuration sets one.
+.TP
+.B SLAT
+Set inside panes;
+.B slat
+refuses to start when it is set, to avoid nesting a session in itself.
+.SH SEE ALSO
+.BR tmux (1),
+.BR screen (1)
+.PP
+https://github.com/noturbob/slat

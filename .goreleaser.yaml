@@ -15,7 +15,7 @@ builds:
 archives:
   - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    files: [LICENSE, README.md, config.example.toml]
+    files: [LICENSE, README.md, config.example.toml, slat.1]
 
 checksum:
   name_template: checksums.txt
@@ -49,6 +49,8 @@ nfpms:
         packager: archlinux
       - src: config.example.toml
         dst: /usr/share/doc/slat/config.example.toml
+      - src: slat.1
+        dst: /usr/share/man/man1/slat.1
 
 changelog:
   filters:
