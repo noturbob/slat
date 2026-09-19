@@ -38,11 +38,14 @@ output included.
 
 ## Install
 
-**Arch Linux** (AUR):
+**Arch Linux:**
 
 ```bash
-yay -S slat        # or: paru -S slat
+curl -LO https://github.com/noturbob/slat/releases/latest/download/slat_linux_amd64.pkg.tar.zst
+sudo pacman -U slat_linux_amd64.pkg.tar.zst
 ```
+
+An AUR package (`yay -S slat`) is on the way.
 
 **Debian / Ubuntu** (signed apt repository; `apt upgrade` keeps it current):
 
