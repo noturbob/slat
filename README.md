@@ -16,6 +16,10 @@ A terminal multiplexer with tiling panes, tabs and workspaces, written in Go.
 
 </div>
 
+<p align="center">
+  <img src="assets/demo.gif" alt="slat splitting a terminal into panes, running htop and go test side by side, scrolling back and searching the output, then detaching and reattaching with everything still running" width="100%">
+</p>
+
 ---
 
 slat tiles one terminal into panes, tabs and workspaces. Your shells live in a
@@ -28,7 +32,7 @@ output included.
 - **Detach and reattach** — `d` disconnects; running `slat` from any terminal reattaches
 - **Scroll mode** — page back through each pane's output and search it, vim-style
 - **Every pane keeps its own screen** — `clear`, vim or htop in one pane never touch another, and nothing is lost when you split, close or switch
-- **Fast** — only changed cells are sent to your terminal; half a million lines of output render in about a quarter of a second
+- **Fast** — only changed cells are sent to your terminal; half a million lines of output render in about a third of a second
 - **New panes open where you are** — a split starts in the directory of the pane you split from (Linux)
 - **One checked config file** — mistakes are reported when you run `slat`, not ignored
 

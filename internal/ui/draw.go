@@ -12,10 +12,10 @@ import (
 var (
 	styleBar       = vt.Style{Fg: vt.Indexed(252), Bg: vt.Indexed(235)}
 	styleWorkspace = vt.Style{Fg: vt.Indexed(114), Bg: vt.Indexed(235), Attrs: vt.Bold}
-	styleTab       = vt.Style{Fg: vt.Indexed(245), Bg: vt.Indexed(236)}
+	styleTab       = vt.Style{Fg: vt.Indexed(250), Bg: vt.Indexed(236)}
 	styleTabActive = vt.Style{Fg: vt.Indexed(231), Bg: vt.Indexed(25), Attrs: vt.Bold}
 	styleBadge     = vt.Style{Fg: vt.Indexed(16), Bg: vt.Indexed(114), Attrs: vt.Bold}
-	styleDim       = vt.Style{Fg: vt.Indexed(244), Bg: vt.Indexed(235)}
+	styleDim       = vt.Style{Fg: vt.Indexed(248), Bg: vt.Indexed(235)} // ≥4.5:1 on 235
 	styleBorder    = vt.Style{Fg: vt.Indexed(240)}
 	styleBorderOn  = vt.Style{Fg: vt.Indexed(44), Attrs: vt.Bold}
 	styleBox       = vt.Style{Fg: vt.Indexed(44), Bg: vt.Indexed(235)}

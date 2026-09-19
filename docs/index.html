@@ -143,6 +143,11 @@
   h3 { margin: 0 0 6px; font: 650 1.05rem/1.3 var(--sans); }
   p { margin: 0 0 1em; }
 
+  .film {
+    display: block; width: 100%; margin-top: 28px; border-radius: 14px; background: var(--term);
+    aspect-ratio: 16 / 9; box-shadow: 0 30px 60px -30px rgba(20, 35, 42, .55);
+  }
+
   ol.steps { list-style: none; padding: 0; margin: 36px 0 0; display: grid; gap: 28px;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); counter-reset: step; }
   ol.steps li { counter-increment: step; border-top: 2px solid var(--ink); padding-top: 16px; }
@@ -220,6 +225,15 @@
       </div>
     </section>
 
+    <section class="band" id="watch">
+      <h2>The real thing, in 19 seconds</h2>
+      <div class="prose">
+        <p>Recorded from an actual slat session: a split, htop next to a test run, scrolling back through the output to find a test, then closing slat and coming back to find it all still running.</p>
+      </div>
+      <video class="film" src="demo.mp4" poster="demo-poster.jpg" autoplay muted loop playsinline controls preload="metadata"
+        aria-label="slat demo: splitting panes, running htop and go test, searching scrollback, detaching and reattaching"></video>
+    </section>
+
     <section class="band">
       <h2>Close the window. Nothing stops.</h2>
       <div class="prose">
@@ -236,7 +250,7 @@
       <h2>Small, and careful about the details</h2>
       <div class="facts">
         <div><h3>Every pane has its own screen</h3><p>slat emulates a terminal per pane, so <code>clear</code>, vim or htop in one pane never touches its neighbours, and nothing is lost when you split, close or switch tabs.</p></div>
-        <div><h3>Only what changed is sent</h3><p>Each frame is compared with the last and only the differing cells reach your terminal. Fast over SSH; half a million lines of output take a quarter of a second.</p></div>
+        <div><h3>Only what changed is sent</h3><p>Each frame is compared with the last and only the differing cells reach your terminal. Fast over SSH; half a million lines of output take about a third of a second.</p></div>
         <div><h3>Scroll back and search</h3><p>Every pane keeps its recent output. Page back through it with vim keys or your mouse wheel, and search it with <kbd>/</kbd> while new output keeps arriving underneath.</p></div>
         <div><h3>New panes start where you are</h3><p>A split opens in the directory of the pane you split from, not back in your home folder.</p></div>
         <div><h3>One setting file, checked</h3><p>A typo or an unknown key in your config is reported the moment you run <code>slat</code>, instead of being silently ignored.</p></div>
@@ -437,6 +451,13 @@
   });
 
   render();
+
+  // No autoplaying film for people who asked for reduced motion.
+  const film = document.querySelector(".film");
+  if (film && matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    film.removeAttribute("autoplay");
+    film.pause();
+  }
 })();
 </script>
 </body>
