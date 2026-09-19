@@ -3,6 +3,7 @@
 
 # The main prefix key for all commands.
 # Use "C-a", "C-b", "C-s", etc. for Ctrl key combinations.
+# Mistakes in this file are reported when you run slat.
 prefix = "C-s"
 
 # Shell to launch (defaults to $SHELL or /bin/sh)
@@ -13,7 +14,10 @@ status_bar = true
 
 # Keybindings (activated after pressing the prefix key)
 # All keybinds are single characters pressed AFTER the prefix key.
-# Number keys 1-9 are always bound to "jump to tab N".
+# Set only the ones you want to change; the rest keep their defaults.
+# Giving a default's key to another command unbinds the default.
+# "" unbinds a command. 1-9 jump to tab N, ? shows help, and the
+# arrow keys select panes.
 [keybinds]
 # ── Panes ──
 split-vertical   = "v"    # Split pane left/right
@@ -46,4 +50,4 @@ rename-workspace = "$"    # Rename the current workspace
 
 # ── Session ──
 quit             = "q"    # Quit slat
-detach           = "d"    # Detach (same as quit for now)
+detach           = "d"    # Detach: disconnect, keep the session running

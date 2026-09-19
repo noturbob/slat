@@ -1,12 +1,15 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"sort"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/noturbob/slat/internal/input"
 )
 
 // Config holds the full application configuration.
@@ -15,15 +18,18 @@ type Config struct {
 	Shell     string            `toml:"shell"`
 	StatusBar bool              `toml:"status_bar"`
 	Keybinds  map[string]string `toml:"keybinds"`
+
+	PrefixByte byte `toml:"-"` // parsed Prefix
 }
 
 // DefaultConfig returns sensible defaults.
 func DefaultConfig() *Config {
 	return &Config{
-		Prefix:    "C-s",
-		Shell:     defaultShell(),
-		StatusBar: true,
-		Keybinds:  defaultKeybinds(),
+		Prefix:     "C-s",
+		PrefixByte: 0x13,
+		Shell:      defaultShell(),
+		StatusBar:  true,
+		Keybinds:   defaultKeybinds(),
 	}
 }
 
@@ -68,43 +74,91 @@ func defaultShell() string {
 	return "/bin/sh"
 }
 
-// Load reads the config from ~/.config/slat/config.toml, falling back to defaults.
+// Path returns the config file location, honoring $XDG_CONFIG_HOME.
+func Path() string {
+	dir := os.Getenv("XDG_CONFIG_HOME")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		dir = filepath.Join(home, ".config")
+	}
+	return filepath.Join(dir, "slat", "config.toml")
+}
+
+// Load reads the config file, falling back to defaults for anything unset.
+// A config that can't be honored exactly is an error, not a silent guess.
 func Load() (*Config, error) {
 	cfg := DefaultConfig()
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return cfg, nil // use defaults
-	}
-	path := filepath.Join(home, ".config", "slat", "config.toml")
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+	path := Path()
+	if path == "" {
 		return cfg, nil
 	}
-	if _, err := toml.DecodeFile(path, cfg); err != nil {
-		return nil, fmt.Errorf("config parse error: %w", err)
+	user := &Config{StatusBar: true}
+	md, err := toml.DecodeFile(path, user)
+	if errors.Is(err, os.ErrNotExist) {
+		return cfg, nil
 	}
-
-	// BUG FIX: if the user's config.toml has no [keybinds] table at all,
-	// toml.DecodeFile leaves cfg.Keybinds nil. Writing into a nil map below
-	// would panic on startup. Initialize it first.
-	if cfg.Keybinds == nil {
-		cfg.Keybinds = map[string]string{}
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-
-	// Fill in any missing keybinds with defaults
-	defaults := defaultKeybinds()
-	for k, v := range defaults {
-		if _, ok := cfg.Keybinds[k]; !ok {
-			cfg.Keybinds[k] = v
-		}
-	}
-	if cfg.Shell == "" {
-		cfg.Shell = defaultShell()
-	}
-	// BUG FIX: an empty/whitespace prefix in a malformed config used to
-	// silently fall through to a semi-arbitrary default deep in ParsePrefix.
-	// Make the fallback explicit here instead.
-	if strings.TrimSpace(cfg.Prefix) == "" {
-		cfg.Prefix = "C-s"
+	if err := cfg.merge(user, md); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return cfg, nil
+}
+
+func (cfg *Config) merge(user *Config, md toml.MetaData) error {
+	if len(md.Undecoded()) > 0 {
+		return fmt.Errorf("unknown setting %q", md.Undecoded()[0].String())
+	}
+	if user.Prefix != "" {
+		b, err := input.ParsePrefix(user.Prefix)
+		if err != nil {
+			return err
+		}
+		cfg.Prefix, cfg.PrefixByte = user.Prefix, b
+	}
+	if user.Shell != "" {
+		cfg.Shell = user.Shell
+	}
+	cfg.StatusBar = user.StatusBar
+
+	known := map[string]bool{}
+	for _, b := range input.Bindings {
+		known[b.Name] = true
+	}
+	// The user's bindings win: a default whose key the user has given to
+	// another command is dropped rather than left fighting over the key.
+	taken := map[string]string{}
+	names := make([]string, 0, len(user.Keybinds))
+	for name := range user.Keybinds {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		key := user.Keybinds[name]
+		if !known[name] {
+			return fmt.Errorf("unknown keybind %q", name)
+		}
+		if key == "" {
+			continue // explicitly unbound
+		}
+		if len(key) != 1 {
+			return fmt.Errorf("keybind %s = %q: must be a single character", name, key)
+		}
+		if other, ok := taken[key]; ok {
+			return fmt.Errorf("key %q is bound to both %s and %s", key, other, name)
+		}
+		taken[key] = name
+	}
+	for name, key := range cfg.Keybinds {
+		if _, set := user.Keybinds[name]; set {
+			cfg.Keybinds[name] = user.Keybinds[name]
+		} else if _, clash := taken[key]; clash {
+			delete(cfg.Keybinds, name)
+		}
+	}
+	return nil
 }

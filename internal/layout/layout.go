@@ -4,12 +4,17 @@ import (
 	"github.com/noturbob/slat/internal/pane"
 )
 
-// Rect represents a rectangular region of the terminal.
+// Rect is a rectangular region of the screen, 0-based.
 type Rect struct {
 	Row  int
 	Col  int
 	Rows int
 	Cols int
+}
+
+// Contains reports whether the cell (row, col) lies inside r.
+func (r Rect) Contains(row, col int) bool {
+	return row >= r.Row && row < r.Row+r.Rows && col >= r.Col && col < r.Col+r.Cols
 }
 
 // Node is a binary tree node for tiling layout.
@@ -23,11 +28,7 @@ type Node struct {
 
 // NewLeaf creates a leaf node wrapping a single pane.
 func NewLeaf(p *pane.Pane) *Node {
-	return &Node{
-		Split: pane.SplitNone,
-		Pane:  p,
-		Ratio: 0.5,
-	}
+	return &Node{Split: pane.SplitNone, Pane: p, Ratio: 0.5}
 }
 
 // SplitNode splits a leaf node into two children in the given direction.
@@ -41,53 +42,45 @@ func SplitNode(n *Node, dir pane.SplitDirection, newPane *pane.Pane) {
 	n.Children[1] = NewLeaf(newPane)
 }
 
-// Apply recursively assigns positions and sizes to all panes in the tree.
-func Apply(n *Node, area Rect) {
+// splitSizes divides total cells between two children and a 1-cell border.
+// Each side gets at least 1 cell whenever total leaves room for it.
+func splitSizes(total int, ratio float64) (first, second int) {
+	first = int(float64(total) * ratio)
+	first = min(max(first, 1), total-2)
+	first = max(first, 1)
+	second = max(total-first-1, 0)
+	return first, second
+}
+
+// Split returns the rects of the two children of a split of area, plus the
+// 1-cell-wide border between them.
+func Split(area Rect, dir pane.SplitDirection, ratio float64) (a, b, border Rect) {
+	if dir == pane.SplitVertical {
+		l, r := splitSizes(area.Cols, ratio)
+		return Rect{area.Row, area.Col, area.Rows, l},
+			Rect{area.Row, area.Col + l + 1, area.Rows, r},
+			Rect{area.Row, area.Col + l, area.Rows, 1}
+	}
+	t, bt := splitSizes(area.Rows, ratio)
+	return Rect{area.Row, area.Col, t, area.Cols},
+		Rect{area.Row + t + 1, area.Col, bt, area.Cols},
+		Rect{area.Row + t, area.Col, 1, area.Cols}
+}
+
+// Apply assigns positions and sizes to every pane in the tree and returns
+// the border segments separating them.
+func Apply(n *Node, area Rect) (borders []Rect) {
 	if n == nil {
-		return
+		return nil
 	}
-
 	if n.Pane != nil {
-		// Leaf node - assign the area to the pane
-		rows := uint16(area.Rows)
-		cols := uint16(area.Cols)
-		if rows < 1 {
-			rows = 1
-		}
-		if cols < 1 {
-			cols = 1
-		}
-		n.Pane.SetPosition(area.Row, area.Col)
-		_ = n.Pane.Resize(rows, cols)
-		return
+		n.Pane.SetRect(area.Row, area.Col, area.Rows, area.Cols)
+		return nil
 	}
-
-	// Internal node - split the area between children
-	switch n.Split {
-	case pane.SplitVertical:
-		leftCols := int(float64(area.Cols) * n.Ratio)
-		if leftCols < 1 {
-			leftCols = 1
-		}
-		rightCols := area.Cols - leftCols - 1 // -1 for the border column
-		if rightCols < 1 {
-			rightCols = 1
-		}
-		Apply(n.Children[0], Rect{area.Row, area.Col, area.Rows, leftCols})
-		Apply(n.Children[1], Rect{area.Row, area.Col + leftCols + 1, area.Rows, rightCols})
-
-	case pane.SplitHorizontal:
-		topRows := int(float64(area.Rows) * n.Ratio)
-		if topRows < 1 {
-			topRows = 1
-		}
-		bottomRows := area.Rows - topRows - 1 // -1 for the border row
-		if bottomRows < 1 {
-			bottomRows = 1
-		}
-		Apply(n.Children[0], Rect{area.Row, area.Col, topRows, area.Cols})
-		Apply(n.Children[1], Rect{area.Row + topRows + 1, area.Col, bottomRows, area.Cols})
-	}
+	a, b, border := Split(area, n.Split, n.Ratio)
+	borders = append(borders, border)
+	borders = append(borders, Apply(n.Children[0], a)...)
+	return append(borders, Apply(n.Children[1], b)...)
 }
 
 // FindLeaf returns the leaf node containing the given pane, or nil.
@@ -110,8 +103,7 @@ func FindParent(n *Node, p *pane.Pane) (*Node, int) {
 	if n == nil {
 		return nil, -1
 	}
-	for i := 0; i < 2; i++ {
-		child := n.Children[i]
+	for i, child := range n.Children {
 		if child == nil {
 			continue
 		}
@@ -125,32 +117,27 @@ func FindParent(n *Node, p *pane.Pane) (*Node, int) {
 	return nil, -1
 }
 
-// RemovePane removes a pane from the tree and collapses the parent.
-// Returns the new root (may be nil if tree is now empty).
-func RemovePane(root *Node, p *pane.Pane) *Node {
-	if root == nil {
-		return nil
+// RemovePane removes a pane from the tree, collapsing its parent so the
+// sibling takes over the freed space. It returns the new root (nil when the
+// tree is now empty) and the pane that should receive focus if the removed
+// pane had it: the nearest pane in the sibling's subtree.
+func RemovePane(root *Node, p *pane.Pane) (newRoot *Node, heir *pane.Pane) {
+	if root == nil || root.Pane == p {
+		return nil, nil
 	}
-	// If the root IS the pane leaf
-	if root.Pane == p {
-		return nil
-	}
-
 	parent, idx := FindParent(root, p)
 	if parent == nil {
-		return root
+		return root, nil
 	}
-
-	// The sibling takes the parent's place
-	siblingIdx := 1 - idx
-	sibling := parent.Children[siblingIdx]
-
-	parent.Split = sibling.Split
-	parent.Ratio = sibling.Ratio
-	parent.Pane = sibling.Pane
-	parent.Children = sibling.Children
-
-	return root
+	sibling := parent.Children[1-idx]
+	*parent = *sibling
+	// Moving into the space the removed pane vacated: the closest pane is
+	// on the sibling subtree's edge that faced it.
+	panes := CollectPanes(parent)
+	if idx == 0 {
+		return root, panes[0]
+	}
+	return root, panes[len(panes)-1]
 }
 
 // CollectPanes returns all panes in the tree in left-to-right, top-to-bottom order.
@@ -161,19 +148,13 @@ func CollectPanes(n *Node) []*pane.Pane {
 	if n.Pane != nil {
 		return []*pane.Pane{n.Pane}
 	}
-	var result []*pane.Pane
-	result = append(result, CollectPanes(n.Children[0])...)
-	result = append(result, CollectPanes(n.Children[1])...)
-	return result
+	return append(CollectPanes(n.Children[0]), CollectPanes(n.Children[1])...)
 }
 
 // Equalize recursively resets all split ratios to 0.5.
 func Equalize(n *Node) {
-	if n == nil {
+	if n == nil || n.Pane != nil {
 		return
-	}
-	if n.Pane != nil {
-		return // leaf
 	}
 	n.Ratio = 0.5
 	Equalize(n.Children[0])

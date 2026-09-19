@@ -1,11 +1,16 @@
 package pane
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/creack/pty"
+
+	"github.com/noturbob/slat/internal/vt"
 )
 
 // SplitDirection indicates how a layout node is split.
@@ -17,172 +22,189 @@ const (
 	SplitVertical                  // left/right
 )
 
-// Pane represents a single PTY-backed terminal pane.
+// Pane is a shell running on a PTY, with a terminal emulator that keeps
+// its screen. slat never streams PTY bytes to the real terminal; it paints
+// each pane from its emulator, so a pane's contents survive splits, closes,
+// tab switches and reattaches.
 type Pane struct {
-	ID     int
-	Cmd    *exec.Cmd
-	Pty    *os.File
-	Rows   uint16
-	Cols   uint16
-	Row    int // position in the terminal grid (1-based)
-	Col    int
-	Output chan []byte
-	IsDead bool
-	Zoomed bool
-	mu     sync.Mutex
-	cursor cursorState
+	ID int
+
+	cmd *exec.Cmd
+	pty *os.File
+
+	mu       sync.Mutex
+	term     *vt.Terminal
+	row, col int // top-left position on screen, 0-based
+	dead     bool
+	exited   bool // process reaped
+
+	closeOnce sync.Once
+	onChange  func()
 }
 
-// New creates and starts a new pane with the given shell.
-func New(id int, rows, cols uint16, shell string) (*Pane, error) {
+// New starts shell on a rows x cols PTY in directory dir ("" = inherit).
+// onChange is called from another goroutine whenever the pane's screen
+// changes or its process exits.
+func New(id int, rows, cols int, shell, dir string, onChange func()) (*Pane, error) {
+	rows, cols = max(rows, 1), max(cols, 1)
 	if shell == "" {
 		shell = "/bin/sh"
 	}
 	cmd := exec.Command(shell)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
-	pt, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: rows, Cols: cols})
+	cmd.Dir = dir
+	pt, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
 	if err != nil {
 		return nil, err
 	}
-	p := &Pane{
-		ID:     id,
-		Cmd:    cmd,
-		Pty:    pt,
-		Rows:   rows,
-		Cols:   cols,
-		Output: make(chan []byte, 8192),
+	if onChange == nil {
+		onChange = func() {}
 	}
+	p := &Pane{ID: id, cmd: cmd, pty: pt, term: vt.New(cols, rows), onChange: onChange}
 	go p.readLoop()
 	go p.waitLoop()
 	return p, nil
 }
 
 func (p *Pane) readLoop() {
-	buf := make([]byte, 4096)
+	buf := make([]byte, 64*1024)
 	for {
-		n, err := p.Pty.Read(buf)
-		if err != nil {
-			p.mu.Lock()
-			p.IsDead = true
-			p.mu.Unlock()
-			return
-		}
+		n, err := p.pty.Read(buf)
 		if n > 0 {
-			data := make([]byte, n)
-			copy(data, buf[:n])
-			select {
-			case p.Output <- data:
-			default:
-				// Drop oldest if channel full, then push new
-				select {
-				case <-p.Output:
-				default:
-				}
-				select {
-				case p.Output <- data:
-				default:
-				}
+			p.mu.Lock()
+			p.term.Write(buf[:n])
+			replies := p.term.Replies()
+			p.mu.Unlock()
+			if len(replies) > 0 {
+				p.pty.Write(replies) // answers to cursor-position/device queries
 			}
+			p.onChange()
+		}
+		if err != nil {
+			p.markDead()
+			return
 		}
 	}
 }
 
 func (p *Pane) waitLoop() {
-	if p.Cmd.Process != nil {
-		_ = p.Cmd.Wait()
-	}
+	p.cmd.Wait()
 	p.mu.Lock()
-	wasAlreadyDead := p.IsDead
-	p.IsDead = true
+	p.exited = true
 	p.mu.Unlock()
-	// BUG FIX: previously, if the shell exited on its own (not via
-	// Close()), the PTY master file descriptor was never closed — a real
-	// fd leak for every pane that ran `exit` instead of being force-closed.
-	if !wasAlreadyDead {
-		p.Pty.Close()
-	}
+	p.markDead()
 }
 
-// Write sends input data to the pane's PTY.
+// markDead flags the pane as finished and releases its PTY.
+// Safe to call any number of times from any goroutine.
+func (p *Pane) markDead() {
+	p.closeOnce.Do(func() {
+		p.mu.Lock()
+		p.dead = true
+		p.mu.Unlock()
+		p.pty.Close()
+		p.onChange()
+	})
+}
+
+// Close ends the pane's program the way closing a terminal window does:
+// SIGHUP to its whole process group, so jobs started from the shell go too.
+// Anything that ignores SIGHUP gets SIGKILL a moment later.
+func (p *Pane) Close() {
+	if p.Dead() {
+		return
+	}
+	pid := p.cmd.Process.Pid
+	syscall.Kill(-pid, syscall.SIGHUP)
+	p.markDead()
+	time.AfterFunc(2*time.Second, func() {
+		p.mu.Lock()
+		exited := p.exited
+		p.mu.Unlock()
+		if !exited {
+			syscall.Kill(-pid, syscall.SIGKILL)
+		}
+	})
+}
+
+// Write sends input to the pane's program.
 func (p *Pane) Write(data []byte) (int, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.IsDead {
+	if p.Dead() {
 		return 0, os.ErrClosed
 	}
-	return p.Pty.Write(data)
+	return p.pty.Write(data)
 }
 
-// Resize changes the PTY window size.
-func (p *Pane) Resize(rows, cols uint16) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.IsDead {
-		return nil
-	}
-	p.Rows = rows
-	p.Cols = cols
-	p.cursor.clamp(int(rows), int(cols))
-	return pty.Setsize(p.Pty, &pty.Winsize{Rows: rows, Cols: cols})
-}
-
-// AdvanceCursor updates the pane's tracked cursor position by interpreting
-// the control/escape sequences in data, as if it had just been written to
-// a rows x cols terminal starting at the pane's current tracked position.
-//
-// The host calls this after writing a pane's output to the real terminal,
-// so it can explicitly reposition the physical cursor to match this pane's
-// own idea of where its cursor is before the next write -- see cursorState
-// for why that explicit tracking is necessary.
-func (p *Pane) AdvanceCursor(data []byte) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.cursor.feed(int(p.Rows), int(p.Cols), data)
-}
-
-// CursorRC returns the pane's tracked cursor position, 0-based and
-// relative to the pane's own top-left cell.
-func (p *Pane) CursorRC() (row, col int) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.cursor.row, p.cursor.col
-}
-
-// SetPosition sets the pane's top-left position in the terminal.
-func (p *Pane) SetPosition(row, col int) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.Row = row
-	p.Col = col
-}
-
-// Rect returns the pane's position and size as a single consistent snapshot.
-// BUG FIX: callers used to read p.Row/p.Col/p.Rows/p.Cols directly without
-// locking, racing with SetPosition/Resize. Use this instead.
-func (p *Pane) Rect() (row, col int, rows, cols uint16) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.Row, p.Col, p.Rows, p.Cols
-}
-
-// Dead returns whether the pane's process has exited.
+// Dead reports whether the pane's program has exited or been closed.
 func (p *Pane) Dead() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.IsDead
+	return p.dead
 }
 
-// Close terminates the pane's process and closes the PTY.
-func (p *Pane) Close() {
+// SetRect moves and resizes the pane. The program only gets SIGWINCH when
+// the size actually changes, so calling this on every frame is cheap.
+func (p *Pane) SetRect(row, col, rows, cols int) {
+	rows, cols = max(rows, 1), max(cols, 1)
 	p.mu.Lock()
-	if p.IsDead {
-		p.mu.Unlock()
+	defer p.mu.Unlock()
+	p.row, p.col = row, col
+	if c, r := p.term.Size(); p.dead || (c == cols && r == rows) {
 		return
 	}
-	p.IsDead = true
-	p.mu.Unlock()
-	p.Pty.Close()
-	if p.Cmd.Process != nil {
-		_ = p.Cmd.Process.Kill()
+	p.term.Resize(cols, rows)
+	pty.Setsize(p.pty, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
+}
+
+// Rect returns the pane's position (0-based) and size.
+func (p *Pane) Rect() (row, col, rows, cols int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	cols, rows = p.term.Size()
+	return p.row, p.col, rows, cols
+}
+
+// Draw copies the pane's screen into screen (rows of cells) at the pane's
+// position, clipped to its bounds.
+func (p *Pane) Draw(screen [][]vt.Cell) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	cols, rows := p.term.Size()
+	for y := 0; y < rows && p.row+y < len(screen); y++ {
+		if p.row+y < 0 || p.col >= len(screen[p.row+y]) {
+			continue
+		}
+		dst := screen[p.row+y][p.col:]
+		copy(dst[:min(cols, len(dst))], p.term.Line(y))
+		if n := len(dst); n < cols && dst[n-1].Wide == vt.WideHead {
+			dst[n-1] = vt.Cell{Style: dst[n-1].Style} // clipped wide char
+		}
 	}
+}
+
+// Cursor returns where the pane's cursor is (relative to the pane) and
+// how it should look.
+func (p *Pane) Cursor() (x, y int, visible bool, style int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	x, y = p.term.Cursor()
+	return x, y, p.term.CursorVisible() && !p.dead, p.term.CursorStyle()
+}
+
+// Modes reports the input modes the program has enabled: application
+// cursor keys (DECCKM) and bracketed paste.
+func (p *Pane) Modes() (appCursor, bracketedPaste bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.term.AppCursor(), p.term.BracketedPaste()
+}
+
+// Cwd returns the working directory of the pane's shell, or "" if the
+// platform doesn't expose it (only Linux's /proc does).
+func (p *Pane) Cwd() string {
+	dir, err := os.Readlink(fmt.Sprintf("/proc/%d/cwd", p.cmd.Process.Pid))
+	if err != nil {
+		return ""
+	}
+	return dir
 }

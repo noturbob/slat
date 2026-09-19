@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"golang.org/x/term"
@@ -12,70 +13,83 @@ import (
 	"github.com/noturbob/slat/internal/proto"
 )
 
-// Run connects to the daemon at sockPath and attaches an interactive
-// session: local raw mode, stdin -> daemon, daemon output -> stdout.
-// It returns once the daemon detaches or closes the connection.
-func Run(sockPath string) error {
+const (
+	// Entered on attach: alternate screen, so the user's shell scrollback
+	// is untouched and comes back intact on exit.
+	enterScreen = "\x1b[?1049h"
+	// Undo anything the session may have left set on the terminal.
+	leaveScreen = "\x1b[0m\x1b[?25h\x1b[0 q\x1b[?1l\x1b[?2004l\x1b[r\x1b[?1049l"
+)
+
+// Run attaches this terminal to the daemon at sockPath and returns once the
+// client is detached or the session ends. The terminal is always restored.
+func Run(sockPath string) (detached bool, err error) {
 	conn, err := net.Dial("unix", sockPath)
 	if err != nil {
-		return fmt.Errorf("connect to daemon: %w", err)
+		return false, fmt.Errorf("connect to daemon: %w", err)
 	}
 	defer conn.Close()
 
-	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	fd := int(os.Stdin.Fd())
+	oldState, err := term.MakeRaw(fd)
 	if err != nil {
-		return fmt.Errorf("failed to enter raw mode: %w", err)
+		return false, fmt.Errorf("stdin is not a terminal: %w", err)
 	}
-	defer term.Restore(int(os.Stdin.Fd()), oldState)
+	os.Stdout.WriteString(enterScreen)
+	defer func() {
+		os.Stdout.WriteString(leaveScreen)
+		term.Restore(fd, oldState)
+	}()
 
-	cols, rows, err := term.GetSize(int(os.Stdin.Fd()))
-	if err != nil {
-		cols, rows = 80, 24
+	// Frames come from two goroutines (stdin and SIGWINCH); a frame's header
+	// and payload must not interleave with another frame's.
+	var wmu sync.Mutex
+	send := func(t proto.FrameType, payload []byte) error {
+		wmu.Lock()
+		defer wmu.Unlock()
+		return proto.WriteFrame(conn, t, payload)
 	}
-	if err := proto.WriteFrame(conn, proto.TypeHello, proto.EncodeSize(cols, rows)); err != nil {
-		return fmt.Errorf("handshake failed: %w", err)
+	size := func() []byte {
+		cols, rows, err := term.GetSize(fd)
+		if err != nil {
+			cols, rows = 80, 24
+		}
+		return proto.EncodeSize(cols, rows)
 	}
 
-	done := make(chan struct{})
-	var closeOnce chanCloser
+	if err := send(proto.TypeHello, size()); err != nil {
+		return false, fmt.Errorf("handshake failed: %w", err)
+	}
 
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGWINCH)
+	signal.Notify(sigCh, syscall.SIGWINCH, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(sigCh)
 	go func() {
-		for {
-			select {
-			case <-sigCh:
-				c, r, err := term.GetSize(int(os.Stdin.Fd()))
-				if err == nil {
-					_ = proto.WriteFrame(conn, proto.TypeResize, proto.EncodeSize(c, r))
-				}
-			case <-done:
+		for sig := range sigCh {
+			if sig != syscall.SIGWINCH {
+				conn.Close() // unblocks the read loop below; defers restore the terminal
 				return
 			}
+			send(proto.TypeResize, size())
 		}
 	}()
 
-	// stdin -> daemon
 	go func() {
 		buf := make([]byte, 4096)
 		for {
-			n, rerr := os.Stdin.Read(buf)
-			if n > 0 {
-				if werr := proto.WriteFrame(conn, proto.TypeInput, buf[:n]); werr != nil {
-					closeOnce.Close(done)
-					return
-				}
+			n, err := os.Stdin.Read(buf)
+			if n > 0 && send(proto.TypeInput, buf[:n]) != nil {
+				return
 			}
-			if rerr != nil {
-				closeOnce.Close(done)
+			if err != nil {
+				conn.Close()
 				return
 			}
 		}
 	}()
 
-	// daemon -> stdout: raw passthrough, the daemon already sends
-	// fully-rendered ANSI output.
-	buf := make([]byte, 32768)
+	// daemon -> terminal: already fully rendered output.
+	buf := make([]byte, 64*1024)
 	for {
 		n, err := conn.Read(buf)
 		if n > 0 {
@@ -85,23 +99,11 @@ func Run(sockPath string) error {
 			break
 		}
 	}
-	closeOnce.Close(done)
-
-	term.Restore(int(os.Stdin.Fd()), oldState)
-	fmt.Println("slat: detached")
-	return nil
-}
-
-// chanCloser closes a channel exactly once, even if Close is called from
-// multiple goroutines concurrently (stdin reader and the main read loop
-// can both hit an error/EOF at roughly the same time on detach).
-type chanCloser struct {
-	done bool
-}
-
-func (c *chanCloser) Close(ch chan struct{}) {
-	if !c.done {
-		c.done = true
-		close(ch)
+	// The daemon removes its socket before hanging up when the session
+	// ends, so a socket that still answers means we were only detached.
+	c, err := net.Dial("unix", sockPath)
+	if err == nil {
+		c.Close()
 	}
+	return err == nil, nil
 }

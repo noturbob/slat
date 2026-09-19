@@ -1,13 +1,15 @@
+// Package app is the slat session engine: it owns the workspaces, tabs and
+// panes, turns client input into actions, and paints the screen.
 package app
 
 import (
-	"bufio"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/noturbob/slat/internal/config"
 	"github.com/noturbob/slat/internal/input"
@@ -17,58 +19,48 @@ import (
 	"github.com/noturbob/slat/internal/ui"
 )
 
-// App is the slat session engine.
+// Version is shown on the startup banner.
+const Version = "v0.2.0"
+
+const (
+	frameInterval = 8 * time.Millisecond // caps redraws at ~120/s
+	bannerTime    = 700 * time.Millisecond
+	messageTime   = 3 * time.Second
+	maxNameLen    = 32
+)
+
+// App is the slat session engine. It doesn't own a terminal: the host feeds
+// it input and size changes, and it writes rendered output to the writer
+// given to SetOutput. That's what lets a session outlive its client.
 //
-// App owns the workspace/tab/pane state and renders ANSI output to the
-// writer configured with SetOutput. Input is supplied by the host through
-// FeedInput, and terminal resize events are supplied through HandleResize.
-//
-// The App itself does not own a terminal and does not read stdin directly.
-// This allows the same session to survive client detach/reconnect events.
+// Every exported method is safe to call from any goroutine.
 type App struct {
-	cfg     *config.Config
-	manager *session.Manager
-	handler *input.Handler
-
-	cols int
-	rows int
-
+	cfg      *config.Config
+	help     []ui.HelpEntry
 	quit     chan struct{}
 	quitOnce sync.Once
-
-	// detachCh is signalled when the attached client should disconnect,
-	// while the underlying slat session remains alive.
 	detachCh chan struct{}
+	dirty    chan struct{}
 
-	// showHelp controls whether the help overlay is currently visible.
-	showHelp atomic.Bool
+	mu          sync.Mutex // guards everything below
+	manager     *session.Manager
+	handler     *input.Handler
+	screen      *ui.Screen
+	cols, rows  int
+	zoomed      *pane.Pane
+	showHelp    bool
+	prompt      *prompt
+	message     string
+	messageEnd  time.Time
+	bannerEnd   time.Time
+	bannerShown bool
+	attached    bool
+}
 
-	// bannerOnce ensures the startup banner is shown at most once per
-	// session, triggered by the first client attach (see showBanner).
-	bannerOnce sync.Once
-
-	// showingBanner is true for the brief window showBanner is displaying
-	// the startup banner. While true, HandleResize's redraw and
-	// forwardPaneOutput's pane-content writes stand down so they can't
-	// race the banner and overwrite it before it's been shown.
-	showingBanner atomic.Bool
-
-	// zoomedPane tracks the pane currently shown fullscreen, if any.
-	zoomedPane *pane.Pane
-
-	// stdout is the output writer configured by the host.
-	//
-	// All terminal output must go through outMu.
-	stdout *bufio.Writer
-	outMu  sync.Mutex
-
-	// sizeMu protects cols/rows.
-	sizeMu sync.RWMutex
-
-	// Prompt state.
-	promptMode  string
-	promptBuf   []byte
-	promptLabel string
+type prompt struct {
+	label string
+	text  []byte
+	apply func(string)
 }
 
 // New creates a new App from the given config.
@@ -76,1226 +68,447 @@ func New(cfg *config.Config) (*App, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config must not be nil")
 	}
-
-	mgr := session.NewManager(cfg.Shell)
-	handler := input.NewHandler(cfg.Prefix, cfg.Keybinds)
-
-	return &App{
+	a := &App{
 		cfg:      cfg,
-		manager:  mgr,
-		handler:  handler,
+		help:     helpEntries(cfg),
 		quit:     make(chan struct{}),
 		detachCh: make(chan struct{}, 1),
-	}, nil
+		dirty:    make(chan struct{}, 1),
+		handler:  input.NewHandler(cfg.PrefixByte, cfg.Keybinds),
+		screen:   ui.NewScreen(io.Discard),
+	}
+	a.manager = session.NewManager(cfg.Shell, a.markDirty)
+	return a, nil
 }
 
-// SetOutput configures where rendered ANSI output is written.
-//
-// The host should call this exactly once before Start().
+// SetOutput sets where rendered output goes. Call it before Start.
 func (a *App) SetOutput(w io.Writer) {
-	a.outMu.Lock()
-	defer a.outMu.Unlock()
-
-	a.stdout = bufio.NewWriterSize(w, 32768)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.screen = ui.NewScreen(w)
 }
 
-// Done reports when the session has fully ended.
-//
-// This fires when the user quits or when the last pane dies on its own.
-// The host should shut down the session when this channel fires.
-func (a *App) Done() <-chan struct{} {
-	return a.quit
-}
-
-// DetachRequested reports when the user requested a detach.
-//
-// A detach only disconnects the current client. The session itself continues
-// running and can later be attached again.
-func (a *App) DetachRequested() <-chan struct{} {
-	return a.detachCh
-}
-
-// Shutdown terminates every pane's shell process.
-//
-// Call this after Done() fires, or when the host is forcibly shutting down
-// the session.
-func (a *App) Shutdown() {
-	a.manager.Shutdown()
-}
-
-// write atomically writes a string to the configured output.
-func (a *App) write(s string) {
-	a.outMu.Lock()
-	defer a.outMu.Unlock()
-
-	if a.stdout == nil {
-		return
-	}
-
-	a.stdout.WriteString(s)
-	a.stdout.Flush()
-}
-
-// getSize returns the current terminal dimensions.
-func (a *App) getSize() (cols, rows int) {
-	a.sizeMu.RLock()
-	cols = a.cols
-	rows = a.rows
-	a.sizeMu.RUnlock()
-
-	return
-}
-
-// paneArea returns the usable area for panes.
-//
-// If the status bar is enabled, the last terminal row is reserved for it.
-func (a *App) paneArea() (int, int) {
-	cols, rows := a.getSize()
-
-	pRows := rows
-	if a.cfg.StatusBar {
-		pRows = rows - 1
-	}
-
-	if pRows < 1 {
-		pRows = 1
-	}
-
-	if cols < 1 {
-		cols = 1
-	}
-
-	return pRows, cols
-}
-
-// Start initializes the session and starts the background rendering loops.
-//
-// Start does not block.
+// Start creates the first workspace and starts rendering. It doesn't block.
 func (a *App) Start(cols, rows int) error {
-	if cols < 1 {
-		cols = 1
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.cols, a.rows = max(cols, 1), max(rows, 1)
+	if err := a.manager.AddWorkspace(a.paneArea()); err != nil {
+		return err
 	}
-	if rows < 1 {
-		rows = 1
-	}
-
-	a.sizeMu.Lock()
-	a.cols = cols
-	a.rows = rows
-	a.sizeMu.Unlock()
-
-	a.outMu.Lock()
-	outputConfigured := a.stdout != nil
-	a.outMu.Unlock()
-
-	if !outputConfigured {
-		return fmt.Errorf("output writer not configured; call SetOutput before Start")
-	}
-
-	paneRows, paneCols := a.paneArea()
-
-	if err := a.manager.Init(uint16(paneRows), uint16(paneCols)); err != nil {
-		return fmt.Errorf("failed to init session: %w", err)
-	}
-
-	a.applyLayout()
-	a.setupScrollRegion()
-
-	a.write(ui.Clear)
-	a.drawBorders()
-	a.renderStatusBar()
-
-	go a.forwardPaneOutput()
-	go a.statusLoop()
-
+	go a.renderLoop()
 	return nil
 }
 
-// showBanner displays the startup ASCII banner once, the first time a
-// client actually attaches, then hands off to the normal screen.
-//
-// BUG FIX: GetBanner() used to be dead code -- defined but never called
-// from anywhere, so the banner never actually appeared. The natural-looking
-// place to trigger it would be App.Start(), but in the daemon/client
-// architecture the daemon calls Start() (and the session's shells are
-// already running) well before any client has connected; a host's output
-// sink silently discards writes until a client attaches (see
-// daemon/sink.go), so anything written during Start() would never reach
-// anyone. HandleResize's first-ever call corresponds to the first real
-// client attach -- the first point anyone can actually see output -- so
-// that's what triggers this, exactly once per session (bannerOnce), via
-// a.showBanner().
-//
-// While this holds a.showingBanner true, HandleResize's own redraw and
-// forwardPaneOutput's pane-content writes both stand down so they can't
-// race the banner and clobber it before the user has had a chance to see
-// it; see the checks in both.
-func (a *App) showBanner() {
-	defer a.showingBanner.Store(false)
-
-	cols, _ := a.getSize()
-
-	a.write(ui.Clear)
-	a.write(ui.GetBanner(cols))
-	time.Sleep(700 * time.Millisecond)
-
-	// Pick up any resize a client's attach delivered while the banner was
-	// showing, since HandleResize's own redraw was suppressed for it.
-	a.applyLayout()
-	a.setupScrollRegion()
-	a.fullRedraw()
+// Attach is called when a client connects: the new terminal's contents are
+// unknown, so the next frame repaints everything. The first attach of a
+// session shows the startup banner.
+func (a *App) Attach(cols, rows int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.cols, a.rows = max(cols, 1), max(rows, 1)
+	a.attached = true
+	a.screen.Invalidate()
+	if !a.bannerShown {
+		a.bannerShown = true
+		a.bannerEnd = time.Now().Add(bannerTime)
+		time.AfterFunc(bannerTime, a.markDirty)
+	}
+	a.markDirty()
 }
 
-// setupScrollRegion configures the terminal scroll region according to the
-// currently configured pane area.
-func (a *App) setupScrollRegion() {
-	paneRows, _ := a.paneArea()
-
-	a.write(
-		ui.SetScrollRegion(1, paneRows) +
-			"\033[1;1H",
-	)
+// Detach is called when the client disconnects. Panes keep running and
+// are still reaped, but no frames are composed until the next Attach.
+func (a *App) Detach() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.attached = false
 }
 
-// HandleResize applies a new terminal size reported by the attached client.
-//
-// The caller is responsible for obtaining the dimensions from its own
-// terminal/client connection.
+// HandleResize applies a new terminal size reported by the client.
 func (a *App) HandleResize(cols, rows int) {
-	if cols < 1 {
-		cols = 1
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.cols, a.rows = max(cols, 1), max(rows, 1)
+	a.markDirty()
+}
+
+// Done is closed when the session has ended (quit, or the last pane died).
+func (a *App) Done() <-chan struct{} { return a.quit }
+
+// DetachRequested fires when the user asks to detach. The session keeps
+// running; the host should just disconnect the client.
+func (a *App) DetachRequested() <-chan struct{} { return a.detachCh }
+
+// Shutdown terminates every pane's shell.
+func (a *App) Shutdown() {
+	a.doQuit()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.manager.Shutdown()
+}
+
+func (a *App) doQuit() { a.quitOnce.Do(func() { close(a.quit) }) }
+
+func (a *App) markDirty() {
+	select {
+	case a.dirty <- struct{}{}:
+	default:
 	}
-	if rows < 1 {
-		rows = 1
+}
+
+// notify shows msg in the status bar for a few seconds.
+func (a *App) notify(msg string) {
+	a.message = msg
+	a.messageEnd = time.Now().Add(messageTime)
+	time.AfterFunc(messageTime, a.markDirty)
+}
+
+// paneArea is the screen minus the status bar row.
+func (a *App) paneArea() layout.Rect {
+	rows := a.rows
+	if a.cfg.StatusBar && rows > 1 {
+		rows--
 	}
+	return layout.Rect{Rows: rows, Cols: a.cols}
+}
 
-	a.sizeMu.Lock()
-	a.cols = cols
-	a.rows = rows
-	a.sizeMu.Unlock()
+// ─── Rendering ──────────────────────────────────────────────────────────────
 
-	if a.zoomedPane != nil {
-		pRows, pCols := a.paneArea()
+func (a *App) renderLoop() {
+	for {
+		select {
+		case <-a.quit:
+			return
+		case <-a.dirty:
+		}
+		a.mu.Lock()
+		a.render()
+		a.mu.Unlock()
+		time.Sleep(frameInterval) // let bursts of output coalesce into one frame
+	}
+}
 
-		a.zoomedPane.Resize(
-			uint16(pRows),
-			uint16(pCols),
-		)
-		a.zoomedPane.SetPosition(1, 1)
+// render reaps dead panes, lays out the active tab and paints one frame.
+// Everything is derived from the current state on every frame, so no
+// action can leave the screen out of sync by forgetting a redraw step.
+func (a *App) render() {
+	if a.manager.Reap() {
+		a.doQuit()
+		return
+	}
+	visible := a.manager.ActivePanes()
+	if !slices.Contains(visible, a.zoomed) {
+		a.zoomed = nil // closed, or on another tab
+	}
+	area := a.paneArea()
+	var borders []layout.Rect
+	if a.zoomed != nil {
+		visible = []*pane.Pane{a.zoomed}
+		a.zoomed.SetRect(area.Row, area.Col, area.Rows, area.Cols)
 	} else {
-		a.applyLayout()
+		borders = layout.Apply(a.manager.ActiveTab().Layout, area)
 	}
-
-	// The first-ever HandleResize call corresponds to the first real
-	// client attach -- see showBanner for why that's the right trigger
-	// point rather than Start(). a.showingBanner is set synchronously here
-	// (sync.Once.Do runs its function before returning) so the check right
-	// below always sees it if this call is the one that triggered it.
-	a.bannerOnce.Do(func() {
-		a.showingBanner.Store(true)
-		go a.showBanner()
-	})
-
-	if a.showingBanner.Load() {
-		// Panes are already sized correctly above; skip the redraw itself
-		// so this resize (or the one that just triggered the banner)
-		// can't clear it before the user has had a chance to see it.
-		// showBanner will draw against this updated size once it's done.
+	if !a.attached {
 		return
 	}
 
-	a.setupScrollRegion()
-	a.fullRedraw()
-
-	if a.showHelp.Load() {
-		a.renderHelp()
-	}
-
-	if a.promptMode != "" {
-		a.drawPrompt()
-	}
-}
-
-// fullRedraw clears the screen and redraws the application UI.
-func (a *App) fullRedraw() {
-	a.write(ui.Clear)
-	a.drawBorders()
-	a.renderStatusBar()
-}
-
-// visiblePanes returns the panes that should currently be rendered.
-//
-// When zoomed, only the zoomed pane is visible. Otherwise all panes in the
-// active tab are visible.
-func (a *App) visiblePanes() []*pane.Pane {
-	if a.zoomedPane != nil {
-		return []*pane.Pane{a.zoomedPane}
-	}
-
-	return a.manager.GetAllPanesInActiveTab()
-}
-
-// maxOutputBatch caps how much buffered PTY output is drained and written
-// in one go for a single pane before moving on to the next pane in the
-// sweep, so one very chatty pane can't starve its siblings indefinitely.
-const maxOutputBatch = 65536
-
-// drainPaneOutput collects all output currently buffered for a pane into a
-// single byte slice instead of forwarding one small chunk at a time.
-//
-// BUG FIX ("not fluent" under heavy output): the old loop only pulled one
-// queued chunk (up to 4096 bytes, one PTY read's worth) off a pane per
-// sweep, then went back to re-scanning every pane before it would read
-// that same pane again. Under sustained output (e.g. `cat` on a large
-// file) that meant a scroll-region set/restore and a flush for every
-// single 4KB chunk. Draining everything currently queued lets one such
-// batch serve many chunks, cutting the escape-sequence and flush overhead
-// per byte transferred by a large factor.
-func drainPaneOutput(p *pane.Pane) []byte {
-	var out []byte
-
-	for len(out) < maxOutputBatch {
-		select {
-		case chunk := <-p.Output:
-			if len(chunk) > 0 {
-				out = append(out, chunk...)
-			}
-		default:
-			return out
-		}
-	}
-
-	return out
-}
-
-// forwardPaneOutput reads PTY output from all visible panes and forwards it
-// to the configured output writer.
-//
-// This is the only goroutine responsible for forwarding pane content.
-//
-// Every pane is rendered by streaming its raw PTY bytes directly onto the
-// shared real terminal -- there's no per-pane screen buffer to redraw from.
-// That only produces correct output if, immediately before writing a
-// pane's bytes, the real cursor is placed exactly where that pane's shell
-// last left it (tracked via Pane.CursorRC/AdvanceCursor) and the terminal's
-// scroll/wrap boundaries are confined to that pane's rectangle. Without
-// both of those, the previous implementation let the physical cursor drift
-// out of sync with any pane the instant something else touched the shared
-// screen (a focus switch, a split, the status bar) -- surfacing as output
-// landing in the wrong pane, prompts overwriting themselves, and text
-// failing to wrap and instead running into a neighboring pane.
-func (a *App) forwardPaneOutput() {
-	for {
-		select {
-		case <-a.quit:
-			return
-		default:
-		}
-
-		if a.showingBanner.Load() {
-			// Let the startup banner hold the screen; PTY output just
-			// queues up in each pane's buffered Output channel meanwhile.
-			time.Sleep(20 * time.Millisecond)
-			continue
-		}
-
-		panes := a.visiblePanes()
-
-		if len(panes) == 0 {
-			time.Sleep(50 * time.Millisecond)
-			continue
-		}
-
-		totalCols, _ := a.getSize()
-		fullPaneRows, _ := a.paneArea()
-		didWork := false
-
-		for _, p := range panes {
-			if p.Dead() {
-				continue
-			}
-
-			data := drainPaneOutput(p)
-			if len(data) == 0 {
-				continue
-			}
-
-			didWork = true
-
-			pRow, pCol, pRows, pCols := p.Rect()
-			row, col := p.CursorRC()
-
-			// A pane confined horizontally (it has a neighbor to its
-			// left and/or right) needs DECSLRM to stop its content from
-			// auto-wrapping past its own edge into that neighbor; a
-			// full-width pane already wraps at the real terminal edge on
-			// its own, so skip the extra escape sequences for it.
-			fullWidth := pCol == 1 && pCol+int(pCols)-1 == totalCols
-
-			a.outMu.Lock()
-
-			if a.stdout != nil {
-				a.stdout.WriteString(ui.HideCursor)
-				a.stdout.WriteString(ui.SetScrollRegion(pRow, pRow+int(pRows)-1))
-
-				if !fullWidth {
-					a.stdout.WriteString(ui.EnableHMargins())
-					a.stdout.WriteString(ui.SetHMargins(pCol, pCol+int(pCols)-1))
-				}
-
-				a.stdout.WriteString(fmt.Sprintf("\033[%d;%dH", pRow+row, pCol+col))
-				a.stdout.Write(data)
-
-				if !fullWidth {
-					a.stdout.WriteString(ui.SetHMargins(1, totalCols))
-					a.stdout.WriteString(ui.DisableHMargins())
-				}
-
-				a.stdout.WriteString(ui.SetScrollRegion(1, fullPaneRows))
-				a.stdout.Flush()
-			}
-
-			a.outMu.Unlock()
-
-			p.AdvanceCursor(data)
-		}
-
-		if didWork {
-			a.parkCursorAtActivePane()
-		} else {
-			time.Sleep(5 * time.Millisecond)
-		}
-	}
-}
-
-// parkCursorAtActivePane leaves the real, visible terminal cursor resting
-// at the active pane's tracked position.
-//
-// Every pane write above hides the cursor while it repositions across
-// (potentially several) panes' rectangles; without a final step to park it
-// back at the active pane, the physical cursor would end each sweep
-// wherever the last pane to produce output happened to be -- flashing at
-// background panes and generally looking wrong -- instead of steadily
-// sitting where the user is actually typing.
-func (a *App) parkCursorAtActivePane() {
-	if a.showHelp.Load() || a.promptMode != "" {
+	frame := a.screen.NextFrame(a.cols, a.rows)
+	now := time.Now()
+	if now.Before(a.bannerEnd) {
+		hint := fmt.Sprintf("press %s then ? for help", input.PrefixName(a.cfg.PrefixByte))
+		ui.DrawBanner(frame, Version, hint)
+		a.screen.Render(frame, ui.Cursor{}, ui.Modes{})
 		return
 	}
 
-	active := a.manager.GetActivePane()
-	if active == nil {
-		return
+	active := a.manager.ActivePane()
+	for _, p := range visible {
+		p.Draw(frame.Lines)
 	}
+	ar, ac, arows, acols := active.Rect()
+	ui.DrawBorders(frame, borders, layout.Rect{Row: ar, Col: ac, Rows: arows, Cols: acols})
 
-	pRow, pCol, _, _ := active.Rect()
-	row, col := active.CursorRC()
+	x, y, vis, style := active.Cursor()
+	cur := ui.Cursor{X: ac + x, Y: ar + y, Visible: vis, Style: style}
+	var modes ui.Modes
+	modes.AppCursor, modes.BracketedPaste = active.Modes()
 
-	a.outMu.Lock()
-	defer a.outMu.Unlock()
-
-	if a.stdout == nil {
-		return
+	if a.cfg.StatusBar {
+		ui.DrawStatusBar(frame, a.rows-1, a.status(now))
 	}
-
-	a.stdout.WriteString(fmt.Sprintf("\033[%d;%dH", pRow+row, pCol+col))
-	a.stdout.WriteString(ui.ShowCursor)
-	a.stdout.Flush()
+	if a.prompt != nil {
+		x := ui.DrawPrompt(frame, a.rows-1, a.prompt.label, string(a.prompt.text))
+		cur = ui.Cursor{X: x, Y: a.rows - 1, Visible: true}
+	}
+	if a.showHelp {
+		ui.DrawHelp(frame, "slat · keys after "+input.PrefixName(a.cfg.PrefixByte), a.help)
+		cur.Visible = false
+	}
+	a.screen.Render(frame, cur, modes)
 }
 
-// statusLoop periodically updates the status bar and cleans up dead panes.
-func (a *App) statusLoop() {
-	ticker := time.NewTicker(250 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-a.quit:
-			return
-
-		case <-ticker.C:
-			if shouldQuit := a.manager.CleanupDeadPanes(); shouldQuit {
-				a.doQuit()
-				return
-			}
-
-			// If the zoomed pane dies, remove the zoom state before the
-			// manager's layout tree is rendered again.
-			if a.zoomedPane != nil && a.zoomedPane.Dead() {
-				a.zoomedPane = nil
-				a.applyLayout()
-				a.setupScrollRegion()
-				a.fullRedraw()
-			}
-
-			a.renderStatusBar()
-		}
+func (a *App) status(now time.Time) ui.Status {
+	ws := a.manager.ActiveWorkspace()
+	st := ui.Status{
+		Workspace:      ws.Name,
+		WorkspaceIndex: a.manager.ActiveWorkspaceIdx,
+		WorkspaceCount: len(a.manager.Workspaces),
+		ActiveTab:      ws.ActiveTabIdx,
 	}
+	for _, t := range ws.Tabs {
+		st.Tabs = append(st.Tabs, t.Name)
+	}
+	panes := a.manager.ActivePanes()
+	st.PaneIndex = slices.Index(panes, a.manager.ActivePane())
+	st.PaneCount = len(panes)
+	switch {
+	case a.handler.IsPrefixActive():
+		st.Badge = "PREFIX"
+	case a.showHelp:
+		st.Badge = "HELP"
+	case a.zoomed != nil:
+		st.Badge = "ZOOM"
+	}
+	if now.Before(a.messageEnd) {
+		st.Message = a.message
+	}
+	return st
 }
 
-// renderStatusBar draws the status bar without disturbing the PTY cursor.
-func (a *App) renderStatusBar() {
-	if !a.cfg.StatusBar {
-		return
-	}
-
-	cols, rows := a.getSize()
-
-	mode := "NORMAL"
-
-	if a.showHelp.Load() {
-		mode = "HELP"
-	}
-
-	bar := ui.DrawStatusBar(
-		cols,
-		rows,
-		mode,
-		a.manager,
-		a.handler.IsPrefixActive(),
-	)
-
-	if bar != "" {
-		a.write(bar)
-	}
-}
-
-// renderHelp renders the keybind help overlay.
-func (a *App) renderHelp() {
-	cols, rows := a.getSize()
-
-	w := 52
-
-	helpLines := []string{
-		"\u256d" + rep("\u2500", w-2) + "\u256e",
-		"\u2502" + centerPad("SLAT \u2500 Keybind Reference", w-2) + "\u2502",
-		"\u2502" + rep(" ", w-2) + "\u2502",
-
-		"\u251c" + rep("\u2500", w-2) + "\u2524",
-		"\u2502" + centerPad(
-			"\033[1m\033[36m\u2500\u2500 Panes \u2500\u2500\033[0m\033[36m",
-			w-2+14,
-		) + "\u2502",
-
-		"\u2502" + rep(" ", w-2) + "\u2502",
-
-		fmtKey(w, "v", "Split pane vertically"),
-		fmtKey(w, "h", "Split pane horizontally"),
-		fmtKey(w, "o", "Focus next pane"),
-		fmtKey(w, "O", "Focus previous pane"),
-		fmtKey(w, "\u2191 k", "Focus pane above"),
-		fmtKey(w, "\u2193 j", "Focus pane below"),
-		fmtKey(w, "\u2190 H", "Focus pane left"),
-		fmtKey(w, "\u2192 L", "Focus pane right"),
-		fmtKey(w, "s", "Swap pane with next"),
-		fmtKey(w, "+", "Grow pane"),
-		fmtKey(w, "-", "Shrink pane"),
-		fmtKey(w, "=", "Equalize pane sizes"),
-		fmtKey(w, "z", "Toggle zoom pane"),
-		fmtKey(w, "x", "Close pane"),
-
-		"\u2502" + rep(" ", w-2) + "\u2502",
-
-		"\u251c" + rep("\u2500", w-2) + "\u2524",
-		"\u2502" + centerPad(
-			"\033[1m\033[36m\u2500\u2500 Tabs \u2500\u2500\033[0m\033[36m",
-			w-2+14,
-		) + "\u2502",
-
-		"\u2502" + rep(" ", w-2) + "\u2502",
-
-		fmtKey(w, "c", "Create new tab"),
-		fmtKey(w, "n", "Next tab"),
-		fmtKey(w, "p", "Previous tab"),
-		fmtKey(w, "1-9", "Jump to tab #"),
-		fmtKey(w, ",", "Rename current tab"),
-		fmtKey(w, "X", "Close entire tab"),
-
-		"\u2502" + rep(" ", w-2) + "\u2502",
-
-		"\u251c" + rep("\u2500", w-2) + "\u2524",
-		"\u2502" + centerPad(
-			"\033[1m\033[36m\u2500\u2500 Workspaces \u2500\u2500\033[0m\033[36m",
-			w-2+14,
-		) + "\u2502",
-
-		"\u2502" + rep(" ", w-2) + "\u2502",
-
-		fmtKey(w, "W", "Create new workspace"),
-		fmtKey(w, "w", "Next workspace"),
-		fmtKey(w, "P", "Previous workspace"),
-		fmtKey(w, "$", "Rename workspace"),
-
-		"\u2502" + rep(" ", w-2) + "\u2502",
-
-		"\u251c" + rep("\u2500", w-2) + "\u2524",
-		"\u2502" + centerPad(
-			"\033[1m\033[36m\u2500\u2500 Session \u2500\u2500\033[0m\033[36m",
-			w-2+14,
-		) + "\u2502",
-
-		"\u2502" + rep(" ", w-2) + "\u2502",
-
-		fmtKey(w, "?", "Show this help"),
-		fmtKey(w, "d", "Detach (session keeps running)"),
-		fmtKey(w, "q", "Quit slat (ends the session)"),
-
-		fmt.Sprintf(
-			"\u2502  Prefix: %-*s\u2502",
-			w-13,
-			a.cfg.Prefix,
-		),
-
-		"\u2502" + rep(" ", w-2) + "\u2502",
-
-		"\u2502" + centerPad(
-			"Press any key to close",
-			w-2,
-		) + "\u2502",
-
-		"\u2570" + rep("\u2500", w-2) + "\u256f",
-	}
-
-	startRow := (rows - len(helpLines)) / 2
-	startCol := (cols - w) / 2
-
-	if startRow < 1 {
-		startRow = 1
-	}
-
-	if startCol < 1 {
-		startCol = 1
-	}
-
-	a.outMu.Lock()
-	defer a.outMu.Unlock()
-
-	if a.stdout == nil {
-		return
-	}
-
-	a.stdout.WriteString(ui.SaveCursor)
-	a.stdout.WriteString(ui.HideCursor)
-
-	for i, line := range helpLines {
-		a.stdout.WriteString(
-			fmt.Sprintf(
-				"\033[%d;%dH%s%s%s%s",
-				startRow+i,
-				startCol,
-				ui.BgDark,
-				ui.FgCyan,
-				line,
-				ui.Reset,
-			),
-		)
-	}
-
-	a.stdout.WriteString(ui.RestCursor)
-	a.stdout.WriteString(ui.ShowCursor)
-	a.stdout.Flush()
-}
-
-// fmtKey formats one keybind line for the help overlay.
-func fmtKey(w int, key, desc string) string {
-	inner := fmt.Sprintf(
-		"  \033[1m\033[97m%-5s\033[0m%s\033[36m \u00b7  %s",
-		key,
-		ui.BgDark,
-		desc,
-	)
-
-	visLen := 5 + 4 + len(desc) + 2
-
-	pad := w - 2 - visLen
-
-	if pad < 0 {
-		pad = 0
-	}
-
-	return "\u2502" + inner + rep(" ", pad) + "\u2502"
-}
-
-func rep(s string, n int) string {
-	if n <= 0 {
-		return ""
-	}
-
-	var sb strings.Builder
-
-	for i := 0; i < n; i++ {
-		sb.WriteString(s)
-	}
-
-	return sb.String()
-}
-
-func centerPad(s string, w int) string {
-	vis := 0
-	inEsc := false
-
-	for _, c := range s {
-		if c == '\033' {
-			inEsc = true
-			continue
-		}
-
-		if inEsc {
-			if (c >= 'a' && c <= 'z') ||
-				(c >= 'A' && c <= 'Z') {
-				inEsc = false
-			}
-
-			continue
-		}
-
-		vis++
-	}
-
-	total := w - vis
-
-	if total <= 0 {
-		return s
-	}
-
-	left := total / 2
-	right := total - left
-
-	return rep(" ", left) + s + rep(" ", right)
-}
-
-// ─── Zoom ───────────────────────────────────────────────────────────────
-
-func (a *App) toggleZoom() {
-	if a.zoomedPane != nil {
-		a.clearZoom()
-		a.applyLayout()
-		a.setupScrollRegion()
-		a.fullRedraw()
-		return
-	}
-
-	p := a.manager.GetActivePane()
-
-	if p == nil {
-		return
-	}
-
-	pRows, pCols := a.paneArea()
-
-	p.Resize(
-		uint16(pRows),
-		uint16(pCols),
-	)
-
-	p.SetPosition(1, 1)
-	p.Zoomed = true
-
-	a.zoomedPane = p
-
-	a.setupScrollRegion()
-	a.fullRedraw()
-}
-
-func (a *App) clearZoom() {
-	if a.zoomedPane != nil {
-		a.zoomedPane.Zoomed = false
-		a.zoomedPane = nil
-	}
-}
-
-// ─── Prompt mode ────────────────────────────────────────────────────────
-
-func (a *App) startPrompt(purpose, label string) {
-	a.promptMode = purpose
-	a.promptLabel = label
-	a.promptBuf = nil
-
-	a.drawPrompt()
-}
-
-func (a *App) drawPrompt() {
-	cols, rows := a.getSize()
-
-	text := string(a.promptBuf)
-
-	line := fmt.Sprintf(
-		" %s: %s\u2588 ",
-		a.promptLabel,
-		text,
-	)
-
-	visLen := len(a.promptLabel) +
-		2 +
-		len(text) +
-		3
-
-	a.outMu.Lock()
-	defer a.outMu.Unlock()
-
-	if a.stdout == nil {
-		return
-	}
-
-	a.stdout.WriteString(ui.SaveCursor)
-
-	a.stdout.WriteString(
-		fmt.Sprintf(
-			"\033[%d;1H\033[2K",
-			rows,
-		),
-	)
-
-	a.stdout.WriteString(ui.BgGreen)
-	a.stdout.WriteString(ui.FgBlack)
-	a.stdout.WriteString(ui.Bold)
-
-	a.stdout.WriteString(line)
-
-	if cols-visLen > 0 {
-		a.stdout.WriteString(
-			rep(" ", cols-visLen),
-		)
-	}
-
-	a.stdout.WriteString(ui.Reset)
-	a.stdout.WriteString(ui.RestCursor)
-
-	a.stdout.Flush()
-}
-
-func (a *App) finishPrompt() string {
-	result := string(a.promptBuf)
-
-	a.promptMode = ""
-	a.promptBuf = nil
-	a.promptLabel = ""
-
-	a.renderStatusBar()
-
-	return result
-}
-
-func (a *App) cancelPrompt() {
-	a.promptMode = ""
-	a.promptBuf = nil
-	a.promptLabel = ""
-
-	a.renderStatusBar()
-}
-
-// ─── Input ──────────────────────────────────────────────────────────────
+// ─── Input ──────────────────────────────────────────────────────────────────
 
 // FeedInput processes raw input bytes received from the attached client.
-//
-// The daemon should call this for every Input frame received from a client.
-// It supports normal keystrokes, paste, prefix commands, prompts and all
-// existing pane/tab/workspace operations.
 func (a *App) FeedInput(buf []byte) {
-	n := len(buf)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	defer a.markDirty()
 
-	for i := 0; i < n; i++ {
+	for i := 0; i < len(buf); i++ {
 		b := buf[i]
-
-		// ── Prompt mode ────────────────────────────────────────────────
-
-		if a.promptMode != "" {
-			switch b {
-			case 13: // Enter
-				purpose := a.promptMode
-				text := a.finishPrompt()
-
-				if text != "" {
-					switch purpose {
-					case "rename-tab":
-						a.manager.RenameTab(text)
-
-					case "rename-workspace":
-						a.manager.RenameWorkspace(text)
-					}
-				}
-
-				a.renderStatusBar()
-
-			case 27: // Escape
-				a.cancelPrompt()
-
-			case 127, 8: // Backspace
-				if len(a.promptBuf) > 0 {
-					a.promptBuf =
-						a.promptBuf[:len(a.promptBuf)-1]
-
-					a.drawPrompt()
-				}
-
-			default:
-				if b >= 32 && b < 127 {
-					a.promptBuf =
-						append(a.promptBuf, b)
-
-					a.drawPrompt()
-				}
+		if a.prompt != nil {
+			if !a.promptKey(b) {
+				return // ESC: drop the rest of the key sequence it started
 			}
-
 			continue
 		}
-
-		// ── Help overlay ──────────────────────────────────────────────
-
-		if a.showHelp.Load() {
-			a.showHelp.Store(false)
-			a.fullRedraw()
-			continue
+		if a.showHelp {
+			// Any key closes help. Drop the rest of the chunk so that a
+			// multi-byte key (an arrow is ESC [ A) doesn't leak into the shell.
+			a.showHelp = false
+			return
 		}
 
-		action := a.handler.ProcessByte(b)
-
-		// Any layout-affecting action exits zoom mode first.
-		if action != input.ActionForwardInput &&
-			action != input.ActionZoom &&
-			action != input.ActionNone &&
-			action != input.ActionSendPrefix {
-			a.clearZoom()
-		}
-
-		switch action {
-
-		// ── Normal shell input ────────────────────────────────────────
-
-		case input.ActionForwardInput:
-			activePane := a.manager.GetActivePane()
-
-			if activePane == nil {
-				continue
-			}
-
-			// Bulk-forward normal input until the next prefix byte.
-			//
-			// This preserves prefix detection even when multiple bytes
-			// arrive together in a single client frame.
-			if i == 0 {
-				j := i
-				prefixByte := a.handler.PrefixByte()
-
-				for j < n && buf[j] != prefixByte {
-					j++
-				}
-
-				if j > i {
-					activePane.Write(buf[i:j])
-					i = j - 1
+		if b == 0x1b && a.handler.IsPrefixActive() {
+			// prefix + arrow key selects a pane in that direction.
+			a.handler.CancelPrefix()
+			if i+2 < len(buf) && (buf[i+1] == '[' || buf[i+1] == 'O') {
+				if act, ok := arrowActions[buf[i+2]]; ok {
+					a.do(act, b)
+					i += 2
 					continue
 				}
 			}
+			return // some other escape sequence: swallow it whole
+		}
 
-			activePane.Write([]byte{b})
-
-		// ── Pane commands ─────────────────────────────────────────────
-
-		case input.ActionSplitVertical:
-			pRows, pCols := a.paneArea()
-
-			a.manager.SplitPane(
-				pane.SplitVertical,
-				uint16(pRows),
-				uint16(pCols),
-			)
-
-			a.applyLayout()
-			a.setupScrollRegion()
-			a.fullRedraw()
-
-		case input.ActionSplitHorizontal:
-			pRows, pCols := a.paneArea()
-
-			a.manager.SplitPane(
-				pane.SplitHorizontal,
-				uint16(pRows),
-				uint16(pCols),
-			)
-
-			a.applyLayout()
-			a.setupScrollRegion()
-			a.fullRedraw()
-
-		case input.ActionNextPane:
-			a.manager.NextPane()
-			a.drawBorders()
-			a.renderStatusBar()
-
-		case input.ActionPrevPane:
-			a.manager.PrevPane()
-			a.drawBorders()
-			a.renderStatusBar()
-
-		case input.ActionSelectPaneUp:
-			a.manager.SelectPaneInDirection("up")
-			a.drawBorders()
-			a.renderStatusBar()
-
-		case input.ActionSelectPaneDown:
-			a.manager.SelectPaneInDirection("down")
-			a.drawBorders()
-			a.renderStatusBar()
-
-		case input.ActionSelectPaneLeft:
-			a.manager.SelectPaneInDirection("left")
-			a.drawBorders()
-			a.renderStatusBar()
-
-		case input.ActionSelectPaneRight:
-			a.manager.SelectPaneInDirection("right")
-			a.drawBorders()
-			a.renderStatusBar()
-
-		case input.ActionSwapPane:
-			a.manager.SwapPanes()
-			a.applyLayout()
-			a.fullRedraw()
-
-		case input.ActionResizeGrow:
-			a.manager.ResizeRatio(0.05)
-			a.applyLayout()
-			a.fullRedraw()
-
-		case input.ActionResizeShrink:
-			a.manager.ResizeRatio(-0.05)
-			a.applyLayout()
-			a.fullRedraw()
-
-		case input.ActionEqualizeLayout:
-			a.manager.EqualizeLayout()
-			a.applyLayout()
-			a.fullRedraw()
-
-		case input.ActionZoom:
-			a.toggleZoom()
-
-		case input.ActionClosePane:
-			if shouldQuit := a.manager.KillActivePane(); shouldQuit {
-				a.doQuit()
-				return
+		action := a.handler.ProcessByte(b)
+		if action == input.ActionForwardInput {
+			// Forward everything up to the next prefix byte in one write.
+			j := i
+			for j < len(buf) && buf[j] != a.handler.PrefixByte() {
+				j++
 			}
-
-			a.applyLayout()
-			a.setupScrollRegion()
-			a.fullRedraw()
-
-		// ── Tab commands ──────────────────────────────────────────────
-
-		case input.ActionNewTab:
-			pRows, pCols := a.paneArea()
-
-			a.manager.CreateTab(
-				"Shell",
-				uint16(pRows),
-				uint16(pCols),
-			)
-
-			a.setupScrollRegion()
-			a.fullRedraw()
-
-		case input.ActionNextTab:
-			a.manager.NextTab()
-			a.setupScrollRegion()
-			a.fullRedraw()
-
-		case input.ActionPrevTab:
-			a.manager.PrevTab()
-			a.setupScrollRegion()
-			a.fullRedraw()
-
-		case input.ActionGoToTab1,
-			input.ActionGoToTab2,
-			input.ActionGoToTab3,
-			input.ActionGoToTab4,
-			input.ActionGoToTab5,
-			input.ActionGoToTab6,
-			input.ActionGoToTab7,
-			input.ActionGoToTab8,
-			input.ActionGoToTab9:
-
-			idx := int(action - input.ActionGoToTab1)
-
-			a.manager.GoToTab(idx)
-
-			a.setupScrollRegion()
-			a.fullRedraw()
-
-		case input.ActionRenameTab:
-			a.startPrompt(
-				"rename-tab",
-				"Rename tab",
-			)
-
-		case input.ActionCloseTab:
-			if shouldQuit := a.manager.CloseTab(); shouldQuit {
-				a.doQuit()
-				return
-			}
-
-			a.setupScrollRegion()
-			a.fullRedraw()
-
-		// ── Workspace commands ────────────────────────────────────────
-
-		case input.ActionNewWorkspace:
-			pRows, pCols := a.paneArea()
-
-			wsCount := len(a.manager.Workspaces)
-
-			a.manager.AddWorkspace(
-				fmt.Sprintf(
-					"WS-%d",
-					wsCount+1,
-				),
-				uint16(pRows),
-				uint16(pCols),
-			)
-
-			a.setupScrollRegion()
-			a.fullRedraw()
-
-		case input.ActionNextWorkspace:
-			a.manager.NextWorkspace()
-			a.setupScrollRegion()
-			a.fullRedraw()
-
-		case input.ActionPrevWorkspace:
-			a.manager.PrevWorkspace()
-			a.setupScrollRegion()
-			a.fullRedraw()
-
-		case input.ActionRenameWorkspace:
-			a.startPrompt(
-				"rename-workspace",
-				"Rename workspace",
-			)
-
-		// ── Session commands ──────────────────────────────────────────
-
-		case input.ActionShowHelp:
-			a.showHelp.Store(true)
-			a.renderHelp()
-
-		case input.ActionSendPrefix:
-			activePane := a.manager.GetActivePane()
-
-			if activePane != nil {
-				activePane.Write([]byte{b})
-			}
-
-		case input.ActionDetach:
-			// Do NOT close a.quit here.
-			//
-			// Detach means:
-			//   client -> disconnect
-			//   session -> continues running
-			select {
-			case a.detachCh <- struct{}{}:
-			default:
-				// Already signalled.
-			}
-
+			a.forward(buf[i:j])
+			i = j - 1
+			continue
+		}
+		if !a.do(action, b) {
 			return
+		}
+	}
+}
 
-		case input.ActionQuit:
+var arrowActions = map[byte]input.Action{
+	'A': input.ActionSelectPaneUp,
+	'B': input.ActionSelectPaneDown,
+	'C': input.ActionSelectPaneRight,
+	'D': input.ActionSelectPaneLeft,
+}
+
+func (a *App) forward(data []byte) {
+	if p := a.manager.ActivePane(); p != nil && len(data) > 0 {
+		p.Write(data)
+	}
+}
+
+// do runs a command. It returns false when input processing should stop
+// because the client is leaving.
+func (a *App) do(action input.Action, b byte) bool {
+	switch action {
+	case input.ActionSendPrefix:
+		a.forward([]byte{b})
+
+	// ── Panes
+	case input.ActionSplitVertical, input.ActionSplitHorizontal:
+		dir := pane.SplitVertical
+		if action == input.ActionSplitHorizontal {
+			dir = pane.SplitHorizontal
+		}
+		a.zoomed = nil
+		if err := a.manager.SplitPane(dir); err != nil {
+			a.notify(err.Error())
+		}
+	case input.ActionNextPane:
+		a.zoomed = nil
+		a.manager.NextPane()
+	case input.ActionPrevPane:
+		a.zoomed = nil
+		a.manager.PrevPane()
+	case input.ActionSelectPaneUp:
+		a.selectPane("up")
+	case input.ActionSelectPaneDown:
+		a.selectPane("down")
+	case input.ActionSelectPaneLeft:
+		a.selectPane("left")
+	case input.ActionSelectPaneRight:
+		a.selectPane("right")
+	case input.ActionSwapPane:
+		a.zoomed = nil
+		a.manager.SwapPanes()
+	case input.ActionResizeGrow:
+		a.zoomed = nil
+		a.manager.ResizeRatio(0.05)
+	case input.ActionResizeShrink:
+		a.zoomed = nil
+		a.manager.ResizeRatio(-0.05)
+	case input.ActionEqualizeLayout:
+		a.zoomed = nil
+		a.manager.EqualizeLayout()
+	case input.ActionZoom:
+		if a.zoomed != nil {
+			a.zoomed = nil
+		} else if len(a.manager.ActivePanes()) > 1 {
+			a.zoomed = a.manager.ActivePane()
+		}
+	case input.ActionClosePane:
+		if a.manager.KillActivePane() {
 			a.doQuit()
-			return
+			return false
+		}
 
-		case input.ActionNone:
-			a.renderStatusBar()
+	// ── Tabs
+	case input.ActionNewTab:
+		if err := a.manager.CreateTab(a.paneArea()); err != nil {
+			a.notify(err.Error())
+		}
+	case input.ActionNextTab:
+		a.manager.NextTab()
+	case input.ActionPrevTab:
+		a.manager.PrevTab()
+	case input.ActionRenameTab:
+		a.startPrompt("rename tab", a.manager.ActiveTab().Name, a.manager.RenameTab)
+	case input.ActionCloseTab:
+		if a.manager.CloseTab() {
+			a.doQuit()
+			return false
+		}
+
+	// ── Workspaces
+	case input.ActionNewWorkspace:
+		if err := a.manager.AddWorkspace(a.paneArea()); err != nil {
+			a.notify(err.Error())
+		}
+	case input.ActionNextWorkspace:
+		a.manager.NextWorkspace()
+	case input.ActionPrevWorkspace:
+		a.manager.PrevWorkspace()
+	case input.ActionRenameWorkspace:
+		a.startPrompt("rename workspace", a.manager.ActiveWorkspace().Name, a.manager.RenameWorkspace)
+
+	// ── Session
+	case input.ActionShowHelp:
+		a.showHelp = true
+	case input.ActionDetach:
+		select {
+		case a.detachCh <- struct{}{}:
+		default:
+		}
+		return false
+	case input.ActionQuit:
+		a.doQuit()
+		return false
+
+	default:
+		if action >= input.ActionGoToTab1 && action <= input.ActionGoToTab9 {
+			a.manager.GoToTab(int(action - input.ActionGoToTab1))
 		}
 	}
+	return true
 }
 
-// applyLayout applies the current layout to the usable pane area.
-func (a *App) applyLayout() {
-	pRows, pCols := a.paneArea()
-
-	a.manager.ApplyLayout(
-		layout.Rect{
-			Row:  1,
-			Col:  1,
-			Rows: pRows,
-			Cols: pCols,
-		},
-	)
+func (a *App) selectPane(dir string) {
+	a.zoomed = nil
+	a.manager.SelectPaneInDirection(dir)
 }
 
-// drawBorders renders pane borders and the active pane indicator.
-func (a *App) drawBorders() {
-	panes := a.visiblePanes()
+// ─── Prompt ─────────────────────────────────────────────────────────────────
 
-	if len(panes) <= 1 {
-		return
-	}
-
-	totalCols, totalRows := a.getSize()
-
-	a.outMu.Lock()
-	defer a.outMu.Unlock()
-
-	if a.stdout == nil {
-		return
-	}
-
-	a.stdout.WriteString(ui.HideCursor)
-	a.stdout.WriteString(ui.SaveCursor)
-
-	for _, p := range panes {
-		row, col, rows, cols := p.Rect()
-
-		if col > 1 {
-			a.stdout.WriteString(
-				ui.DrawVerticalBorder(
-					row,
-					col-1,
-					int(rows),
-				),
-			)
-		}
-
-		if row > 1 {
-			a.stdout.WriteString(
-				ui.DrawHorizontalBorder(
-					row-1,
-					col,
-					int(cols),
-				),
-			)
-		}
-	}
-
-	activePane := a.manager.GetActivePane()
-
-	for _, p := range panes {
-		if p == activePane {
-			row, col, rows, cols := p.Rect()
-
-			a.stdout.WriteString(
-				ui.DrawActivePaneIndicator(
-					row,
-					col,
-					int(rows),
-					int(cols),
-					totalRows,
-					totalCols,
-				),
-			)
-		}
-	}
-
-	a.stdout.WriteString(ui.RestCursor)
-	a.stdout.WriteString(ui.ShowCursor)
-	a.stdout.Flush()
+func (a *App) startPrompt(label, current string, apply func(string)) {
+	a.prompt = &prompt{label: label, text: []byte(current), apply: apply}
 }
 
-// doQuit marks the session as terminated.
-//
-// Shutdown of pane processes is intentionally separate and is performed
-// through Shutdown() by the host.
-func (a *App) doQuit() {
-	a.quitOnce.Do(func() {
-		close(a.quit)
-	})
+// promptKey handles one byte typed into the prompt. It returns false when
+// the rest of the input chunk must be discarded.
+func (a *App) promptKey(b byte) bool {
+	p := a.prompt
+	switch b {
+	case '\r', '\n':
+		a.prompt = nil
+		if name := strings.TrimSpace(string(p.text)); name != "" {
+			p.apply(name)
+		}
+	case 0x1b: // Esc, or the start of an arrow/function key
+		a.prompt = nil
+		return false
+	case 0x03, 0x07: // Ctrl-C, Ctrl-G
+		a.prompt = nil
+	case 0x15: // Ctrl-U
+		p.text = p.text[:0]
+	case 0x7f, 0x08: // Backspace: remove a whole UTF-8 character
+		if len(p.text) > 0 {
+			_, size := utf8.DecodeLastRune(p.text)
+			p.text = p.text[:len(p.text)-size]
+		}
+	default:
+		if b >= 0x20 && utf8.RuneCount(p.text) < maxNameLen {
+			p.text = append(p.text, b)
+		}
+	}
+	return true
+}
+
+// ─── Help ───────────────────────────────────────────────────────────────────
+
+func helpEntries(cfg *config.Config) []ui.HelpEntry {
+	var out []ui.HelpEntry
+	group := ""
+	for _, b := range input.Bindings {
+		if b.Group != group {
+			group = b.Group
+			out = append(out, ui.HelpEntry{Desc: group})
+			if group == "Session" {
+				out = append(out,
+					ui.HelpEntry{Key: "?", Desc: "This help"},
+					ui.HelpEntry{Key: input.PrefixName(cfg.PrefixByte), Desc: "Send prefix to shell"})
+			}
+		}
+		if key := cfg.Keybinds[b.Name]; key != "" {
+			out = append(out, ui.HelpEntry{Key: key, Desc: b.Desc})
+		}
+		if b.Name == "prev-tab" {
+			out = append(out, ui.HelpEntry{Key: "1-9", Desc: "Go to tab N"})
+		}
+	}
+	return out
 }

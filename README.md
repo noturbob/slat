@@ -1,259 +1,191 @@
 <div align="center">
 
-```text
-     _____ __      ___  _______
-    / ___// /     /   |/_  __/
-    \__ \/ /     / /| | / /
-   ___/ / /___  / ___ |/ /
-  /____/_____/ /_/  |_/_/
-```
+<img src="assets/logo.svg" width="96" height="96" alt="slat logo">
 
-### A modern terminal multiplexer with tiling panes, tabs, and workspaces — built in Go.
+# slat
 
-[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://golang.org/)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-blue?style=for-the-badge)](#requirements)
+**Split your terminal. Keep it running when you leave.**
 
-[Features](#features) • [Quick Start](#quick-start) • [Keybindings](#keybindings) • [Configuration](#configuration) • [Architecture](#architecture)
+A terminal multiplexer with tiling panes, tabs and workspaces, written in Go.
+
+[![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-blue?style=flat-square)](#requirements)
+
+[Website](https://noturbob.github.io/slat/) · [Install](#install) · [Keys](#keys) · [Configuration](#configuration) · [How it works](#how-it-works)
 
 </div>
 
 ---
 
-## Features
+slat tiles one terminal into panes, tabs and workspaces. Your shells live in a
+small background process, so closing the window — or losing the SSH
+connection — doesn't end anything. Run `slat` again and it's all there,
+output included.
 
-* **Tiling pane management** — split vertically / horizontally, resize, swap, equalize, zoom
-* **Directional navigation** — move between panes with hjkl (vim-style) or arrow-style keys
-* **Tabs** — create, rename, close, jump to tabs by number (1–9)
-* **Workspaces** — organize sessions into named workspaces, switch freely
-* **Interactive rename** — rename tabs and workspaces inline with a prompt bar
-* **Prefix-key system** — one leader key, then a single keystroke for every action
-* **Fully configurable** — TOML config for prefix key, shell, status bar, and keybinds
-* **Persistent sessions** — a background daemon owns your shells; the client is just the window onto them, so closing your terminal doesn't kill your work
-* **Detach / reattach** — disconnect without ending the session, then `slat` back in later exactly where you left off
-* **Status bar & help overlay** — workspace, tabs, mode indicator, pane info, and a `?` keybind reference
-* **Lightweight** — minimal dependencies, fast startup
+- **Panes** — split left/right or top/bottom, move between them by direction, swap, resize, zoom
+- **Tabs and workspaces** — group tabs into named workspaces, rename them in place
+- **Detach and reattach** — `d` disconnects; running `slat` from any terminal reattaches
+- **Every pane keeps its own screen** — `clear`, vim or htop in one pane never touch another, and nothing is lost when you split, close or switch
+- **Fast** — only changed cells are sent to your terminal; half a million lines of output render in about a quarter of a second
+- **New panes open where you are** — a split starts in the directory of the pane you split from (Linux)
+- **One checked config file** — mistakes are reported when you run `slat`, not ignored
 
-## Quick Start
+## Install
 
 ```bash
-# Build
-make build
-
-# Run — auto-starts the background daemon on first launch
-./bin/slat
-
-# Or install to $GOPATH/bin (or ~/go/bin, or /usr/local/bin)
-make install
-slat
+go install github.com/noturbob/slat/cmd/slat@latest
 ```
 
-The first time you run `slat`, it spawns a small background daemon (over a per-user Unix socket) that owns your workspaces, tabs, and shells. Running `slat` again from any terminal attaches a fresh client to that same session — close the terminal, and the daemon keeps everything running for you to reattach to later.
+or from a checkout:
 
-## Keybindings
+```bash
+make build      # ./bin/slat
+make install    # into $(go env GOPATH)/bin
+```
 
-All commands use a **prefix key** (default: **`Ctrl-S`**). Press the prefix, then the action key.
+Then run `slat`. The first run starts the background daemon; later runs attach
+to it.
 
-> **Tip:** Press `Ctrl-S` then `?` inside slat to see the keybind reference at any time.
+## Keys
+
+Press the **prefix** (default <kbd>Ctrl</kbd>+<kbd>S</kbd>), then one key.
+Everything else goes straight to your shell — including <kbd>Ctrl</kbd>+<kbd>C</kbd>.
+Press the prefix twice to send it to the shell. Prefix then <kbd>?</kbd> shows
+every key inside slat.
 
 ### Panes
 
-| Key | Action                                    |
-| --- | ------------------------------------------ |
-| `v` | Split pane vertically (left / right)      |
-| `h` | Split pane horizontally (top / bottom)    |
-| `o` | Cycle focus to next pane                  |
-| `O` | Cycle focus to previous pane               |
-| `k` | Focus pane **above**                      |
-| `j` | Focus pane **below**                      |
-| `H` | Focus pane to the **left**                |
-| `L` | Focus pane to the **right**                |
-| `s` | Swap active pane with the next pane       |
-| `+` | Grow active pane (increase split ratio)   |
-| `-` | Shrink active pane (decrease split ratio) |
-| `=` | Equalize all pane sizes                   |
-| `z` | Toggle zoom — fullscreen the active pane  |
-| `x` | Close active pane                         |
+| Key | Action |
+| --- | --- |
+| `v` / `h` | Split left / right, top / bottom |
+| `o` / `O` | Next / previous pane |
+| arrows, or `k` `j` `H` `L` | Pane above / below / left / right |
+| `s` | Swap with the next pane |
+| `+` / `-` | Grow / shrink the pane |
+| `=` | Equalize all sizes |
+| `z` | Zoom the pane to full size (toggle) |
+| `x` | Close the pane |
 
 ### Tabs
 
-| Key     | Action                                |
-| ------- | -------------------------------------- |
-| `c`     | Create a new tab                      |
-| `n`     | Switch to next tab                    |
-| `p`     | Switch to previous tab                |
-| `1`–`9` | Jump directly to tab #                |
-| `,`     | Rename the current tab (opens prompt) |
-| `X`     | Close the entire tab (all its panes)  |
+| Key | Action |
+| --- | --- |
+| `c` | New tab |
+| `n` / `p` | Next / previous tab |
+| `1`–`9` | Go to tab N |
+| `,` | Rename the tab |
+| `X` | Close the tab and all its panes |
 
 ### Workspaces
 
-| Key | Action                                      |
-| --- | -------------------------------------------- |
-| `W` | Create a new workspace                      |
-| `w` | Switch to next workspace                    |
-| `P` | Switch to previous workspace                |
-| `$` | Rename the current workspace (opens prompt) |
+| Key | Action |
+| --- | --- |
+| `W` | New workspace |
+| `w` / `P` | Next / previous workspace |
+| `$` | Rename the workspace |
 
 ### Session
 
-| Key          | Action                                 |
-| ------------ | --------------------------------------- |
-| `?`          | Show / dismiss the help overlay        |
-| `d`          | Detach — disconnect, leave session running |
-| `q`          | Quit slat and end the session          |
-| *prefix × 2* | Send the prefix key to the shell       |
+| Key | Action |
+| --- | --- |
+| `d` | Detach — the session keeps running |
+| `q` | Quit — ends every shell |
+| `?` | Show all keys |
 
-`Ctrl-C` and every other key not listed above are passed straight through to whatever's running in the active pane — slat only intercepts input right after the prefix key, so you can still interrupt a running program the normal way. To close things you use `x` (pane) or `q` (session), not `Ctrl-C`.
+In a rename prompt: <kbd>Enter</kbd> saves, <kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd>
+cancels, <kbd>Ctrl</kbd>+<kbd>U</kbd> clears.
 
-### Detach vs. Quit
-
-* **`d` — Detach:** disconnects the current client while leaving the session running in the background daemon. Run `slat` again later to reattach.
-* **`q` — Quit:** terminates the daemon's session and every shell in it.
-* **Shell exits / last pane dies:** the session ends on its own, same as quitting.
+The session ends by itself when its last shell exits. Closing the last tab of a
+workspace removes just that workspace.
 
 ## Configuration
 
-Create:
-
-```text
-~/.config/slat/config.toml
-```
-
-Example:
+slat reads `~/.config/slat/config.toml` (or `$XDG_CONFIG_HOME/slat/config.toml`).
+Every setting is optional:
 
 ```toml
-prefix = "C-s"
-shell = "/bin/bash"
+prefix     = "C-a"        # Ctrl + a letter, or C-\ C-] C-^ C-_
+shell      = "/bin/zsh"   # default: $SHELL
 status_bar = true
 
 [keybinds]
-
-# Panes
-split-vertical    = "v"
-split-horizontal  = "h"
-next-pane         = "o"
-prev-pane         = "O"
-select-pane-up    = "k"
-select-pane-down  = "j"
-select-pane-left  = "H"
-select-pane-right = "L"
-swap-pane         = "s"
-resize-grow       = "+"
-resize-shrink     = "-"
-equalize          = "="
-close-pane        = "x"
-zoom              = "z"
-
-# Tabs
-new-tab           = "c"
-next-tab          = "n"
-prev-tab          = "p"
-rename-tab        = ","
-close-tab         = "X"
-
-# Workspaces
-new-workspace     = "W"
-next-workspace    = "w"
-prev-workspace    = "P"
-rename-workspace  = "$"
-
-# Session
-quit              = "q"
-detach            = "d"
+split-vertical   = "|"
+split-horizontal = "-"
+resize-shrink    = "_"    # "-" was given away above
+zoom             = ""     # "" unbinds a command
 ```
 
-> Keys `1`–`9` are always hard-bound to "jump to tab N" and cannot be remapped. An empty or partial `[keybinds]` table is fine — any keys you don't set fall back to their defaults.
+- Keybinds you don't set keep their defaults.
+- Giving a default key to another command takes it away from the default
+  command, so bindings never silently collide.
+- An unknown setting, an unknown command name, a key that isn't a single
+  character, or two commands on one key is an error, shown when you run `slat`.
 
-## Architecture
+[`config.example.toml`](config.example.toml) lists every command with its default.
 
-Slat is a proper client/daemon multiplexer: a single background daemon owns the session (workspaces, tabs, panes, and every shell's PTY), and lightweight clients attach to it over a per-user Unix socket to drive it interactively.
+## How it works
 
 ```text
-                    ┌─────────────────────┐
-                    │   Terminal / Client   │
-                    │                       │
-                    │  raw-mode stdin/stdout │
-                    └──────────┬────────────┘
-                               │ Unix socket
-                               │ (length-prefixed frames: hello, input, resize)
-                               ▼
-                    ┌───────────────────────┐
-                    │        Daemon         │
-                    │                       │
-                    │  session lifecycle    │
-                    │  client attach/detach │
-                    └──────────┬────────────┘
-                               │
-                    FeedInput([]byte) / HandleResize(...)
-                               │
-                    ┌──────────▼────────────┐
-                    │         App           │
-                    │                       │
-                    │  Workspaces           │
-                    │  Tabs                 │
-                    │  Panes (PTY-backed)   │
-                    │  Layout engine        │
-                    │  Input dispatch       │
-                    │  ANSI rendering       │
-                    └───────────────────────┘
+ terminal ── slat (client) ──unix socket──▶ slat daemon
+   raw keys ─────────────────────────────▶   ├─ workspaces / tabs / layout tree
+   ◀── only the changed cells ─────────────  ├─ per-pane terminal emulator
+                                             └─ shells on PTYs
 ```
 
-Running `slat` re-execs itself once as a detached background daemon (`slat __daemon`, hidden — you never invoke it directly) if one isn't already running for your user, then connects to it as a client. Only one client is attached at a time; attaching while another client is connected disconnects the previous one, the same way `tmux attach` does.
+- **Daemon.** The first `slat` re-executes itself as a background daemon that owns
+  every shell. Its socket lives in `$XDG_RUNTIME_DIR` (or the temp dir) and is
+  only accessible to you. Attaching from a second terminal takes over from the
+  first, like `tmux attach -d`. The daemon's own errors go to the `.log` file
+  next to its socket.
+- **Emulation.** Each pane's output is fed into slat's own terminal emulator
+  (`internal/vt`), which keeps that pane's screen. It handles the xterm features
+  shells and full-screen programs use: colors (16, 256 and 24-bit), wide
+  characters and emoji, scroll regions, the alternate screen, line drawing and
+  cursor queries.
+- **Rendering.** On every change slat composes a frame from the panes, borders,
+  status bar and overlays, compares it with what your terminal already shows,
+  and sends only the difference. Since frames are built from state rather than
+  patched step by step, a split, close, resize or reattach can't leave stale
+  or missing text behind.
+- **Input modes.** The active pane's cursor-key mode and bracketed paste are
+  mirrored onto your terminal, so arrow keys in vim and multi-line pastes into
+  your shell behave as they do outside slat.
 
-### Internal structure
+### Source layout
 
 ```text
-cmd/slat/          — Entry point: daemon bootstrap + client connect
+cmd/slat/        entry point: starts or attaches to the daemon
 internal/
-  daemon/          — Unix socket server, client attach/detach, session lifecycle
-  client/          — Terminal raw mode, stdin/stdout <-> daemon framing
-  proto/           — Length-prefixed frame protocol between client and daemon
-  app/             — Session engine: rendering, input dispatch, lifecycle
-  config/          — TOML configuration loading with defaults
-  input/           — Prefix-key handler and keybind action mapping
-  layout/          — Binary-tree tiling layout engine
-  pane/            — PTY-backed terminal panes, per-pane cursor tracking
-  session/         — Workspace / tab / pane manager
-  ui/              — ANSI rendering, status bar, help overlay, banner
+  daemon/        socket server, attach / detach, session lifetime
+  client/        raw mode, alternate screen, stdin/stdout ⇄ daemon
+  proto/         length-prefixed frames from client to daemon
+  app/           the session: input → actions, frame composition
+  vt/            terminal emulator for each pane
+  ui/            frame, diffing renderer, status bar, help, borders
+  session/       workspaces, tabs, focus, removing dead panes
+  layout/        binary-tree tiling
+  pane/          a shell on a PTY with its emulator
+  input/         prefix key and command table
+  config/        TOML loading and validation
+docs/            the website (GitHub Pages)
 ```
 
-### Rendering model
+`make test` runs `go vet` and the tests with the race detector. The tests in
+`internal/app` drive real shells through splits, closes, overlays and
+workspace changes and check what a terminal would display.
 
-Each pane streams its shell's raw output directly onto the shared terminal — there's no full per-pane screen buffer to redraw from. To keep that correct, slat tracks a lightweight cursor position per pane (`internal/pane/cursor.go`) so it always knows exactly where a pane's shell believes its own cursor is, and explicitly repositions the real terminal cursor there before every write. It also confines each pane's scroll region and, for panes that don't span the full terminal width, its left/right margins (DECSLRM, on terminals that support it) — so a pane's content wraps and scrolls within its own borders instead of bleeding into its neighbors.
+## Limitations
 
-### App lifecycle
-
-The application layer doesn't own a terminal directly — it's driven entirely by its host (the daemon):
-
-```go
-cfg, err := config.Load()
-app, err := app.New(cfg)
-
-app.SetOutput(clientWriter)
-app.Start(cols, rows)
-
-// Host feeds input and resize events as they arrive:
-app.FeedInput(data)
-app.HandleResize(cols, rows)
-
-// Host watches lifecycle events:
-select {
-case <-app.Done():
-    // Session has ended entirely.
-case <-app.DetachRequested():
-    // Disconnect the current client; session stays alive.
-}
-
-// On shutdown, the host terminates every shell:
-app.Shutdown()
-```
+- No scrollback or copy mode yet: use your program's own paging (`less`, vim)
+  for long output.
+- Mouse events aren't passed to programs in panes.
+- Windows isn't supported.
 
 ## Requirements
 
-* Go 1.22+
-* Linux or macOS
-* Windows not yet supported
+- Go 1.23+ to build
+- Linux or macOS
 
 ## License
 

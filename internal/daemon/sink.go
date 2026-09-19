@@ -1,44 +1,42 @@
 package daemon
 
 import (
-	"io"
+	"net"
 	"sync"
+	"time"
 )
 
-// sink is a thread-safe io.Writer that forwards to whichever client
-// connection is currently attached, if any. Writes while nobody is
-// attached are silently dropped: the shells keep running and their PTY
-// output channels keep getting drained by the daemon's own forwarding
-// loop, so nothing blocks — the terminal picture is just paused, exactly
-// like a detached tmux session.
+// writeTimeout bounds how long a stalled client (suspended terminal, dead
+// network) can block rendering before it's dropped.
+const writeTimeout = 5 * time.Second
+
+// sink is the session's output: it forwards to whichever client is
+// attached and discards output while none is. Nothing is lost by
+// discarding, since every attach repaints the screen from the panes'
+// emulators.
 type sink struct {
-	mu sync.Mutex
-	w  io.Writer
+	mu   sync.Mutex
+	conn net.Conn
 }
 
-func (s *sink) Attach(w io.Writer) {
+// Attach sets the client to write to; nil detaches.
+func (s *sink) Attach(c net.Conn) {
 	s.mu.Lock()
-	s.w = w
-	s.mu.Unlock()
-}
-
-func (s *sink) Detach() {
-	s.mu.Lock()
-	s.w = nil
+	s.conn = c
 	s.mu.Unlock()
 }
 
 func (s *sink) Write(p []byte) (int, error) {
 	s.mu.Lock()
-	w := s.w
+	c := s.conn
 	s.mu.Unlock()
-	if w == nil {
-		return len(p), nil // discard while detached
+	if c == nil {
+		return len(p), nil
 	}
-	if _, err := w.Write(p); err != nil {
-		// Client connection died mid-write; detach so we go back to cheap
-		// no-op writes until a new client attaches.
-		s.Detach()
+	c.SetWriteDeadline(time.Now().Add(writeTimeout))
+	if _, err := c.Write(p); err != nil {
+		// Closing makes the client's serve loop exit and clean up.
+		c.Close()
 	}
 	return len(p), nil
 }

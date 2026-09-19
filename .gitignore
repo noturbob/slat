@@ -16,5 +16,5 @@ bin/
 pkg/
 
 # Slat binary
-slat
-slat.exe
+/slat
+/slat.exe
