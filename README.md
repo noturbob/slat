@@ -39,7 +39,55 @@ output included.
 
 ## Install
 
-**Arch Linux:**
+| Platform | How |
+| --- | --- |
+| Debian / Ubuntu | [signed apt repository](#debian--ubuntu) |
+| Arch Linux | [package from the latest release](#arch-linux) |
+| Fedora / RHEL | [one `dnf` command](#fedora--rhel) |
+| macOS, anything with Go | [`go install`](#with-go) |
+
+Every package comes for both `amd64` and `arm64`.
+
+### Debian / Ubuntu
+
+Add the repository once; after that, `apt upgrade` keeps slat up to date.
+
+```bash
+# 1. Trust the repository's signing key
+curl -fsSL https://noturbob.github.io/slat/apt/slat.gpg \
+  | sudo tee /usr/share/keyrings/slat.gpg > /dev/null
+
+# 2. Add the repository
+repo=https://noturbob.github.io/slat/apt
+echo "deb [signed-by=/usr/share/keyrings/slat.gpg] $repo stable main" \
+  | sudo tee /etc/apt/sources.list.d/slat.list
+
+# 3. Install
+sudo apt update
+sudo apt install slat
+```
+
+<details>
+<summary>Key fingerprint, or install a single <code>.deb</code> instead</summary>
+
+<br>
+
+The repository key's fingerprint is:
+
+```text
+9040 A503 5BDC A04A 55C3  719A D1A8 1309 D2F2 0668
+```
+
+To install one release without adding the repository:
+
+```bash
+curl -LO https://github.com/noturbob/slat/releases/latest/download/slat_linux_amd64.deb
+sudo apt install ./slat_linux_amd64.deb
+```
+
+</details>
+
+### Arch Linux
 
 ```bash
 curl -LO https://github.com/noturbob/slat/releases/latest/download/slat_linux_amd64.pkg.tar.zst
@@ -48,42 +96,46 @@ sudo pacman -U slat_linux_amd64.pkg.tar.zst
 
 An AUR package (`yay -S slat`) is on the way.
 
-**Debian / Ubuntu** (signed apt repository; `apt upgrade` keeps it current):
+### Fedora / RHEL
 
 ```bash
-curl -fsSL https://noturbob.github.io/slat/apt/slat.gpg | sudo tee /usr/share/keyrings/slat.gpg >/dev/null
-echo "deb [signed-by=/usr/share/keyrings/slat.gpg] https://noturbob.github.io/slat/apt stable main" | sudo tee /etc/apt/sources.list.d/slat.list
-sudo apt update && sudo apt install slat
+sudo dnf install \
+  https://github.com/noturbob/slat/releases/latest/download/slat_linux_amd64.rpm
 ```
 
-The repository key's fingerprint is `9040 A503 5BDC A04A 55C3  719A D1A8 1309 D2F2 0668`.
-Or install a single `.deb` without the repository:
-`curl -LO https://github.com/noturbob/slat/releases/latest/download/slat_linux_amd64.deb && sudo apt install ./slat_linux_amd64.deb`
+### With Go
 
-**Fedora / RHEL:**
-
-```bash
-sudo dnf install https://github.com/noturbob/slat/releases/latest/download/slat_linux_amd64.rpm
-```
-
-**With Go** (any platform):
+Works on Linux and macOS:
 
 ```bash
 go install github.com/noturbob/slat/cmd/slat@latest
 ```
 
-**macOS / other Linux:** grab a binary from the [releases page](https://github.com/noturbob/slat/releases).
-Every package above also comes in an `arm64` build.
+<details>
+<summary>Other ways: prebuilt binaries, or build from source</summary>
 
-**From a checkout:**
+<br>
+
+Prebuilt binaries for Linux and macOS are on the
+[releases page](https://github.com/noturbob/slat/releases).
+
+To build from a checkout:
 
 ```bash
 make build      # ./bin/slat
 make install    # into $(go env GOPATH)/bin
 ```
 
-Then run `slat`. The first run starts the background daemon; later runs attach
-to it.
+</details>
+
+### First run
+
+```bash
+slat
+```
+
+The first run starts the background daemon; later runs attach to it.
+Press <kbd>Ctrl</kbd>+<kbd>S</kbd> then <kbd>?</kbd> inside slat to see every key.
 
 ## Keys
 
