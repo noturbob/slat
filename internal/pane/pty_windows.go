@@ -33,31 +33,38 @@ func startPTY(shell, dir string, rows, cols int) (ptyProcess, error) {
 	if shell == "" {
 		shell = defaultShell()
 	}
-	// Two pipes: the console's stdin (we write) and stdout (we read).
-	inRead, inWrite, err := os.Pipe()
-	if err != nil {
+	// Two pipes: the console's input (we write the far end) and its output
+	// (we read the far end).
+	var inRead, inWrite, outRead, outWrite windows.Handle
+	if err := windows.CreatePipe(&inRead, &inWrite, nil, 0); err != nil {
 		return nil, err
 	}
-	outRead, outWrite, err := os.Pipe()
-	if err != nil {
-		inRead.Close()
-		inWrite.Close()
+	if err := windows.CreatePipe(&outRead, &outWrite, nil, 0); err != nil {
+		windows.CloseHandle(inRead)
+		windows.CloseHandle(inWrite)
 		return nil, err
 	}
+	// The pseudoconsole takes its own references to these two ends, but it
+	// wants them open until the program is running, so they are closed
+	// after the process starts — the order Microsoft's ConPTY sample uses.
+	defer windows.CloseHandle(inRead)
+	defer windows.CloseHandle(outWrite)
 
 	size := windows.Coord{X: int16(max(cols, 1)), Y: int16(max(rows, 1))}
 	var console windows.Handle
-	err = windows.CreatePseudoConsole(size, windows.Handle(inRead.Fd()), windows.Handle(outWrite.Fd()), 0, &console)
-	// The console holds its own references to these two ends now.
-	inRead.Close()
-	outWrite.Close()
-	if err != nil {
-		inWrite.Close()
-		outRead.Close()
+	if err := windows.CreatePseudoConsole(size, inRead, outWrite, 0, &console); err != nil {
+		windows.CloseHandle(inWrite)
+		windows.CloseHandle(outRead)
 		return nil, fmt.Errorf("ConPTY: %w (Windows 10 1809 or later is required)", err)
 	}
 
-	p := &winPTY{console: console, in: inWrite, out: outRead, dir: dir, exited: make(chan struct{})}
+	p := &winPTY{
+		console: console,
+		in:      os.NewFile(uintptr(inWrite), "conpty-in"),
+		out:     os.NewFile(uintptr(outRead), "conpty-out"),
+		dir:     dir,
+		exited:  make(chan struct{}),
+	}
 	if err := p.spawn(shell, dir); err != nil {
 		p.release()
 		return nil, err
@@ -66,6 +73,9 @@ func startPTY(shell, dir string, rows, cols int) (ptyProcess, error) {
 	return p, nil
 }
 
+var procUpdateProcThreadAttribute = windows.NewLazySystemDLL("kernel32.dll").
+	NewProc("UpdateProcThreadAttribute")
+
 // spawn starts the shell attached to the pseudoconsole.
 func (p *winPTY) spawn(shell, dir string) error {
 	attrs, err := windows.NewProcThreadAttributeList(1)
@@ -73,13 +83,17 @@ func (p *winPTY) spawn(shell, dir string) error {
 		return err
 	}
 	defer attrs.Delete()
-	// This attribute's value *is* the handle, not a pointer to it, so the
-	// handle's bits are reinterpreted rather than converted (which is what
-	// go vet objects to, rightly, for an address).
-	hpc := p.console
-	if err := attrs.Update(windows.PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
-		*(*unsafe.Pointer)(unsafe.Pointer(&hpc)), unsafe.Sizeof(hpc)); err != nil {
-		return err
+
+	// This attribute's value *is* the pseudoconsole handle, not a pointer
+	// to it, which is why this goes through the raw call: x/sys's wrapper
+	// takes an unsafe.Pointer and retains it as a Go pointer, and a handle
+	// must never be mistaken for one.
+	if r, _, e := procUpdateProcThreadAttribute.Call(
+		uintptr(unsafe.Pointer(attrs.List())), 0,
+		windows.PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
+		uintptr(p.console), unsafe.Sizeof(p.console), 0, 0,
+	); r == 0 {
+		return fmt.Errorf("attaching the pseudoconsole: %w", e)
 	}
 
 	si := &windows.StartupInfoEx{
@@ -131,12 +145,14 @@ func (p *winPTY) spawn(shell, dir string) error {
 	return nil
 }
 
-// reap waits for the program and closes the output pipe, so the pane's
-// read loop sees EOF and the pane is marked dead.
+// reap waits for the program, then releases the pseudoconsole and the
+// output pipe, so the pane's read loop sees EOF and the pane is marked
+// dead. The console holds the write end, so letting it go is what
+// actually unblocks a read in progress.
 func (p *winPTY) reap() {
 	windows.WaitForSingleObject(p.proc, windows.INFINITE)
 	close(p.exited)
-	p.out.Close()
+	p.Close()
 }
 
 func (p *winPTY) Read(b []byte) (int, error)  { return p.out.Read(b) }
