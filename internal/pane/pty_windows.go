@@ -27,17 +27,7 @@ type winPTY struct {
 	// handles whose lifetime the pseudoconsole shares.
 	in  windows.Handle // we write the program's input here
 	out windows.Handle // we read the program's output here
-	// The console's end of the input pipe. Microsoft's sample closes it as
-	// soon as the pseudoconsole exists, saying it has been duplicated into
-	// the console host — but a shell started that way exits at once with
-	// status 0, the way a shell does when its input reaches EOF. So it is
-	// kept until the console is gone: one handle, and the shell lives.
-	//
-	// The output end is *not* kept. Holding the write end of a pipe means
-	// it can never report EOF, and this pane's read loop would block on a
-	// dead shell for ever.
-	inRead windows.Handle
-	dir    string
+	dir string
 
 	closeOnce sync.Once
 	exited    chan struct{}
@@ -67,12 +57,14 @@ func startPTY(shell, dir string, rows, cols int) (ptyProcess, error) {
 		return nil, fmt.Errorf("ConPTY: %w (Windows 10 1809 or later is required)", err)
 	}
 
-	windows.CloseHandle(outWrite) // the console host has its own copy
+	// Both of the console's own ends belong to the console host now.
+	windows.CloseHandle(inRead)
+	windows.CloseHandle(outWrite)
+
 	p := &winPTY{
 		console: console,
 		in:      inWrite,
 		out:     outRead,
-		inRead:  inRead,
 		dir:     dir,
 		exited:  make(chan struct{}),
 	}
@@ -107,8 +99,18 @@ func (p *winPTY) spawn(shell, dir string) error {
 		return fmt.Errorf("attaching the pseudoconsole: %w", e)
 	}
 
+	// STARTF_USESTDHANDLES with all three handles left empty. Without it,
+	// CreateProcess copies *our* standard handles into the child, and this
+	// process is a daemon whose handles are pipes or the null device: the
+	// shell would attach to the console (its title even changes) but write
+	// into nothing and read EOF at once. Empty handles plus the console
+	// attribute make the console host give the child the pseudoconsole's
+	// own, which is the whole point.
 	si := &windows.StartupInfoEx{
-		StartupInfo:             windows.StartupInfo{Cb: uint32(unsafe.Sizeof(windows.StartupInfoEx{}))},
+		StartupInfo: windows.StartupInfo{
+			Cb:    uint32(unsafe.Sizeof(windows.StartupInfoEx{})),
+			Flags: windows.STARTF_USESTDHANDLES,
+		},
 		ProcThreadAttributeList: attrs.List(),
 	}
 	cmdline, err := windows.UTF16PtrFromString(shell)
@@ -208,11 +210,10 @@ func (p *winPTY) Close() error {
 }
 
 // release tears the console down in the one order that doesn't deadlock:
-// let go of the input first, then the console itself — which is what
-// makes the console host exit and the output pipe report EOF, unblocking
-// a read in progress — and only then our own ends.
+// the input first, then the console itself — which is what makes the
+// console host exit and the output pipe report EOF, unblocking a read in
+// progress — and only then our own end of the output.
 func (p *winPTY) release() {
-	windows.CloseHandle(p.inRead)
 	windows.CloseHandle(p.in)
 	if p.console != 0 {
 		windows.ClosePseudoConsole(p.console)
