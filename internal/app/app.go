@@ -45,7 +45,9 @@ type App struct {
 	detachCh chan struct{}
 	dirty    chan struct{}
 
-	mu          sync.Mutex // guards everything below
+	mu          sync.Mutex     // guards everything below
+	lastStatus  map[int]string // pane id -> status, for the hooks
+	attention   map[int]bool   // panes waiting for input
 	manager     *session.Manager
 	handler     *input.Handler
 	screen      *ui.Screen
@@ -101,6 +103,7 @@ func (a *App) Start(cols, rows int) error {
 		return err
 	}
 	go a.renderLoop()
+	go a.watch()
 	return nil
 }
 
@@ -270,8 +273,9 @@ func (a *App) status(now time.Time) ui.Status {
 		WorkspaceCount: len(a.manager.Workspaces),
 		ActiveTab:      ws.ActiveTabIdx,
 	}
-	for _, t := range ws.Tabs {
+	for ti, t := range ws.Tabs {
 		st.Tabs = append(st.Tabs, t.Name)
+		st.TabAlert = append(st.TabAlert, a.tabNeedsInput(ws.Name, ti+1))
 	}
 	panes := a.manager.ActivePanes()
 	st.PaneIndex = slices.Index(panes, a.manager.ActivePane())

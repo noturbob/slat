@@ -14,8 +14,9 @@ import (
 	"github.com/noturbob/slat/internal/daemon"
 )
 
-// session starts a daemon on a private socket, as `slat` would.
-func session(t *testing.T) string {
+// session starts a daemon on a private socket, as `slat` would. tweak, if
+// given, adjusts the config before the session starts.
+func session(t *testing.T, tweak ...func(*config.Config)) string {
 	t.Helper()
 	t.Setenv("PS1", "$ ")
 	t.Setenv("ENV", "")
@@ -30,6 +31,9 @@ func session(t *testing.T) string {
 	cfg.Shell = "/bin/sh"
 	cfg.StatusBar = false
 	cfg.Agent.InputAfter = config.Duration(400 * time.Millisecond)
+	for _, f := range tweak {
+		f(cfg)
+	}
 	srv, err := daemon.New(cfg, sock)
 	if err != nil {
 		t.Fatal(err)
@@ -198,4 +202,29 @@ func TestStatusInput(t *testing.T) {
 	// Answering it lets the shell continue.
 	do(t, sock, control.Request{Cmd: "send", Pane: first, Data: "n\r"})
 	statusEventually(t, sock, first, "idle")
+}
+
+// The daemon runs the [agent] hook when a pane starts waiting for input,
+// once, on the change — that is what tells a human an agent is stuck.
+func TestInputHookFires(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "hook.log")
+	sock := session(t, func(c *config.Config) {
+		c.Agent.OnInput = "echo pane %p %s >> " + log
+	})
+	first := fmt.Sprint(do(t, sock, control.Request{Cmd: "ls"}).Panes[0].Pane)
+	statusEventually(t, sock, first, "idle")
+	do(t, sock, control.Request{Cmd: "send", Pane: first,
+		Data: `sh -c 'printf "Continue? [y/N] "; read a'` + "\r"})
+
+	var got string
+	for deadline := time.Now().Add(20 * time.Second); time.Now().Before(deadline); {
+		if b, err := os.ReadFile(log); err == nil && len(b) > 0 {
+			got = string(b)
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if want := "pane " + first + " input\n"; got != want {
+		t.Errorf("hook log = %q, want %q (once only)", got, want)
+	}
 }

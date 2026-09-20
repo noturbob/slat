@@ -131,6 +131,27 @@ Block until the condition holds.
 .B --for idle
 also returns when the pane stops for input, so a wait never sleeps through a
 question.
+.SH NOTIFICATIONS
+A pane waiting for input marks its tab in the status bar
+.RI ( 2:shell\ ? ).
+The configuration can also run a command on that change:
+.PP
+.RS
+.EX
+[agent]
+on_input = 'notify-send "slat: pane %p needs input" %c'
+.EE
+.RE
+.PP
+.B %p
+is the pane id,
+.B %t
+its tab,
+.B %s
+the status and
+.B %c
+the pane's last line. Values are shell-quoted, so pane output can never become
+part of the command. Hooks run detached and their output goes to the daemon log.
 .SH FILES
 .TP
 .I $XDG_CONFIG_HOME/slat/config.toml

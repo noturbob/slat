@@ -127,6 +127,7 @@ type Status struct {
 	WorkspaceIndex int // 0-based
 	WorkspaceCount int
 	Tabs           []string
+	TabAlert       []bool // a pane in this tab is waiting for input
 	ActiveTab      int
 	Badge          string // "PREFIX", "ZOOM", ... or ""
 	PaneIndex      int    // 0-based
@@ -171,7 +172,11 @@ func DrawStatusBar(f *Frame, y int, st Status) {
 			if i == st.ActiveTab {
 				sty = styleTabActive
 			}
-			if !put(fmt.Sprintf(" %d:%s ", i+1, name), sty) || !put(" ", styleBar) {
+			mark := ""
+			if i < len(st.TabAlert) && st.TabAlert[i] {
+				mark = " ?"
+			}
+			if !put(fmt.Sprintf(" %d:%s%s ", i+1, name, mark), sty) || !put(" ", styleBar) {
 				break
 			}
 		}

@@ -260,6 +260,19 @@ A pane's status is one of four, which is what makes `wait` useful:
   prompt), so an agent waiting for a build wakes up instead of hanging.
 - **exited** — the pane's program is gone.
 
+When a pane starts waiting for input, its tab is marked `2:shell ?` in the
+status bar, and slat can run a command so you don't have to watch:
+
+```toml
+[agent]
+on_input = "notify-send \"slat: pane %p needs input\" %c"
+```
+
+`%p` is the pane id, `%t` its tab, `%s` the status and `%c` the pane's last
+line. Values are shell-quoted for you, so a prompt containing a quote stays
+text. The hook runs detached; its output goes to the daemon log, never to your
+screen.
+
 Tune the detection under `[agent]` in the config; see
 [docs/design/agent-cli.md](docs/design/agent-cli.md) for the full design.
 

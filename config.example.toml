@@ -23,6 +23,11 @@ settle = "750ms"
 # A running program quiet this long on a prompt is reported as waiting
 # for input.
 input_after = "10s"
+# Run a command when a pane starts waiting for input, or goes idle.
+# %p pane id, %t tab, %s status, %c the pane's last line — all shell-quoted.
+# on_input = 'notify-send "slat: pane %p needs input" %c'
+# on_idle  = ""
+
 # The prompts that count: regular expressions matched against the
 # pane's last line. Setting this replaces the built-in list.
 # input_patterns = ['\[[yY]/[nN]\]', '(?i)press enter', '\?\s*$']
