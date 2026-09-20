@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# A new push makes the previous run pointless; don't leave it in the queue.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     strategy:
@@ -17,7 +22,9 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go vet ./...
-      - run: go test -race ./...
+      # A bounded timeout: a deadlock should fail with goroutine stacks in
+      # minutes, not sit in the queue until the job is killed.
+      - run: go test -race -timeout 5m ./...
       # Cross-compile the platforms this runner isn't, so a platform-only
       # file can't break a build that nothing here would notice.
       - run: GOOS=windows go vet ./... && GOOS=darwin go vet ./... && GOOS=linux go vet ./...
