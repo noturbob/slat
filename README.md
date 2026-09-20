@@ -10,7 +10,7 @@ A terminal multiplexer with tiling panes, tabs and workspaces, written in Go.
 
 [![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-blue?style=flat-square)](#requirements)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-blue?style=flat-square)](#requirements)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-support%20slat-ff5e5b?style=flat-square&logo=ko-fi&logoColor=white)](https://ko-fi.com/bobbyanthene)
 
 [Website](https://noturbob.github.io/slat/) · [Install](#install) · [Keys](#keys) · [Configuration](#configuration) · [How it works](#how-it-works)
@@ -35,6 +35,8 @@ output included.
 - **Every pane keeps its own screen** — `clear`, vim or htop in one pane never touch another, and nothing is lost when you split, close or switch
 - **Fast** — only changed cells are sent to your terminal; half a million lines of output render in about a third of a second
 - **New panes open where you are** — a split starts in the directory of the pane you split from (Linux)
+- **Drivable from scripts and AI agents** — `slat ls`, `run`, `capture` and `wait --for idle` let anything outside the terminal work a session and know when a pane needs a human ([details](#scripting-and-agents))
+- **Themes** — five built-in palettes, or set any colour yourself
 - **One checked config file** — mistakes are reported when you run `slat`, not ignored
 
 ## Install

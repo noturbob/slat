@@ -73,9 +73,15 @@ The heart of it. Four values:
 | Status | Meaning | How slat decides |
 |---|---|---|
 | `working` | a program is running | the pane's foreground process group is not the shell, or the pane produced output recently |
-| `idle` | the shell is waiting | foreground process is the shell **and** no output for `settle` (default 750ms) |
-| `input` | something is waiting for a human | `working`, no output for `input-after` (default 10s), and the last non-blank line matches an input pattern |
+| `idle` | the shell is waiting | foreground process is the shell **and** no output for `settle` (default 750ms) **and** the last line ends the way a prompt does (`$ # % > ❯ ➜ » λ`) |
+| `input` | something is waiting for a human | either: `working`, no output for `input-after` (default 10s) and the last line matches an input pattern; or the shell is in the foreground, has settled, and its last line matches a pattern without looking like a prompt (that's `read -p`, or a script asking) |
 | `exited` | the program is gone | the pane's process ended |
+
+A pane counts as producing output the moment it starts, so one that hasn't
+printed its first prompt is `working`, not `idle`; and any output
+invalidates the cached foreground process, since output is the signal that
+a program started or finished. Both matter for `wait --for idle`, which
+would otherwise return before a just-started command had begun.
 
 Foreground process: `tcgetpgrp(pty)` (POSIX), then the process name from
 `/proc/<pid>/comm` on Linux, `ps -o comm=` on macOS. Windows' ConPTY has
