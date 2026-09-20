@@ -301,6 +301,7 @@ prefix     = "C-a"        # Ctrl + a letter, or C-\ C-] C-^ C-_
 shell      = "/bin/zsh"   # default: $SHELL
 status_bar = true
 scrollback = 5000         # lines kept per pane; 0 turns it off
+animate    = "90ms"       # a new pane is revealed over this long; 0 = off
 
 [agent]                   # how `slat status` reads a pane (see above)
 settle      = "750ms"     # quiet for this long after output = idle

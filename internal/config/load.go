@@ -22,6 +22,7 @@ type Config struct {
 	Shell      string            `toml:"shell"`
 	StatusBar  bool              `toml:"status_bar"`
 	Scrollback int               `toml:"scrollback"` // lines of history per pane
+	Animate    Duration          `toml:"animate"`    // how long a new pane takes to appear; 0 = off
 	Keybinds   map[string]string `toml:"keybinds"`
 	Theme      map[string]string `toml:"theme"`
 	Agent      Agent             `toml:"agent"`
@@ -71,6 +72,7 @@ func DefaultConfig() *Config {
 		Shell:      defaultShell(),
 		StatusBar:  true,
 		Scrollback: 2000,
+		Animate:    Duration(90 * time.Millisecond),
 		Keybinds:   defaultKeybinds(),
 		Agent:      defaultAgent(),
 	}
@@ -203,6 +205,12 @@ func (cfg *Config) merge(user *Config, md toml.MetaData) error {
 			return err
 		}
 		cfg.Theme = user.Theme
+	}
+	if md.IsDefined("animate") {
+		if user.Animate.D() < 0 || user.Animate.D() > time.Second {
+			return fmt.Errorf("animate = %q: must be between 0 and 1s", user.Animate.D())
+		}
+		cfg.Animate = user.Animate
 	}
 	if md.IsDefined("scrollback") {
 		if n := user.Scrollback; n < 0 || n > 1_000_000 {

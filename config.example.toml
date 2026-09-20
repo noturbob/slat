@@ -15,6 +15,11 @@ status_bar = true
 # Lines of output each pane keeps for scroll mode (0 turns it off)
 scrollback = 2000
 
+# How long a new pane takes to slide into place. Only the drawing is
+# animated — the pane is its final size throughout, so no program is
+# resized more than once. 0 turns it off; the maximum is 1s.
+animate = "90ms"
+
 # Colours for the parts slat draws: the status bar, pane borders and
 # overlays. Programs running in panes keep their own colours.
 [theme]

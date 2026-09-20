@@ -131,6 +131,11 @@ Block until the condition holds.
 .B --for idle
 also returns when the pane stops for input, so a wait never sleeps through a
 question.
+.SH ANIMATION
+A new pane is revealed over
+.B animate
+(default 90ms; 0 turns it off). Only the drawing is animated: the pane is its
+final size from the start, so no program in a pane is resized more than once.
 .SH THEMES
 The status bar, pane borders and overlays take their colours from the
 .B [theme]

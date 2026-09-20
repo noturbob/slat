@@ -87,3 +87,40 @@ func TestThemeReachesTheScreen(t *testing.T) {
 		t.Errorf("workspace name colour = %v, want the accent %v", name.Style.Fg, want.Accent)
 	}
 }
+
+// A new pane is revealed over a moment instead of snapping in. The pane is
+// at its final size the whole time, so nothing is resized twice.
+func TestSplitAnimation(t *testing.T) {
+	a, term := start(t, func(c *config.Config) {
+		c.Animate = config.Duration(400 * time.Millisecond)
+	})
+	before := a.Panes()[0]
+
+	a.FeedInput([]byte{prefix, 'v'}) // split left/right
+	waitFor(t, term, "░", 1)         // the curtain over the new pane
+	waitGone(t, term, "░")           // and it's gone once revealed
+	waitFor(t, term, "slat$", 2)     // both prompts on screen
+
+	// The panes kept their size while the curtain moved: a program in a
+	// pane must not be resized frame by frame.
+	after := a.Panes()
+	if len(after) != 2 {
+		t.Fatalf("expected two panes, got %d", len(after))
+	}
+	if after[0].Cols >= before.Cols {
+		t.Errorf("the split pane didn't shrink: %d -> %d", before.Cols, after[0].Cols)
+	}
+	if after[1].Rows != after[0].Rows {
+		t.Errorf("a left/right split gave different heights: %+v", after)
+	}
+}
+
+// Animations can be switched off, and then nothing is drawn over a pane.
+func TestAnimationOff(t *testing.T) {
+	a, term := start(t, func(c *config.Config) { c.Animate = 0 })
+	a.FeedInput([]byte{prefix, 'v'})
+	waitFor(t, term, "slat$", 2)
+	if strings.Contains(term.String(), "░") {
+		t.Errorf("animation drawn although it is off:\n%s", term.String())
+	}
+}

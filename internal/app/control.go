@@ -177,8 +177,11 @@ func (a *App) NewPane(o NewPaneOpts) (PaneInfo, error) {
 	a.mu.Lock()
 	previous := a.manager.ActivePane()
 	created, err := a.manager.SplitAt(target.Pane, dir, o.Cwd)
-	if err == nil && !o.Focus && previous != nil {
-		a.manager.Focus(previous)
+	if err == nil {
+		a.startAnim(created, dir)
+		if !o.Focus && previous != nil {
+			a.manager.Focus(previous)
+		}
 	}
 	a.mu.Unlock()
 	a.markDirty()

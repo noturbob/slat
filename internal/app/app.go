@@ -46,6 +46,7 @@ type App struct {
 	dirty    chan struct{}
 
 	mu          sync.Mutex     // guards everything below
+	anim        *anim          // a pane being revealed
 	lastStatus  map[int]string // pane id -> status, for the hooks
 	attention   map[int]bool   // panes waiting for input
 	manager     *session.Manager
@@ -247,6 +248,9 @@ func (a *App) render() {
 	}
 	ar, ac, arows, acols := active.Rect()
 	ui.DrawBorders(frame, borders, layout.Rect{Row: ar, Col: ac, Rows: arows, Cols: acols})
+	if a.anim != nil && !a.drawAnim(frame, visible, now) {
+		a.anim = nil
+	}
 
 	x, y, vis, style := active.Cursor()
 	cur := ui.Cursor{X: ac + x, Y: ar + y, Visible: vis, Style: style}
@@ -399,6 +403,8 @@ func (a *App) do(action input.Action, b byte) bool {
 		a.zoomed = nil
 		if err := a.manager.SplitPane(dir); err != nil {
 			a.notify(err.Error())
+		} else {
+			a.startAnim(a.manager.ActivePane(), dir)
 		}
 	case input.ActionNextPane:
 		a.zoomed = nil

@@ -292,3 +292,18 @@ func DrawBanner(f *Frame, version, hint string) {
 		y++
 	}
 }
+
+// Curtain hides the part of r that a new pane hasn't revealed yet, so a
+// split slides into place instead of appearing all at once. revealed is
+// how far the reveal has got: columns for a left/right split, rows for a
+// top/bottom one.
+func Curtain(f *Frame, r layout.Rect, sideways bool, revealed int) {
+	for y := r.Row; y < r.Row+r.Rows; y++ {
+		for x := r.Col; x < r.Col+r.Cols; x++ {
+			if sideways && x-r.Col < revealed || !sideways && y-r.Row < revealed {
+				continue
+			}
+			f.Set(x, y, vt.Cell{R: '░', Style: styleBorder})
+		}
+	}
+}
