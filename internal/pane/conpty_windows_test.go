@@ -1,6 +1,7 @@
 package pane
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -41,27 +42,44 @@ func TestConPTY(t *testing.T) {
 		p.Dead(), exitCode(w))
 	t.Logf("console processes: %v (this process=%d)", consoleProcesses(t), windows.GetCurrentProcessId())
 
-	// Same thing without Pane, to place the blame.
-	proc, err := startPTY("", "", 24, 80)
+	// A one-shot command, read raw: this separates "the output path is
+	// broken" from "the interactive shell doesn't stay alive".
+	t.Logf("one-shot: %q", drain(t, defaultShell()+" /c echo SLAT-MARKER", 6*time.Second))
+	// And the interactive shell, read raw, for as long as it lives.
+	t.Logf("interactive: %q", drain(t, "", 6*time.Second))
+}
+
+// drain starts a program on a ConPTY and returns everything it writes
+// within the timeout, along with how it ended.
+func drain(t *testing.T, shell string, within time.Duration) string {
+	proc, err := startPTY(shell, "", 24, 80)
 	if err != nil {
-		t.Fatalf("raw startPTY: %v", err)
+		return "startPTY: " + err.Error()
 	}
 	defer proc.Terminate()
-	buf := make([]byte, 4096)
-	type result struct {
-		n   int
-		err error
-	}
-	ch := make(chan result, 1)
+
+	out := make(chan string, 1)
 	go func() {
-		n, err := proc.Read(buf)
-		ch <- result{n, err}
+		var b strings.Builder
+		buf := make([]byte, 4096)
+		for {
+			n, err := proc.Read(buf)
+			b.Write(buf[:n])
+			if err != nil {
+				b.WriteString(" <read ended: " + err.Error() + ">")
+				break
+			}
+			if b.Len() > 2048 {
+				break
+			}
+		}
+		out <- b.String()
 	}()
 	select {
-	case r := <-ch:
-		t.Logf("raw read: n=%d err=%v data=%q", r.n, r.err, buf[:r.n])
-	case <-time.After(8 * time.Second):
-		t.Logf("raw read: nothing in 8s, child exit=%d", exitCode(proc.(*winPTY)))
+	case s := <-out:
+		return s
+	case <-time.After(within):
+		return "<still reading> exit=" + fmt.Sprint(exitCode(proc.(*winPTY)))
 	}
 }
 

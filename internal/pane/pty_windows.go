@@ -27,7 +27,14 @@ type winPTY struct {
 	// handles whose lifetime the pseudoconsole shares.
 	in  windows.Handle // we write the program's input here
 	out windows.Handle // we read the program's output here
-	dir string
+	// The console's own ends. Microsoft's sample closes these as soon as
+	// the pseudoconsole exists, saying they have been duplicated — but a
+	// shell started this way exits at once with status 0, the way a shell
+	// does when its input reaches EOF. They are kept until the console is
+	// gone, which costs two handles and keeps the shell alive.
+	inRead   windows.Handle
+	outWrite windows.Handle
+	dir      string
 
 	closeOnce sync.Once
 	exited    chan struct{}
@@ -48,26 +55,23 @@ func startPTY(shell, dir string, rows, cols int) (ptyProcess, error) {
 		windows.CloseHandle(inWrite)
 		return nil, err
 	}
-	// The pseudoconsole takes its own references to these two ends, but it
-	// wants them open until the program is running, so they are closed
-	// after the process starts — the order Microsoft's ConPTY sample uses.
-	defer windows.CloseHandle(inRead)
-	defer windows.CloseHandle(outWrite)
-
 	size := windows.Coord{X: int16(max(cols, 1)), Y: int16(max(rows, 1))}
 	var console windows.Handle
 	if err := windows.CreatePseudoConsole(size, inRead, outWrite, 0, &console); err != nil {
-		windows.CloseHandle(inWrite)
-		windows.CloseHandle(outRead)
+		for _, h := range []windows.Handle{inRead, inWrite, outRead, outWrite} {
+			windows.CloseHandle(h)
+		}
 		return nil, fmt.Errorf("ConPTY: %w (Windows 10 1809 or later is required)", err)
 	}
 
 	p := &winPTY{
-		console: console,
-		in:      inWrite,
-		out:     outRead,
-		dir:     dir,
-		exited:  make(chan struct{}),
+		console:  console,
+		in:       inWrite,
+		out:      outRead,
+		inRead:   inRead,
+		outWrite: outWrite,
+		dir:      dir,
+		exited:   make(chan struct{}),
 	}
 	if err := p.spawn(shell, dir); err != nil {
 		p.release()
@@ -206,6 +210,8 @@ func (p *winPTY) release() {
 	}
 	windows.CloseHandle(p.in)
 	windows.CloseHandle(p.out)
+	windows.CloseHandle(p.inRead)
+	windows.CloseHandle(p.outWrite)
 	if p.proc != 0 {
 		windows.CloseHandle(p.proc)
 	}
