@@ -27,14 +27,17 @@ type winPTY struct {
 	// handles whose lifetime the pseudoconsole shares.
 	in  windows.Handle // we write the program's input here
 	out windows.Handle // we read the program's output here
-	// The console's own ends. Microsoft's sample closes these as soon as
-	// the pseudoconsole exists, saying they have been duplicated — but a
-	// shell started this way exits at once with status 0, the way a shell
-	// does when its input reaches EOF. They are kept until the console is
-	// gone, which costs two handles and keeps the shell alive.
-	inRead   windows.Handle
-	outWrite windows.Handle
-	dir      string
+	// The console's end of the input pipe. Microsoft's sample closes it as
+	// soon as the pseudoconsole exists, saying it has been duplicated into
+	// the console host — but a shell started that way exits at once with
+	// status 0, the way a shell does when its input reaches EOF. So it is
+	// kept until the console is gone: one handle, and the shell lives.
+	//
+	// The output end is *not* kept. Holding the write end of a pipe means
+	// it can never report EOF, and this pane's read loop would block on a
+	// dead shell for ever.
+	inRead windows.Handle
+	dir    string
 
 	closeOnce sync.Once
 	exited    chan struct{}
@@ -64,14 +67,14 @@ func startPTY(shell, dir string, rows, cols int) (ptyProcess, error) {
 		return nil, fmt.Errorf("ConPTY: %w (Windows 10 1809 or later is required)", err)
 	}
 
+	windows.CloseHandle(outWrite) // the console host has its own copy
 	p := &winPTY{
-		console:  console,
-		in:       inWrite,
-		out:      outRead,
-		inRead:   inRead,
-		outWrite: outWrite,
-		dir:      dir,
-		exited:   make(chan struct{}),
+		console: console,
+		in:      inWrite,
+		out:     outRead,
+		inRead:  inRead,
+		dir:     dir,
+		exited:  make(chan struct{}),
 	}
 	if err := p.spawn(shell, dir); err != nil {
 		p.release()
@@ -204,14 +207,17 @@ func (p *winPTY) Close() error {
 	return nil
 }
 
+// release tears the console down in the one order that doesn't deadlock:
+// let go of the input first, then the console itself — which is what
+// makes the console host exit and the output pipe report EOF, unblocking
+// a read in progress — and only then our own ends.
 func (p *winPTY) release() {
+	windows.CloseHandle(p.inRead)
+	windows.CloseHandle(p.in)
 	if p.console != 0 {
 		windows.ClosePseudoConsole(p.console)
 	}
-	windows.CloseHandle(p.in)
 	windows.CloseHandle(p.out)
-	windows.CloseHandle(p.inRead)
-	windows.CloseHandle(p.outWrite)
 	if p.proc != 0 {
 		windows.CloseHandle(p.proc)
 	}
