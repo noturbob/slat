@@ -131,6 +131,35 @@ Block until the condition holds.
 .B --for idle
 also returns when the pane stops for input, so a wait never sleeps through a
 question.
+.SH THEMES
+The status bar, pane borders and overlays take their colours from the
+.B [theme]
+table:
+.PP
+.RS
+.EX
+[theme]
+name   = "gruvbox"
+accent = "#fabd2f"
+.EE
+.RE
+.PP
+.B name
+is one of
+.IR default ,
+.IR gruvbox ,
+.IR nord ,
+.I rose-pine
+or
+.IR mono .
+The individual colours are
+.BR bg ", " fg ", " dim ", " accent ", " border ", " tab_bg ", " tab_fg ", "
+.B tab_active_bg
+and
+.BR tab_active_fg ,
+each a colour name, a palette index 0-255, or
+.IR #rrggbb .
+Programs running in panes keep their own colours.
 .SH NOTIFICATIONS
 A pane waiting for input marks its tab in the status bar
 .RI ( 2:shell\ ? ).

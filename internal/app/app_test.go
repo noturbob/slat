@@ -31,6 +31,17 @@ func (t *terminal) String() string {
 	return t.emu.String()
 }
 
+// cell is what the user's terminal holds at (x, y), style included.
+func (t *terminal) cell(x, y int) vt.Cell {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	line := t.emu.Line(y)
+	if x < 0 || x >= len(line) {
+		return vt.Cell{}
+	}
+	return line[x]
+}
+
 const prefix = 0x13 // Ctrl-S
 
 func start(t *testing.T, tweak ...func(*config.Config)) (*App, *terminal) {

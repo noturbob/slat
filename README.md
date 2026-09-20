@@ -306,6 +306,10 @@ scrollback = 5000         # lines kept per pane; 0 turns it off
 settle      = "750ms"     # quiet for this long after output = idle
 input_after = "10s"       # quiet for this long on a prompt = waiting for input
 
+[theme]
+name = "gruvbox"          # default, gruvbox, nord, rose-pine, mono
+accent = "#fabd2f"        # override any single colour
+
 [keybinds]
 split-vertical   = "|"
 split-horizontal = "-"
@@ -313,6 +317,10 @@ resize-shrink    = "_"    # "-" was given away above
 zoom             = ""     # "" unbinds a command
 ```
 
+- `[theme]` colours are `bg`, `fg`, `dim`, `accent`, `border`, `tab_bg`,
+  `tab_fg`, `tab_active_bg` and `tab_active_fg`, written as a colour name, a
+  palette index (0-255) or `#rrggbb`. Only what slat draws is themed — pane
+  contents keep whatever colours the programs in them use.
 - Keybinds you don't set keep their defaults.
 - Giving a default key to another command takes it away from the default
   command, so bindings never silently collide.

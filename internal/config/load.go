@@ -13,6 +13,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/noturbob/slat/internal/input"
+	"github.com/noturbob/slat/internal/ui"
 )
 
 // Config holds the full application configuration.
@@ -22,6 +23,7 @@ type Config struct {
 	StatusBar  bool              `toml:"status_bar"`
 	Scrollback int               `toml:"scrollback"` // lines of history per pane
 	Keybinds   map[string]string `toml:"keybinds"`
+	Theme      map[string]string `toml:"theme"`
 	Agent      Agent             `toml:"agent"`
 
 	PrefixByte byte `toml:"-"` // parsed Prefix
@@ -193,6 +195,14 @@ func (cfg *Config) merge(user *Config, md toml.MetaData) error {
 	cfg.StatusBar = user.StatusBar
 	if err := cfg.mergeAgent(user.Agent, md); err != nil {
 		return err
+	}
+	// Parsed here rather than at draw time, so a bad colour is reported
+	// when the user runs slat instead of painting something odd.
+	if len(user.Theme) > 0 {
+		if _, err := ui.ParseTheme(user.Theme); err != nil {
+			return err
+		}
+		cfg.Theme = user.Theme
 	}
 	if md.IsDefined("scrollback") {
 		if n := user.Scrollback; n < 0 || n > 1_000_000 {

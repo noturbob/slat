@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/noturbob/slat/internal/config"
+	"github.com/noturbob/slat/internal/ui"
 )
 
 // A pane's last line is output from whatever is running in it, so a hook
@@ -65,4 +66,24 @@ func TestStatusBarMarksTabWaitingForInput(t *testing.T) {
 	a.FeedInput([]byte{prefix, 'n'})
 	a.FeedInput([]byte("y\r"))
 	waitGone(t, term, "2:shell ?")
+}
+
+// The whole theming path: config table -> ui.Theme -> painted cells.
+func TestThemeReachesTheScreen(t *testing.T) {
+	settings := map[string]string{"name": "nord", "accent": "#ff0000"}
+	_, term := start(t, func(c *config.Config) { c.Theme = settings })
+	want, err := ui.ParseTheme(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The status bar is the bottom row, and the workspace name on it is
+	// drawn in the accent colour.
+	bar := term.cell(0, 29)
+	if bar.Style.Bg != want.Bg {
+		t.Errorf("status bar background = %v, want %v", bar.Style.Bg, want.Bg)
+	}
+	if name := term.cell(1, 29); name.Style.Fg != want.Accent {
+		t.Errorf("workspace name colour = %v, want the accent %v", name.Style.Fg, want.Accent)
+	}
 }

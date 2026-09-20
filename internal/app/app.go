@@ -74,6 +74,11 @@ func New(cfg *config.Config) (*App, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config must not be nil")
 	}
+	theme, err := ui.ParseTheme(cfg.Theme)
+	if err != nil {
+		return nil, err
+	}
+	theme.Apply()
 	a := &App{
 		cfg:      cfg,
 		help:     helpEntries(cfg),

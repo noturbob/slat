@@ -7,12 +7,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/noturbob/slat/internal/app"
 	"github.com/noturbob/slat/internal/client"
 	"github.com/noturbob/slat/internal/config"
 	"github.com/noturbob/slat/internal/daemon"
+	"github.com/noturbob/slat/internal/ui"
 )
 
 const usage = `slat — a terminal multiplexer
@@ -24,6 +26,7 @@ usage:
 
 Inside slat, press the prefix (Ctrl-S by default) then ? for keybindings.
 Config: %s
+Themes: %s (set theme.name; any colour can be overridden)
 `
 
 // socketPath is the per-user daemon socket. $XDG_RUNTIME_DIR is private to
@@ -62,7 +65,7 @@ func main() {
 		fmt.Println("slat", app.Version)
 		return
 	case args[0] == "-h" || args[0] == "--help" || args[0] == "help":
-		fmt.Printf(usage, config.Path())
+		fmt.Printf(usage, config.Path(), strings.Join(ui.ThemeNames(), ", "))
 		fmt.Print("\n" + cliUsage)
 		return
 	default:

@@ -15,6 +15,23 @@ status_bar = true
 # Lines of output each pane keeps for scroll mode (0 turns it off)
 scrollback = 2000
 
+# Colours for the parts slat draws: the status bar, pane borders and
+# overlays. Programs running in panes keep their own colours.
+[theme]
+# A palette to start from: default, gruvbox, nord, rose-pine, mono
+name = "default"
+# Override any single colour: a name (red, bright-blue), a palette index
+# (0-255) or #rrggbb.
+# bg            = 235
+# fg            = 252
+# dim           = 248
+# accent        = "#00d7d7"   # workspace name, focused border, badges
+# border        = 240
+# tab_bg        = 236
+# tab_fg        = 250
+# tab_active_bg = 25
+# tab_active_fg = 231
+
 # How `slat status`, `slat ls` and `slat wait` read a pane, for scripts and
 # AI agents. See the README's "Scripting and agents" section.
 [agent]
