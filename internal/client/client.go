@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 
 	"golang.org/x/term"
 
@@ -35,14 +33,16 @@ func Run(sockPath string) (detached bool, err error) {
 	if err != nil {
 		return false, fmt.Errorf("stdin is not a terminal: %w", err)
 	}
+	restoreOutput := prepareOutput()
 	os.Stdout.WriteString(enterScreen)
 	defer func() {
 		os.Stdout.WriteString(leaveScreen)
+		restoreOutput()
 		term.Restore(fd, oldState)
 	}()
 
-	// Frames come from two goroutines (stdin and SIGWINCH); a frame's header
-	// and payload must not interleave with another frame's.
+	// Frames come from two goroutines (stdin and the resize watcher); a
+	// frame's header and payload must not interleave with another frame's.
 	var wmu sync.Mutex
 	send := func(t proto.FrameType, payload []byte) error {
 		wmu.Lock()
@@ -61,18 +61,11 @@ func Run(sockPath string) (detached bool, err error) {
 		return false, fmt.Errorf("handshake failed: %w", err)
 	}
 
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGWINCH, syscall.SIGTERM, syscall.SIGHUP)
-	defer signal.Stop(sigCh)
-	go func() {
-		for sig := range sigCh {
-			if sig != syscall.SIGWINCH {
-				conn.Close() // unblocks the read loop below; defers restore the terminal
-				return
-			}
-			send(proto.TypeResize, size())
-		}
-	}()
+	stopWatching := watchTerminal(fd,
+		func() { send(proto.TypeResize, size()) },
+		// Unblocks the read loop below; the defers restore the terminal.
+		func() { conn.Close() })
+	defer stopWatching()
 
 	go func() {
 		buf := make([]byte, 4096)

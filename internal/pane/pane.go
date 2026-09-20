@@ -1,15 +1,10 @@
 package pane
 
 import (
-	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
-
-	"github.com/creack/pty"
 
 	"github.com/noturbob/slat/internal/vt"
 )
@@ -30,14 +25,12 @@ const (
 type Pane struct {
 	ID int
 
-	cmd *exec.Cmd
-	pty *os.File
+	proc ptyProcess
 
 	mu       sync.Mutex
 	term     *vt.Terminal
 	row, col int // top-left position on screen, 0-based
 	dead     bool
-	exited   bool // process reaped
 	lastOut  time.Time
 
 	fgPID  int // foreground process, cached: on macOS this costs a ps call
@@ -53,20 +46,14 @@ type Pane struct {
 // goroutine whenever the pane's screen changes or its process exits.
 func New(id int, rows, cols int, shell, dir string, scrollback int, onChange func()) (*Pane, error) {
 	rows, cols = max(rows, 1), max(cols, 1)
-	if shell == "" {
-		shell = "/bin/sh"
-	}
-	cmd := exec.Command(shell)
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
-	cmd.Dir = dir
-	pt, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
+	proc, err := startPTY(shell, dir, rows, cols)
 	if err != nil {
 		return nil, err
 	}
 	if onChange == nil {
 		onChange = func() {}
 	}
-	p := &Pane{ID: id, cmd: cmd, pty: pt, term: vt.New(cols, rows), onChange: onChange}
+	p := &Pane{ID: id, proc: proc, term: vt.New(cols, rows), onChange: onChange}
 	p.term.SetScrollback(scrollback)
 	go p.readLoop()
 	go p.waitLoop()
@@ -76,7 +63,7 @@ func New(id int, rows, cols int, shell, dir string, scrollback int, onChange fun
 func (p *Pane) readLoop() {
 	buf := make([]byte, 64*1024)
 	for {
-		n, err := p.pty.Read(buf)
+		n, err := p.proc.Read(buf)
 		if n > 0 {
 			p.mu.Lock()
 			p.term.Write(buf[:n])
@@ -84,7 +71,7 @@ func (p *Pane) readLoop() {
 			p.lastOut = time.Now()
 			p.mu.Unlock()
 			if len(replies) > 0 {
-				p.pty.Write(replies) // answers to cursor-position/device queries
+				p.proc.Write(replies) // answers to cursor-position/device queries
 			}
 			p.onChange()
 		}
@@ -96,10 +83,7 @@ func (p *Pane) readLoop() {
 }
 
 func (p *Pane) waitLoop() {
-	p.cmd.Wait()
-	p.mu.Lock()
-	p.exited = true
-	p.mu.Unlock()
+	p.proc.Wait()
 	p.markDead()
 }
 
@@ -110,29 +94,19 @@ func (p *Pane) markDead() {
 		p.mu.Lock()
 		p.dead = true
 		p.mu.Unlock()
-		p.pty.Close()
+		p.proc.Close()
 		p.onChange()
 	})
 }
 
-// Close ends the pane's program the way closing a terminal window does:
-// SIGHUP to its whole process group, so jobs started from the shell go too.
-// Anything that ignores SIGHUP gets SIGKILL a moment later.
+// Close ends the pane's program the way closing a terminal window does,
+// taking anything it started with it.
 func (p *Pane) Close() {
 	if p.Dead() {
 		return
 	}
-	pid := p.cmd.Process.Pid
-	syscall.Kill(-pid, syscall.SIGHUP)
+	p.proc.Terminate()
 	p.markDead()
-	time.AfterFunc(2*time.Second, func() {
-		p.mu.Lock()
-		exited := p.exited
-		p.mu.Unlock()
-		if !exited {
-			syscall.Kill(-pid, syscall.SIGKILL)
-		}
-	})
 }
 
 // Write sends input to the pane's program.
@@ -140,7 +114,7 @@ func (p *Pane) Write(data []byte) (int, error) {
 	if p.Dead() {
 		return 0, os.ErrClosed
 	}
-	return p.pty.Write(data)
+	return p.proc.Write(data)
 }
 
 // Dead reports whether the pane's program has exited or been closed.
@@ -161,7 +135,7 @@ func (p *Pane) SetRect(row, col, rows, cols int) {
 		return
 	}
 	p.term.Resize(cols, rows)
-	pty.Setsize(p.pty, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
+	p.proc.Resize(rows, cols)
 }
 
 // Rect returns the pane's position (0-based) and size.
@@ -251,10 +225,10 @@ const fgCacheFor = 700 * time.Millisecond
 // running). name is "" where the platform can't tell (Windows).
 func (p *Pane) Foreground() (pid int, name string, isShell bool) {
 	p.mu.Lock()
-	dead, fd := p.dead, p.pty.Fd()
+	dead := p.dead
 	if !dead && time.Since(p.fgAt) > fgCacheFor {
 		p.mu.Unlock()
-		pid, name = foreground(fd) // no lock: this can read /proc or run ps
+		pid, name = p.proc.Foreground() // no lock: this can read /proc or run ps
 		p.mu.Lock()
 		p.fgPID, p.fgName, p.fgAt = pid, name, time.Now()
 	}
@@ -266,7 +240,7 @@ func (p *Pane) Foreground() (pid int, name string, isShell bool) {
 	}
 	// By pid, not by name: a nested shell (`sh` inside sh, a subshell)
 	// is a running program, not this pane's idle prompt.
-	return pid, name, pid != 0 && pid == p.cmd.Process.Pid
+	return pid, name, pid != 0 && pid == p.proc.Pid()
 }
 
 // Capture returns the pane's text: the last n lines of the visible
@@ -307,12 +281,6 @@ func lineText(cells []vt.Cell) string {
 	return strings.TrimRight(b.String(), " ")
 }
 
-// Cwd returns the working directory of the pane's shell, or "" if the
-// platform doesn't expose it (only Linux's /proc does).
-func (p *Pane) Cwd() string {
-	dir, err := os.Readlink(fmt.Sprintf("/proc/%d/cwd", p.cmd.Process.Pid))
-	if err != nil {
-		return ""
-	}
-	return dir
-}
+// Cwd returns the working directory of the pane's shell, or "" where the
+// platform doesn't expose it.
+func (p *Pane) Cwd() string { return p.proc.Cwd() }

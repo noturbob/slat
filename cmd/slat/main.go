@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
-	"syscall"
 	"time"
 
 	"github.com/noturbob/slat/internal/app"
@@ -34,7 +33,7 @@ func socketPath() string {
 	if dir == "" {
 		dir = os.TempDir()
 	}
-	name := fmt.Sprintf("slat-%d.sock", os.Getuid())
+	name := socketName()
 	// Socket paths can't exceed 104 bytes (macOS; 108 on Linux), and a
 	// long $TMPDIR would otherwise fail with "bind: invalid argument".
 	if p := filepath.Join(dir, name); len(p) < 104 {
@@ -150,7 +149,7 @@ func spawnDaemon(sock string) error {
 	defer logf.Close()
 	cmd := exec.Command(exe, "__daemon")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = devnull, logf, logf
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.SysProcAttr = detachAttrs()
 	if err := cmd.Start(); err != nil {
 		return err
 	}

@@ -1,8 +1,9 @@
+//go:build !windows
+
 package daemon_test
 
 import (
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,87 +12,13 @@ import (
 
 	"github.com/noturbob/slat/internal/config"
 	"github.com/noturbob/slat/internal/control"
-	"github.com/noturbob/slat/internal/daemon"
 )
 
-// session starts a daemon on a private socket, as `slat` would. tweak, if
-// given, adjusts the config before the session starts.
-func session(t *testing.T, tweak ...func(*config.Config)) string {
-	t.Helper()
-	t.Setenv("PS1", "$ ")
-	t.Setenv("ENV", "")
-	dir, err := os.MkdirTemp("/tmp", "slatctl")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
-	sock := filepath.Join(dir, "s.sock")
-
-	cfg := config.DefaultConfig()
-	cfg.Shell = "/bin/sh"
-	cfg.StatusBar = false
-	cfg.Agent.InputAfter = config.Duration(400 * time.Millisecond)
-	for _, f := range tweak {
-		f(cfg)
-	}
-	srv, err := daemon.New(cfg, sock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	done := make(chan struct{})
-	go func() { srv.Run(); close(done) }()
-	t.Cleanup(func() {
-		srv.Stop()
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			t.Error("daemon did not stop")
-		}
-	})
-
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if c, err := net.Dial("unix", sock); err == nil {
-			c.Close()
-			return sock
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatal("daemon did not start")
-	return ""
-}
-
-func do(t *testing.T, sock string, req control.Request) control.Response {
-	t.Helper()
-	resp, err := control.Do(sock, req, 30*time.Second)
-	if err != nil {
-		t.Fatalf("%s: %v", req.Cmd, err)
-	}
-	return resp
-}
-
-// statusEventually waits for a pane to reach a status, and says what it
-// saw if it doesn't — status is a heuristic, so failures must be legible.
-func statusEventually(t *testing.T, sock, pane, want string) control.Response {
-	t.Helper()
-	var last control.Response
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
-		last = do(t, sock, control.Request{Cmd: "status", Pane: pane})
-		if last.Pane != nil && last.Pane.Status == want {
-			return last
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	if last.Pane != nil {
-		t.Fatalf("pane %s: status %q (%s), want %q", pane, last.Pane.Status, last.Pane.Reason, want)
-	}
-	t.Fatalf("pane %s: %v", pane, last.Error)
-	return last
-}
+// posixShell keeps the prompt predictable across machines.
+func posixShell(c *config.Config) { c.Shell = "/bin/sh" }
 
 func TestControlLifecycle(t *testing.T) {
-	sock := session(t)
+	sock := session(t, posixShell)
 
 	// ls: the session starts with one pane, and it is the active one.
 	ls := do(t, sock, control.Request{Cmd: "ls"})
@@ -181,7 +108,7 @@ func TestControlLifecycle(t *testing.T) {
 // A pane stopped on a question reads as "input", not "working", which is
 // the distinction agents need.
 func TestStatusInput(t *testing.T) {
-	sock := session(t)
+	sock := session(t, posixShell)
 	first := fmt.Sprint(do(t, sock, control.Request{Cmd: "ls"}).Panes[0].Pane)
 	statusEventually(t, sock, first, "idle")
 
@@ -208,7 +135,7 @@ func TestStatusInput(t *testing.T) {
 // once, on the change — that is what tells a human an agent is stuck.
 func TestInputHookFires(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "hook.log")
-	sock := session(t, func(c *config.Config) {
+	sock := session(t, posixShell, func(c *config.Config) {
 		c.Agent.OnInput = "echo pane %p %s >> " + log
 	})
 	first := fmt.Sprint(do(t, sock, control.Request{Cmd: "ls"}).Panes[0].Pane)

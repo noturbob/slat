@@ -97,6 +97,21 @@ sudo pacman -U slat_linux_amd64.pkg.tar.zst
 
 An AUR package (`yay -S slat`) is on the way.
 
+### Windows
+
+Download `slat_windows_amd64.zip` from the
+[latest release](https://github.com/noturbob/slat/releases/latest), unzip it and
+put `slat.exe` on your `PATH`. Windows 10 1809 or later is required (that's when
+ConPTY arrived). Panes run `cmd.exe` by default; for something else:
+
+```toml
+# %USERPROFILE%\.config\slat\config.toml
+shell = "powershell.exe"
+```
+
+Windows Terminal is recommended — the old conhost window can't render
+everything slat draws.
+
 ### Fedora / RHEL
 
 ```bash
@@ -368,12 +383,15 @@ workspace changes and check what a terminal would display.
 
 - Scroll mode can't select and copy text yet.
 - Mouse events aren't passed to programs in panes.
-- Windows isn't supported.
+- On Windows, ConPTY has no foreground process group, so a pane's status
+  comes from output timing alone: `slat status` says idle or working, never
+  which program is running, and `slat ls` shows the directory a pane started
+  in rather than where its shell has since moved.
 
 ## Requirements
 
 - Go 1.23+ to build
-- Linux or macOS
+- Linux, macOS, or Windows 10 1809 and later
 
 ## Support
 

@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -99,7 +98,14 @@ func (a *App) hook(cmd string, info PaneInfo) func() {
 	).Replace(cmd)
 
 	return func() {
-		c := exec.Command("/bin/sh", "-c", line)
+		c := hookShell(line)
+		// Also unquoted, for hooks that would rather read the environment
+		// than have values pasted into their command line.
+		c.Env = append(os.Environ(),
+			"SLAT_PANE="+fmt.Sprint(info.Pane),
+			"SLAT_TAB="+info.TabName,
+			"SLAT_STATUS="+info.Status,
+			"SLAT_LINE="+info.Last)
 		// The daemon's stderr is its log file; a hook's own output is not
 		// allowed anywhere near the terminal.
 		c.Stdout, c.Stderr = os.Stderr, os.Stderr
@@ -123,9 +129,4 @@ func (a *App) tabNeedsInput(workspace string, tab int) bool {
 		}
 	}
 	return false
-}
-
-// quote wraps s for /bin/sh.
-func quote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

@@ -55,9 +55,7 @@ func (s *Server) Run() error {
 	}
 	os.Remove(s.sockPath) // stale socket from a crashed daemon
 
-	old := syscall.Umask(0o077) // socket is created 0600: only we may attach
-	ln, err := net.Listen("unix", s.sockPath)
-	syscall.Umask(old)
+	ln, err := listenPrivate(s.sockPath) // only this user may attach
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", s.sockPath, err)
 	}

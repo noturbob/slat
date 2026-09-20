@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"time"
 
@@ -125,6 +126,15 @@ func defaultKeybinds() map[string]string {
 }
 
 func defaultShell() string {
+	if runtime.GOOS == "windows" {
+		// $SHELL on Windows is often an MSYS path that CreateProcess can't
+		// run, so prefer the console shell. Set shell = "powershell.exe"
+		// in the config for something else.
+		if s := os.Getenv("COMSPEC"); s != "" {
+			return s
+		}
+		return "cmd.exe"
+	}
 	if s := os.Getenv("SHELL"); s != "" {
 		return s
 	}
