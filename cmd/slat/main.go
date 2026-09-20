@@ -21,7 +21,7 @@ const usage = `slat — a terminal multiplexer
 usage:
   slat             attach to your session (starting it if needed)
   slat --version   print the version
-  slat --help      show this help
+  slat --help      show this help and the command reference
 
 Inside slat, press the prefix (Ctrl-S by default) then ? for keybindings.
 Config: %s
@@ -64,8 +64,13 @@ func main() {
 		return
 	case args[0] == "-h" || args[0] == "--help" || args[0] == "help":
 		fmt.Printf(usage, config.Path())
+		fmt.Print("\n" + cliUsage)
 		return
 	default:
+		// Agent-facing commands talk to a running session over the socket.
+		if handled, code := runCLI(socketPath(), args); handled {
+			os.Exit(code)
+		}
 		fmt.Fprintf(os.Stderr, "slat: unknown argument %q (try slat --help)\n", args[0])
 		os.Exit(2)
 	}

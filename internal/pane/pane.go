@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -37,6 +38,11 @@ type Pane struct {
 	row, col int // top-left position on screen, 0-based
 	dead     bool
 	exited   bool // process reaped
+	lastOut  time.Time
+
+	fgPID  int // foreground process, cached: on macOS this costs a ps call
+	fgName string
+	fgAt   time.Time
 
 	closeOnce sync.Once
 	onChange  func()
@@ -75,6 +81,7 @@ func (p *Pane) readLoop() {
 			p.mu.Lock()
 			p.term.Write(buf[:n])
 			replies := p.term.Replies()
+			p.lastOut = time.Now()
 			p.mu.Unlock()
 			if len(replies) > 0 {
 				p.pty.Write(replies) // answers to cursor-position/device queries
@@ -227,6 +234,77 @@ func (p *Pane) Modes() (appCursor, bracketedPaste bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.term.AppCursor(), p.term.BracketedPaste()
+}
+
+// Activity reports when the pane's program last produced output.
+func (p *Pane) Activity() time.Time {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.lastOut
+}
+
+// fgCacheFor is how long a foreground-process lookup is reused.
+const fgCacheFor = 700 * time.Millisecond
+
+// Foreground reports the program the pane's terminal is currently giving
+// input to, and whether that is just the pane's shell (so: nothing is
+// running). name is "" where the platform can't tell (Windows).
+func (p *Pane) Foreground() (pid int, name string, isShell bool) {
+	p.mu.Lock()
+	dead, fd := p.dead, p.pty.Fd()
+	if !dead && time.Since(p.fgAt) > fgCacheFor {
+		p.mu.Unlock()
+		pid, name = foreground(fd) // no lock: this can read /proc or run ps
+		p.mu.Lock()
+		p.fgPID, p.fgName, p.fgAt = pid, name, time.Now()
+	}
+	pid, name = p.fgPID, p.fgName
+	p.mu.Unlock()
+
+	if dead {
+		return 0, "", false
+	}
+	// By pid, not by name: a nested shell (`sh` inside sh, a subshell)
+	// is a running program, not this pane's idle prompt.
+	return pid, name, pid != 0 && pid == p.cmd.Process.Pid
+}
+
+// Capture returns the pane's text: the last n lines of the visible
+// screen, or of the scrollback plus screen when history is true. Lines
+// keep their left padding and lose trailing blanks, and blank lines below
+// the last output are left out.
+func (p *Pane) Capture(n int, history bool) []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	_, rows := p.term.Size()
+	last := p.term.Pushed() + rows // one past the last screen line
+	first := p.term.Pushed()
+	if history {
+		first = p.term.FirstLine()
+	}
+	// The blank rows below the last output aren't content: an agent asking
+	// for the last 3 lines wants text, not the bottom of an empty screen.
+	for last > first && strings.TrimSpace(lineText(p.term.LineAt(last-1))) == "" {
+		last--
+	}
+	if n > 0 && last-n > first {
+		first = last - n
+	}
+	out := make([]string, 0, last-first)
+	for abs := first; abs < last; abs++ {
+		out = append(out, lineText(p.term.LineAt(abs)))
+	}
+	return out
+}
+
+func lineText(cells []vt.Cell) string {
+	var b strings.Builder
+	for _, c := range cells {
+		if c.Wide != vt.WideTail {
+			b.WriteString(c.String())
+		}
+	}
+	return strings.TrimRight(b.String(), " ")
 }
 
 // Cwd returns the working directory of the pane's shell, or "" if the

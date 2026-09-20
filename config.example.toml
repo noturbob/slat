@@ -15,6 +15,18 @@ status_bar = true
 # Lines of output each pane keeps for scroll mode (0 turns it off)
 scrollback = 2000
 
+# How `slat status`, `slat ls` and `slat wait` read a pane, for scripts and
+# AI agents. See the README's "Scripting and agents" section.
+[agent]
+# A pane whose shell has been quiet this long is reported as idle.
+settle = "750ms"
+# A running program quiet this long on a prompt is reported as waiting
+# for input.
+input_after = "10s"
+# The prompts that count: regular expressions matched against the
+# pane's last line. Setting this replaces the built-in list.
+# input_patterns = ['\[[yY]/[nN]\]', '(?i)press enter', '\?\s*$']
+
 # Keybindings (activated after pressing the prefix key)
 # All keybinds are single characters pressed AFTER the prefix key.
 # Set only the ones you want to change; the rest keep their defaults.

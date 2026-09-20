@@ -1,0 +1,201 @@
+package daemon_test
+
+import (
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/noturbob/slat/internal/config"
+	"github.com/noturbob/slat/internal/control"
+	"github.com/noturbob/slat/internal/daemon"
+)
+
+// session starts a daemon on a private socket, as `slat` would.
+func session(t *testing.T) string {
+	t.Helper()
+	t.Setenv("PS1", "$ ")
+	t.Setenv("ENV", "")
+	dir, err := os.MkdirTemp("/tmp", "slatctl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "s.sock")
+
+	cfg := config.DefaultConfig()
+	cfg.Shell = "/bin/sh"
+	cfg.StatusBar = false
+	cfg.Agent.InputAfter = config.Duration(400 * time.Millisecond)
+	srv, err := daemon.New(cfg, sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { srv.Run(); close(done) }()
+	t.Cleanup(func() {
+		srv.Stop()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("daemon did not stop")
+		}
+	})
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if c, err := net.Dial("unix", sock); err == nil {
+			c.Close()
+			return sock
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("daemon did not start")
+	return ""
+}
+
+func do(t *testing.T, sock string, req control.Request) control.Response {
+	t.Helper()
+	resp, err := control.Do(sock, req, 30*time.Second)
+	if err != nil {
+		t.Fatalf("%s: %v", req.Cmd, err)
+	}
+	return resp
+}
+
+// statusEventually waits for a pane to reach a status, and says what it
+// saw if it doesn't — status is a heuristic, so failures must be legible.
+func statusEventually(t *testing.T, sock, pane, want string) control.Response {
+	t.Helper()
+	var last control.Response
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		last = do(t, sock, control.Request{Cmd: "status", Pane: pane})
+		if last.Pane != nil && last.Pane.Status == want {
+			return last
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if last.Pane != nil {
+		t.Fatalf("pane %s: status %q (%s), want %q", pane, last.Pane.Status, last.Pane.Reason, want)
+	}
+	t.Fatalf("pane %s: %v", pane, last.Error)
+	return last
+}
+
+func TestControlLifecycle(t *testing.T) {
+	sock := session(t)
+
+	// ls: the session starts with one pane, and it is the active one.
+	ls := do(t, sock, control.Request{Cmd: "ls"})
+	if len(ls.Panes) != 1 || !ls.Panes[0].Active {
+		t.Fatalf("ls returned %+v", ls.Panes)
+	}
+	first := fmt.Sprint(ls.Panes[0].Pane)
+	statusEventually(t, sock, first, "idle")
+
+	// run: send a command and wait for it to finish.
+	do(t, sock, control.Request{Cmd: "send", Pane: first, Data: "echo hello-from-agent\r"})
+	w := do(t, sock, control.Request{Cmd: "wait", Pane: first, For: "idle", Timeout: "15s"})
+	if w.Matched == nil || !*w.Matched {
+		t.Fatalf("wait --for idle did not match: %+v", w)
+	}
+	cap := do(t, sock, control.Request{Cmd: "capture", Pane: first})
+	if !strings.Contains(strings.Join(cap.Lines, "\n"), "hello-from-agent") {
+		t.Errorf("capture missed the output: %q", cap.Lines)
+	}
+
+	// pane new: a second pane, running something, without stealing focus.
+	np := do(t, sock, control.Request{Cmd: "pane-new", Split: "h", Command: "sleep 30"})
+	if np.Pane == nil {
+		t.Fatalf("pane new failed: %v", np.Error)
+	}
+	second := fmt.Sprint(np.Pane.Pane)
+	// The reported program settles on sleep, not the sh that forked it.
+	fg := ""
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		fg = statusEventually(t, sock, second, "working").Pane.Foreground
+		if fg == "sleep" {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if fg != "sleep" {
+		t.Errorf("foreground = %q, want sleep", fg)
+	}
+	if ls := do(t, sock, control.Request{Cmd: "ls"}); len(ls.Panes) != 2 || !ls.Panes[0].Active {
+		t.Errorf("pane new stole focus or miscounted: %+v", ls.Panes)
+	}
+
+	// wait --for text: matches output that arrives later.
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		control.Do(sock, control.Request{Cmd: "send", Pane: first, Data: "echo the-marker\r"}, 5*time.Second)
+	}()
+	w = do(t, sock, control.Request{Cmd: "wait", Pane: first, For: "text=the-mark\\w+", Timeout: "15s"})
+	if w.Matched == nil || !*w.Matched {
+		t.Errorf("wait --for text did not match: %+v", w)
+	}
+
+	// timeout: exit code 2, with the pane's state still reported.
+	w = do(t, sock, control.Request{Cmd: "wait", Pane: second, For: "idle", Timeout: "300ms"})
+	if w.Code != control.CodeTimeout || w.Matched == nil || *w.Matched {
+		t.Errorf("wait on a busy pane should time out: %+v", w)
+	}
+
+	// Ctrl-C reaches the program: sleep dies and the shell comes back.
+	do(t, sock, control.Request{Cmd: "send", Pane: second, Data: "\x03"})
+	statusEventually(t, sock, second, "idle")
+
+	// close: the pane goes away and further commands say so.
+	do(t, sock, control.Request{Cmd: "pane-close", Pane: second})
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(do(t, sock, control.Request{Cmd: "ls"}).Panes) == 1 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if resp := do(t, sock, control.Request{Cmd: "send", Pane: second, Data: "x"}); resp.Code != control.CodePaneGone {
+		t.Errorf("send to a closed pane: code %d, want %d (%+v)", resp.Code, control.CodePaneGone, resp)
+	}
+	// An id that never existed is a different mistake.
+	if resp := do(t, sock, control.Request{Cmd: "status", Pane: "99"}); resp.Code != control.CodeError {
+		t.Errorf("status on a bogus id: code %d, want %d", resp.Code, control.CodeError)
+	}
+
+	// capture --lines skips the blank rows below the last output.
+	cap = do(t, sock, control.Request{Cmd: "capture", Pane: first, Lines: 2})
+	if len(cap.Lines) == 0 || strings.TrimSpace(cap.Lines[len(cap.Lines)-1]) == "" {
+		t.Errorf("capture --lines returned blank tail: %q", cap.Lines)
+	}
+}
+
+// A pane stopped on a question reads as "input", not "working", which is
+// the distinction agents need.
+func TestStatusInput(t *testing.T) {
+	sock := session(t)
+	first := fmt.Sprint(do(t, sock, control.Request{Cmd: "ls"}).Panes[0].Pane)
+	statusEventually(t, sock, first, "idle")
+
+	// A child process stops on a question: the pane's own shell is not in
+	// the foreground, so this is "input", not "idle".
+	do(t, sock, control.Request{Cmd: "send", Pane: first,
+		Data: `sh -c 'printf "Overwrite everything? [y/N] "; read a'` + "\r"})
+	statusEventually(t, sock, first, "working")
+
+	w := do(t, sock, control.Request{Cmd: "wait", Pane: first, For: "input", Timeout: "30s"})
+	if w.Matched == nil || !*w.Matched {
+		t.Fatalf("wait --for input did not match: %+v", w)
+	}
+	if w.Pane == nil || !strings.Contains(w.Pane.Last, "Overwrite everything?") {
+		t.Errorf("the reported last line was %q", w.Pane.Last)
+	}
+
+	// Answering it lets the shell continue.
+	do(t, sock, control.Request{Cmd: "send", Pane: first, Data: "n\r"})
+	statusEventually(t, sock, first, "idle")
+}

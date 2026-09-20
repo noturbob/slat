@@ -160,13 +160,15 @@ panes a human can watch.
   network code, and no prompt handling. It is a multiplexer that is
   pleasant to drive programmatically; the intelligence stays in the agent.
 
-## Open questions
+## Decisions
 
-1. `slat run` blocking: should `run` wait for the command to finish
-   (`run` = send + `wait --for idle`) or return immediately? Proposed:
-   return immediately, with `--wait` to block. Agents compose better with
-   explicit waits.
-2. Addressing panes across tabs: `1`, `active`, and `tab:pane`? Proposed:
-   ids only for 1.0, since ids are unique per session.
-3. Should `capture` default to the visible screen or the whole scrollback?
-   Proposed: visible screen, `--history N` for more.
+1. `slat run` returns as soon as the command is sent. Agents compose it with
+   an explicit `slat wait`, which is clearer than a hidden block and lets one
+   agent start work in several panes before waiting on any of them.
+2. Panes are addressed by id or `active`. Ids are unique for the life of a
+   session and are never reused, so a `tab:pane` form would only add a second
+   spelling for the same thing — and a vanished id is reported as exit code 3
+   rather than "no such pane".
+3. `capture` reads the visible screen; `--history` adds the scrollback and
+   `--lines N` limits it. Blank rows below the last output are left out, so
+   `--lines 3` returns three lines of text.

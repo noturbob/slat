@@ -7,15 +7,20 @@ import (
 )
 
 // FrameType identifies the kind of message in a client<->daemon frame.
-// Only used for the client->daemon direction (input, resize, hello).
-// The daemon->client direction is an unframed raw byte stream, since it's
-// already fully-formed terminal output with no message boundaries needed.
+// For an attached client the daemon->client direction is an unframed raw
+// byte stream, since it's already fully-formed terminal output with no
+// message boundaries needed; control connections are framed both ways.
 type FrameType byte
 
 const (
 	TypeHello  FrameType = 0x01 // client->daemon: initial terminal size
 	TypeInput  FrameType = 0x02 // client->daemon: raw keystrokes/paste bytes
 	TypeResize FrameType = 0x03 // client->daemon: new terminal size
+
+	// TypeControl is a JSON command from the slat CLI (see
+	// internal/control). The daemon answers with one TypeControl frame
+	// and closes; such a connection never attaches to the session.
+	TypeControl FrameType = 0x04
 )
 
 type Frame struct {

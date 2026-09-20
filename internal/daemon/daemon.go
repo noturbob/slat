@@ -22,6 +22,9 @@ type Server struct {
 	sink     *sink
 	sockPath string
 
+	stop     chan struct{}
+	stopOnce sync.Once
+
 	mu     sync.Mutex
 	client net.Conn // currently attached client, if any
 }
@@ -37,7 +40,7 @@ func New(cfg *config.Config, sockPath string) (*Server, error) {
 	}
 	s := &sink{}
 	a.SetOutput(s)
-	return &Server{app: a, sink: s, sockPath: sockPath}, nil
+	return &Server{app: a, sink: s, sockPath: sockPath, stop: make(chan struct{})}, nil
 }
 
 // Run starts the session immediately (so shells are alive even before any
@@ -82,6 +85,7 @@ func (s *Server) Run() error {
 			s.kick()
 			continue
 		case <-sigCh:
+		case <-s.stop:
 		case <-s.app.Done():
 		}
 		// Stop accepting and remove the socket before dropping the client,
@@ -92,6 +96,11 @@ func (s *Server) Run() error {
 		s.app.Shutdown()
 		return nil
 	}
+}
+
+// Stop ends the session and makes Run return.
+func (s *Server) Stop() {
+	s.stopOnce.Do(func() { close(s.stop) })
 }
 
 // kick disconnects the attached client, if any.
@@ -116,7 +125,17 @@ func (s *Server) serve(conn net.Conn) {
 	// kick the attached client.
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	hello, err := proto.ReadFrame(conn)
-	if err != nil || hello.Type != proto.TypeHello {
+	if err != nil {
+		return
+	}
+	if hello.Type == proto.TypeControl {
+		// The slat CLI: answer the command and hang up, leaving the
+		// attached client alone. `wait` can block for a long time.
+		conn.SetReadDeadline(time.Time{})
+		s.serveControl(conn, hello.Payload)
+		return
+	}
+	if hello.Type != proto.TypeHello {
 		return
 	}
 	conn.SetReadDeadline(time.Time{})

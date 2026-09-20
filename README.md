@@ -221,6 +221,48 @@ cancels, <kbd>Ctrl</kbd>+<kbd>U</kbd> clears.
 The session ends by itself when its last shell exits. Closing the last tab of a
 workspace removes just that workspace.
 
+## Scripting and agents
+
+Every command below talks to a running session over its socket, so scripts — and
+AI coding agents — can drive slat without a terminal attached. Nothing is sent
+anywhere: slat has no network code.
+
+```console
+$ slat ls
+*1   idle     1:shell    bash    ~/src/slat
+ 2   working  1:build    go      ~/src/slat
+
+$ slat pane new --cmd 'go test ./...'   # new pane, your focus stays put
+$ slat wait 3 --for idle --timeout 5m   # block until it finishes
+$ slat capture 3 --lines 20             # read what it printed
+```
+
+| Command | What it does |
+| --- | --- |
+| `slat ls` | every pane, with what each one is doing |
+| `slat status [PANE]` | one pane's status |
+| `slat pane new [--split v\|h] [--cwd D] [--cmd C] [--target P] [--focus]` | split a pane |
+| `slat pane close PANE` | close a pane |
+| `slat send PANE TEXT [--enter] [--key KEY]` | type into a pane |
+| `slat run PANE COMMAND...` | send a command and press Enter |
+| `slat capture PANE [--lines N] [--history]` | read a pane's text |
+| `slat wait PANE --for idle\|input\|exit\|text=REGEX [--timeout 60s]` | block until something happens |
+
+`PANE` is an id from `slat ls`, or `active` (the default). `--json` on any
+command prints one object with a `schema` field. Exit codes: **0** ok,
+**1** error, **2** timed out, **3** that pane is gone.
+
+A pane's status is one of four, which is what makes `wait` useful:
+
+- **idle** — the pane's own shell has the terminal: the command finished.
+- **working** — a program is running.
+- **input** — that program has gone quiet on a question (`[y/N]`, a password
+  prompt), so an agent waiting for a build wakes up instead of hanging.
+- **exited** — the pane's program is gone.
+
+Tune the detection under `[agent]` in the config; see
+[docs/design/agent-cli.md](docs/design/agent-cli.md) for the full design.
+
 ## Configuration
 
 slat reads `~/.config/slat/config.toml` (or `$XDG_CONFIG_HOME/slat/config.toml`).
@@ -231,6 +273,10 @@ prefix     = "C-a"        # Ctrl + a letter, or C-\ C-] C-^ C-_
 shell      = "/bin/zsh"   # default: $SHELL
 status_bar = true
 scrollback = 5000         # lines kept per pane; 0 turns it off
+
+[agent]                   # how `slat status` reads a pane (see above)
+settle      = "750ms"     # quiet for this long after output = idle
+input_after = "10s"       # quiet for this long on a prompt = waiting for input
 
 [keybinds]
 split-vertical   = "|"
