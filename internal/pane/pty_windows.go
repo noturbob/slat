@@ -2,6 +2,7 @@ package pane
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -21,8 +22,11 @@ type winPTY struct {
 	proc    windows.Handle
 	pid     int
 
-	in  *os.File // we write the program's input here
-	out *os.File // we read the program's output here
+	// Raw handles, not os.File: these are synchronous pipes, and Go's
+	// file machinery (poller registration, finalizers) has no business on
+	// handles whose lifetime the pseudoconsole shares.
+	in  windows.Handle // we write the program's input here
+	out windows.Handle // we read the program's output here
 	dir string
 
 	closeOnce sync.Once
@@ -60,8 +64,8 @@ func startPTY(shell, dir string, rows, cols int) (ptyProcess, error) {
 
 	p := &winPTY{
 		console: console,
-		in:      os.NewFile(uintptr(inWrite), "conpty-in"),
-		out:     os.NewFile(uintptr(outRead), "conpty-out"),
+		in:      inWrite,
+		out:     outRead,
 		dir:     dir,
 		exited:  make(chan struct{}),
 	}
@@ -155,10 +159,33 @@ func (p *winPTY) reap() {
 	p.Close()
 }
 
-func (p *winPTY) Read(b []byte) (int, error)  { return p.out.Read(b) }
-func (p *winPTY) Write(b []byte) (int, error) { return p.in.Write(b) }
-func (p *winPTY) Pid() int                    { return p.pid }
-func (p *winPTY) Wait()                       { <-p.exited }
+// Read blocks in ReadFile until the program writes something. A closed
+// pseudoconsole shows up as a broken pipe, which is this pane's EOF.
+func (p *winPTY) Read(b []byte) (int, error) {
+	if len(b) == 0 {
+		return 0, nil
+	}
+	var n uint32
+	if err := windows.ReadFile(p.out, b, &n, nil); err != nil {
+		if err == windows.ERROR_BROKEN_PIPE || err == windows.ERROR_INVALID_HANDLE {
+			return int(n), io.EOF
+		}
+		return int(n), err
+	}
+	return int(n), nil
+}
+
+func (p *winPTY) Write(b []byte) (int, error) {
+	if len(b) == 0 {
+		return 0, nil
+	}
+	var n uint32
+	err := windows.WriteFile(p.in, b, &n, nil)
+	return int(n), err
+}
+
+func (p *winPTY) Pid() int { return p.pid }
+func (p *winPTY) Wait()    { <-p.exited }
 
 func (p *winPTY) Resize(rows, cols int) error {
 	return windows.ResizePseudoConsole(p.console,
@@ -177,8 +204,8 @@ func (p *winPTY) release() {
 	if p.console != 0 {
 		windows.ClosePseudoConsole(p.console)
 	}
-	p.in.Close()
-	p.out.Close()
+	windows.CloseHandle(p.in)
+	windows.CloseHandle(p.out)
 	if p.proc != 0 {
 		windows.CloseHandle(p.proc)
 	}
