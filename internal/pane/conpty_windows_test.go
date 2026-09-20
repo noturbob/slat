@@ -42,19 +42,26 @@ func TestConPTY(t *testing.T) {
 		p.Dead(), exitCode(w))
 	t.Logf("console processes: %v (this process=%d)", consoleProcesses(t), windows.GetCurrentProcessId())
 
-	// A one-shot command, read raw: this separates "the output path is
-	// broken" from "the interactive shell doesn't stay alive".
-	t.Logf("one-shot: %q", drain(t, defaultShell()+" /c echo SLAT-MARKER", 6*time.Second))
-	// And the interactive shell, read raw, for as long as it lives.
-	t.Logf("interactive: %q", drain(t, "", 6*time.Second))
+	// Three probes, read raw, to place the blame:
+	//   ping  — writes for seconds and never reads input
+	//   /k    — runs a command and stays
+	//   plain — the interactive shell slat actually wants
+	for _, probe := range []struct{ name, cmd string }{
+		{"ping", defaultShell() + " /c ping -n 3 127.0.0.1"},
+		{"keep", defaultShell() + " /k echo STAYING"},
+		{"interactive", ""},
+	} {
+		t.Log(drain(t, probe.name, probe.cmd, 10*time.Second))
+	}
 }
 
-// drain starts a program on a ConPTY and returns everything it writes
-// within the timeout, along with how it ended.
-func drain(t *testing.T, shell string, within time.Duration) string {
+// drain starts a program on a ConPTY and reports everything it wrote
+// within the timeout, how long it lived and how it ended.
+func drain(t *testing.T, name, shell string, within time.Duration) string {
+	start := time.Now()
 	proc, err := startPTY(shell, "", 24, 80)
 	if err != nil {
-		return "startPTY: " + err.Error()
+		return name + ": startPTY: " + err.Error()
 	}
 	defer proc.Terminate()
 
@@ -77,9 +84,11 @@ func drain(t *testing.T, shell string, within time.Duration) string {
 	}()
 	select {
 	case s := <-out:
-		return s
+		return fmt.Sprintf("%s: after %s exit=%d %q",
+			name, time.Since(start).Round(time.Millisecond), exitCode(proc.(*winPTY)), s)
 	case <-time.After(within):
-		return "<still reading> exit=" + fmt.Sprint(exitCode(proc.(*winPTY)))
+		return fmt.Sprintf("%s: still reading after %s exit=%d (259 = running)",
+			name, within, exitCode(proc.(*winPTY)))
 	}
 }
 
