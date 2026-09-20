@@ -271,8 +271,11 @@ A pane's status is one of four, which is what makes `wait` useful:
 
 - **idle** — the pane's own shell has the terminal: the command finished.
 - **working** — a program is running.
-- **input** — that program has gone quiet on a question (`[y/N]`, a password
-  prompt), so an agent waiting for a build wakes up instead of hanging.
+- **input** — something has gone quiet on a question (`[y/N]`, a password
+  prompt), so an agent waiting for a build wakes up instead of hanging. Shell
+  builtins count: `read -p "Overwrite? [y/N] "` is detected even though the
+  shell itself is the foreground process, because the line doesn't end the way
+  a prompt does.
 - **exited** — the pane's program is gone.
 
 When a pane starts waiting for input, its tab is marked `2:shell ?` in the

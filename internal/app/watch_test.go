@@ -124,3 +124,26 @@ func TestAnimationOff(t *testing.T) {
 		t.Errorf("animation drawn although it is off:\n%s", term.String())
 	}
 }
+
+// A shell's own prompt must not be mistaken for a question, or every idle
+// pane would look like it needs attention.
+func TestShellPrompt(t *testing.T) {
+	prompts := []string{
+		"$ ", "slat$", "[user@host dir]$ ", "root@box:/# ", "zsh%",
+		"~/src/slat ❯ ", "user in slat ?1 ❯", "PS1>", "λ ",
+	}
+	for _, p := range prompts {
+		if !shellPrompt(p) {
+			t.Errorf("shellPrompt(%q) = false, want true", p)
+		}
+	}
+	questions := []string{
+		"Overwrite? [y/N] ", "Continue (y/n)?", "Password:",
+		"Press enter to continue", "Delete 3 files?", "",
+	}
+	for _, q := range questions {
+		if shellPrompt(q) {
+			t.Errorf("shellPrompt(%q) = true, want false", q)
+		}
+	}
+}

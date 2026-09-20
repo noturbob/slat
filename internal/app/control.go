@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/noturbob/slat/internal/pane"
 	"github.com/noturbob/slat/internal/session"
@@ -88,12 +89,32 @@ func (a *App) statusOf(p *pane.Pane, fg string, isShell bool, last string) (stat
 		if quiet < agent.Settle.D() {
 			return StatusWorking, fmt.Sprintf("output %s ago", round(quiet))
 		}
+		// The shell itself can be waiting for an answer: `read -p`, or a
+		// script stopped on a question. A line that ends the way prompts
+		// do is the shell waiting for a command, not for a human.
+		if !shellPrompt(last) && matchesAny(agent.Patterns, last) {
+			return StatusInput, fmt.Sprintf("%s, quiet %s, prompt %q", shellReason(fg), round(quiet), trim(last, 40))
+		}
 		return StatusIdle, fmt.Sprintf("%s, quiet %s", shellReason(fg), round(quiet))
 	}
 	if quiet > agent.InputAfter.D() && matchesAny(agent.Patterns, last) {
 		return StatusInput, fmt.Sprintf("fg=%s, quiet %s, prompt %q", fg, round(quiet), trim(last, 40))
 	}
 	return StatusWorking, fmt.Sprintf("fg=%s, quiet %s", fg, round(quiet))
+}
+
+// promptEnds are what shell prompts end with. A question ends with
+// something else, which is how the two are told apart when the shell
+// itself is in the foreground.
+const promptEnds = "$#%>❯➜»λ"
+
+func shellPrompt(line string) bool {
+	line = strings.TrimRight(line, " \t")
+	if line == "" {
+		return false
+	}
+	r, _ := utf8.DecodeLastRuneInString(line)
+	return strings.ContainsRune(promptEnds, r)
 }
 
 func shellReason(fg string) string {

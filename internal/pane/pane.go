@@ -53,7 +53,9 @@ func New(id int, rows, cols int, shell, dir string, scrollback int, onChange fun
 	if onChange == nil {
 		onChange = func() {}
 	}
-	p := &Pane{ID: id, proc: proc, term: vt.New(cols, rows), onChange: onChange}
+	// Counted as output from the start: a pane that hasn't printed its
+	// first prompt yet is starting up, not idle.
+	p := &Pane{ID: id, proc: proc, term: vt.New(cols, rows), onChange: onChange, lastOut: time.Now()}
 	p.term.SetScrollback(scrollback)
 	go p.readLoop()
 	go p.waitLoop()
@@ -69,6 +71,9 @@ func (p *Pane) readLoop() {
 			p.term.Write(buf[:n])
 			replies := p.term.Replies()
 			p.lastOut = time.Now()
+			// Output means something started or finished, so the cached
+			// foreground process is the stalest thing in this struct.
+			p.fgAt = time.Time{}
 			p.mu.Unlock()
 			if len(replies) > 0 {
 				p.proc.Write(replies) // answers to cursor-position/device queries

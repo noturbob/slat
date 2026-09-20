@@ -112,6 +112,17 @@ func TestStatusInput(t *testing.T) {
 	first := fmt.Sprint(do(t, sock, control.Request{Cmd: "ls"}).Panes[0].Pane)
 	statusEventually(t, sock, first, "idle")
 
+	// A builtin asking a question: the pane's own shell is in the
+	// foreground, so only the prompt text gives this away.
+	do(t, sock, control.Request{Cmd: "send", Pane: first,
+		Data: `printf 'Overwrite everything? [y/N] '; read builtin` + "\r"})
+	w0 := do(t, sock, control.Request{Cmd: "wait", Pane: first, For: "input", Timeout: "20s"})
+	if w0.Matched == nil || !*w0.Matched {
+		t.Fatalf("a shell builtin waiting for input was missed: %+v", w0)
+	}
+	do(t, sock, control.Request{Cmd: "send", Pane: first, Data: "n\r"})
+	statusEventually(t, sock, first, "idle")
+
 	// A child process stops on a question: the pane's own shell is not in
 	// the foreground, so this is "input", not "idle".
 	do(t, sock, control.Request{Cmd: "send", Pane: first,
@@ -153,5 +164,31 @@ func TestInputHookFires(t *testing.T) {
 	}
 	if want := "pane " + first + " input\n"; got != want {
 		t.Errorf("hook log = %q, want %q (once only)", got, want)
+	}
+}
+
+// The workflow an agent actually uses: start a command in a new pane, wait
+// for it, read the output. `wait` must not return before the command has
+// even started — a fresh pane that hasn't printed its prompt yet is
+// starting up, not idle.
+func TestNewPaneThenWaitForIdle(t *testing.T) {
+	sock := session(t, posixShell)
+	np := do(t, sock, control.Request{Cmd: "pane-new", Command: "sleep 2; echo done-sleeping"})
+	if np.Pane == nil {
+		t.Fatalf("pane new failed: %v", np.Error)
+	}
+	pane := fmt.Sprint(np.Pane.Pane)
+
+	start := time.Now()
+	w := do(t, sock, control.Request{Cmd: "wait", Pane: pane, For: "idle", Timeout: "30s"})
+	if w.Matched == nil || !*w.Matched {
+		t.Fatalf("wait --for idle: %+v", w)
+	}
+	if elapsed := time.Since(start); elapsed < 2*time.Second {
+		t.Errorf("wait returned after %s, before the command could finish", elapsed)
+	}
+	cap := do(t, sock, control.Request{Cmd: "capture", Pane: pane, History: true})
+	if !strings.Contains(strings.Join(cap.Lines, "\n"), "done-sleeping") {
+		t.Errorf("the command's output is missing: %q", cap.Lines)
 	}
 }
