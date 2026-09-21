@@ -48,6 +48,18 @@ Focus the next or previous pane.
 .RB "arrow keys, " k ", " j ", " H ", " L
 Focus the pane in that direction.
 .TP
+.B m
+Move mode: the pane is walked around the layout with
+.BR h ", " j ", " k ", " l
+or the arrow keys, without pressing the prefix again;
+.B q
+or Esc leaves. The status bar shows
+.BR MOVE .
+.TP
+.BR < ", " > ", " K ", " J
+Move the pane left, right, up or down, swapping it with the neighbour on
+that side. Focus follows the pane that moved.
+.TP
 .BR + ", " \- ", " =
 Grow, shrink or equalize panes.
 .TP
@@ -132,7 +144,8 @@ Block until the condition holds.
 also returns when the pane stops for input, so a wait never sleeps through a
 question.
 .SH ANIMATION
-A new pane is revealed over
+A new pane is revealed, and two panes trading places slide past each other,
+over
 .B animate
 (default 90ms; 0 turns it off). Only the drawing is animated: the pane is its
 final size from the start, so no program in a pane is resized more than once.

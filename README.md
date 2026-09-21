@@ -36,6 +36,7 @@ output included.
 - **Fast** — only changed cells are sent to your terminal; half a million lines of output render in about a third of a second
 - **New panes open where you are** — a split starts in the directory of the pane you split from (Linux)
 - **Drivable from scripts and AI agents** — `slat ls`, `run`, `capture` and `wait --for idle` let anything outside the terminal work a session and know when a pane needs a human ([details](#scripting-and-agents))
+- **Move panes around** — walk a pane through the layout like a tiling window manager; the swap slides instead of jumping
 - **Themes** — five built-in palettes, or set any colour yourself
 - **One checked config file** — mistakes are reported when you run `slat`, not ignored
 
@@ -180,6 +181,8 @@ every key inside slat.
 | `o` / `O` | Next / previous pane |
 | arrows, or `k` `j` `H` `L` | Pane above / below / left / right |
 | `s` | Swap with the next pane |
+| `m` | Move mode: `h` `j` `k` `l` walk the pane around, `q` leaves |
+| `<` `>` `K` `J` | Move the pane left / right / up / down |
 | `+` / `-` | Grow / shrink the pane |
 | `=` | Equalize all sizes |
 | `z` | Zoom the pane to full size (toggle) |

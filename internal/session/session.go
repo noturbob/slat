@@ -365,12 +365,44 @@ func (m *Manager) cyclePane(d int) {
 }
 
 // SelectPaneInDirection focuses the nearest pane that lies entirely on the
-// given side ("up", "down", "left", "right") of the active pane and shares
-// at least one row (left/right) or column (up/down) with it.
+// given side ("up", "down", "left", "right") of the active pane.
 func (m *Manager) SelectPaneInDirection(direction string) {
 	tab := m.ActiveTab()
-	if tab == nil || tab.ActivePane == nil {
+	if tab == nil {
 		return
+	}
+	if p := m.paneInDirection(tab, direction); p != nil {
+		tab.ActivePane = p
+	}
+}
+
+// MovePaneInDirection swaps the active pane with its neighbour on that
+// side, so a pane can be walked around the layout the way a tiling window
+// manager moves a window. Focus stays on the moved pane. It reports the
+// two panes it exchanged, and false when there is no neighbour that way.
+func (m *Manager) MovePaneInDirection(direction string) (moved, other *pane.Pane, ok bool) {
+	tab := m.ActiveTab()
+	if tab == nil || tab.ActivePane == nil {
+		return nil, nil, false
+	}
+	neighbour := m.paneInDirection(tab, direction)
+	if neighbour == nil {
+		return nil, nil, false
+	}
+	here := layout.FindLeaf(tab.Layout, tab.ActivePane)
+	there := layout.FindLeaf(tab.Layout, neighbour)
+	if here == nil || there == nil {
+		return nil, nil, false
+	}
+	here.Pane, there.Pane = there.Pane, here.Pane
+	return tab.ActivePane, neighbour, true
+}
+
+// paneInDirection is the nearest pane entirely on that side of the active
+// one, sharing at least one row (left/right) or column (up/down) with it.
+func (m *Manager) paneInDirection(tab *Tab, direction string) *pane.Pane {
+	if tab.ActivePane == nil {
+		return nil
 	}
 	r, c, h, w := tab.ActivePane.Rect()
 	var best *pane.Pane
@@ -396,9 +428,7 @@ func (m *Manager) SelectPaneInDirection(direction string) {
 			best, bestDist, bestOff = p, dist, off
 		}
 	}
-	if best != nil {
-		tab.ActivePane = best
-	}
+	return best
 }
 
 func abs(x int) int { return max(x, -x) }

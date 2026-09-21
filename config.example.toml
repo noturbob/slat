@@ -71,6 +71,11 @@ select-pane-down = "j"    # Focus pane below
 select-pane-left = "H"    # Focus pane to the left
 select-pane-right= "L"    # Focus pane to the right
 swap-pane        = "s"    # Swap active pane with the next one
+move-mode        = "m"    # Walk the pane around with hjkl (q leaves)
+move-pane-left   = "<"    # Swap with the neighbour on that side
+move-pane-right  = ">"
+move-pane-up     = "K"
+move-pane-down   = "J"
 resize-grow      = "+"    # Grow the active pane
 resize-shrink    = "-"    # Shrink the active pane
 equalize         = "="    # Reset all pane sizes to equal
