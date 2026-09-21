@@ -1,6 +1,9 @@
 <div align="center">
 
-<img src="docs/logo.svg" width="96" height="96" alt="slat logo">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/logo.svg">
+  <img src="docs/logo-ink.svg" width="96" height="96" alt="slat logo">
+</picture>
 
 # slat
 
