@@ -333,3 +333,28 @@ html[data-magicui-theme-vt="active"]::view-transition-new(root) {
     font-size: 38px;
   }
 }
+
+/* A terminal cursor blinks on a hard edge — no fade — at roughly the rate
+   xterm and friends use. Anyone who asked for less motion keeps a steady
+   block instead. */
+@keyframes cursor-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.cursor-blink {
+  animation: cursor-blink 1.06s steps(1, end) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor-blink {
+    animation: none !important;
+    opacity: 1;
+  }
+}

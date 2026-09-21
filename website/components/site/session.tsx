@@ -312,6 +312,8 @@ export function Session({
         return { color: theme.border };
       case "prompt":
         return { color: theme.accent };
+      case "cursor":
+        return { color: theme.fg };
       default:
         return { color: theme.fg };
     }
@@ -332,7 +334,11 @@ export function Session({
         {runs.map((run, i) => {
           const { color, background, weight } = colorFor(run.style);
           return (
-            <span key={i} style={{ color, background, fontWeight: weight }}>
+            <span
+              key={i}
+              className={run.style === "cursor" ? "cursor-blink" : undefined}
+              style={{ color, background, fontWeight: weight }}
+            >
               {run.text}
             </span>
           );
