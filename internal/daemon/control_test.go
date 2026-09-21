@@ -93,6 +93,20 @@ func TestControlLifecycle(t *testing.T) {
 	if resp := do(t, sock, control.Request{Cmd: "send", Pane: second, Data: "x"}); resp.Code != control.CodePaneGone {
 		t.Errorf("send to a closed pane: code %d, want %d (%+v)", resp.Code, control.CodePaneGone, resp)
 	}
+	// Every command that takes a pane reports a closed one the same way,
+	// so a script can act on the code instead of matching the message.
+	for _, req := range []control.Request{
+		{Cmd: "send", Pane: second, Data: "x"},
+		{Cmd: "status", Pane: second},
+		{Cmd: "capture", Pane: second},
+		{Cmd: "wait", Pane: second, For: "idle", Timeout: "5s"},
+		{Cmd: "pane-close", Pane: second},
+	} {
+		if resp := do(t, sock, req); resp.Code != control.CodePaneGone {
+			t.Errorf("%s on a closed pane: code %d, want %d (%+v)",
+				req.Cmd, resp.Code, control.CodePaneGone, resp)
+		}
+	}
 	// An id that never existed is a different mistake.
 	if resp := do(t, sock, control.Request{Cmd: "status", Pane: "99"}); resp.Code != control.CodeError {
 		t.Errorf("status on a bogus id: code %d, want %d", resp.Code, control.CodeError)
