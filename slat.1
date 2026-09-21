@@ -83,6 +83,109 @@ Detach; the session keeps running.
 .TP
 .B q
 Quit and end every shell.
+.SH COMMANDS
+These talk to a running session over its socket, for scripts and AI agents.
+.I PANE
+is an id from
+.B slat ls
+or
+.BR active .
+.B --json
+prints one JSON object. Exit status: 0 ok, 1 error, 2 timed out, 3 the pane is
+gone.
+.TP
+.B slat ls
+List every pane with its status: idle (the pane's shell is waiting), working
+(a program is running), input (a program is waiting for an answer) or exited.
+.TP
+.BI "slat status " PANE
+Report one pane's status.
+.TP
+.B slat pane new \fR[\fB--split \fIv\fR|\fIh\fR] [\fB--cwd \fID\fR] [\fB--cmd \fIC\fR] [\fB--target \fIP\fR] [\fB--focus\fR]
+Split a pane. Focus stays where it was unless
+.B --focus
+is given.
+.TP
+.BI "slat pane close " PANE
+Close a pane.
+.TP
+.B slat send \fIPANE TEXT\fR... [\fB--enter\fR] [\fB--key \fIKEY\fR]
+Type into a pane.
+.I KEY
+is a name such as
+.BR enter ,
+.BR escape ,
+.BR up ,
+.B ctrl-c
+or
+.BR alt-x .
+.TP
+.BI "slat run " "PANE COMMAND" \fR...
+Send a command and press Enter.
+.TP
+.B slat capture \fIPANE\fR [\fB--lines \fIN\fR] [\fB--history\fR]
+Print a pane's text: the visible screen, or the scrollback too.
+.TP
+.B slat wait \fIPANE\fB --for \fIidle\fR|\fIinput\fR|\fIexit\fR|\fBtext=\fIREGEX\fR [\fB--timeout \fI60s\fR]
+Block until the condition holds.
+.B --for idle
+also returns when the pane stops for input, so a wait never sleeps through a
+question.
+.SH ANIMATION
+A new pane is revealed over
+.B animate
+(default 90ms; 0 turns it off). Only the drawing is animated: the pane is its
+final size from the start, so no program in a pane is resized more than once.
+.SH THEMES
+The status bar, pane borders and overlays take their colours from the
+.B [theme]
+table:
+.PP
+.RS
+.EX
+[theme]
+name   = "gruvbox"
+accent = "#fabd2f"
+.EE
+.RE
+.PP
+.B name
+is one of
+.IR default ,
+.IR gruvbox ,
+.IR nord ,
+.I rose-pine
+or
+.IR mono .
+The individual colours are
+.BR bg ", " fg ", " dim ", " accent ", " border ", " tab_bg ", " tab_fg ", "
+.B tab_active_bg
+and
+.BR tab_active_fg ,
+each a colour name, a palette index 0-255, or
+.IR #rrggbb .
+Programs running in panes keep their own colours.
+.SH NOTIFICATIONS
+A pane waiting for input marks its tab in the status bar
+.RI ( 2:shell\ ? ).
+The configuration can also run a command on that change:
+.PP
+.RS
+.EX
+[agent]
+on_input = 'notify-send "slat: pane %p needs input" %c'
+.EE
+.RE
+.PP
+.B %p
+is the pane id,
+.B %t
+its tab,
+.B %s
+the status and
+.B %c
+the pane's last line. Values are shell-quoted, so pane output can never become
+part of the command. Hooks run detached and their output goes to the daemon log.
 .SH FILES
 .TP
 .I $XDG_CONFIG_HOME/slat/config.toml

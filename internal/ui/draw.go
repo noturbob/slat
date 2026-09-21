@@ -127,6 +127,7 @@ type Status struct {
 	WorkspaceIndex int // 0-based
 	WorkspaceCount int
 	Tabs           []string
+	TabAlert       []bool // a pane in this tab is waiting for input
 	ActiveTab      int
 	Badge          string // "PREFIX", "ZOOM", ... or ""
 	PaneIndex      int    // 0-based
@@ -171,7 +172,11 @@ func DrawStatusBar(f *Frame, y int, st Status) {
 			if i == st.ActiveTab {
 				sty = styleTabActive
 			}
-			if !put(fmt.Sprintf(" %d:%s ", i+1, name), sty) || !put(" ", styleBar) {
+			mark := ""
+			if i < len(st.TabAlert) && st.TabAlert[i] {
+				mark = " ?"
+			}
+			if !put(fmt.Sprintf(" %d:%s%s ", i+1, name, mark), sty) || !put(" ", styleBar) {
 				break
 			}
 		}
@@ -285,5 +290,20 @@ func DrawBanner(f *Frame, version, hint string) {
 	for _, s := range []string{"terminal multiplexer " + version, hint} {
 		Text(f, max((w-vt.StringWidth(s))/2, 0), y, s, styleBannerSub)
 		y++
+	}
+}
+
+// Curtain hides the part of r that a new pane hasn't revealed yet, so a
+// split slides into place instead of appearing all at once. revealed is
+// how far the reveal has got: columns for a left/right split, rows for a
+// top/bottom one.
+func Curtain(f *Frame, r layout.Rect, sideways bool, revealed int) {
+	for y := r.Row; y < r.Row+r.Rows; y++ {
+		for x := r.Col; x < r.Col+r.Cols; x++ {
+			if sideways && x-r.Col < revealed || !sideways && y-r.Row < revealed {
+				continue
+			}
+			f.Set(x, y, vt.Cell{R: '░', Style: styleBorder})
+		}
 	}
 }

@@ -1,3 +1,5 @@
+//go:build !windows
+
 package main
 
 import (
@@ -5,6 +7,8 @@ import (
 	"testing"
 )
 
+// Unix only: $XDG_RUNTIME_DIR and the sun_path length limit are POSIX
+// concerns, and Windows uses its own per-user temporary directory.
 func TestSocketPathFitsSunPath(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", "/"+strings.Repeat("d", 120))
 	if p := socketPath(); len(p) >= 104 {

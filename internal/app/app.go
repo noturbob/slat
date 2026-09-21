@@ -45,7 +45,10 @@ type App struct {
 	detachCh chan struct{}
 	dirty    chan struct{}
 
-	mu          sync.Mutex // guards everything below
+	mu          sync.Mutex     // guards everything below
+	anim        *anim          // a pane being revealed
+	lastStatus  map[int]string // pane id -> status, for the hooks
+	attention   map[int]bool   // panes waiting for input
 	manager     *session.Manager
 	handler     *input.Handler
 	screen      *ui.Screen
@@ -72,6 +75,11 @@ func New(cfg *config.Config) (*App, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config must not be nil")
 	}
+	theme, err := ui.ParseTheme(cfg.Theme)
+	if err != nil {
+		return nil, err
+	}
+	theme.Apply()
 	a := &App{
 		cfg:      cfg,
 		help:     helpEntries(cfg),
@@ -101,6 +109,7 @@ func (a *App) Start(cols, rows int) error {
 		return err
 	}
 	go a.renderLoop()
+	go a.watch()
 	return nil
 }
 
@@ -239,6 +248,9 @@ func (a *App) render() {
 	}
 	ar, ac, arows, acols := active.Rect()
 	ui.DrawBorders(frame, borders, layout.Rect{Row: ar, Col: ac, Rows: arows, Cols: acols})
+	if a.anim != nil && !a.drawAnim(frame, visible, now) {
+		a.anim = nil
+	}
 
 	x, y, vis, style := active.Cursor()
 	cur := ui.Cursor{X: ac + x, Y: ar + y, Visible: vis, Style: style}
@@ -270,8 +282,9 @@ func (a *App) status(now time.Time) ui.Status {
 		WorkspaceCount: len(a.manager.Workspaces),
 		ActiveTab:      ws.ActiveTabIdx,
 	}
-	for _, t := range ws.Tabs {
+	for ti, t := range ws.Tabs {
 		st.Tabs = append(st.Tabs, t.Name)
+		st.TabAlert = append(st.TabAlert, a.tabNeedsInput(ws.Name, ti+1))
 	}
 	panes := a.manager.ActivePanes()
 	st.PaneIndex = slices.Index(panes, a.manager.ActivePane())
@@ -390,6 +403,8 @@ func (a *App) do(action input.Action, b byte) bool {
 		a.zoomed = nil
 		if err := a.manager.SplitPane(dir); err != nil {
 			a.notify(err.Error())
+		} else {
+			a.startAnim(a.manager.ActivePane(), dir)
 		}
 	case input.ActionNextPane:
 		a.zoomed = nil

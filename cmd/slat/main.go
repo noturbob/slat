@@ -7,13 +7,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
-	"syscall"
+	"strings"
 	"time"
 
 	"github.com/noturbob/slat/internal/app"
 	"github.com/noturbob/slat/internal/client"
 	"github.com/noturbob/slat/internal/config"
 	"github.com/noturbob/slat/internal/daemon"
+	"github.com/noturbob/slat/internal/ui"
 )
 
 const usage = `slat — a terminal multiplexer
@@ -21,10 +22,11 @@ const usage = `slat — a terminal multiplexer
 usage:
   slat             attach to your session (starting it if needed)
   slat --version   print the version
-  slat --help      show this help
+  slat --help      show this help and the command reference
 
 Inside slat, press the prefix (Ctrl-S by default) then ? for keybindings.
 Config: %s
+Themes: %s (set theme.name; any colour can be overridden)
 `
 
 // socketPath is the per-user daemon socket. $XDG_RUNTIME_DIR is private to
@@ -34,7 +36,7 @@ func socketPath() string {
 	if dir == "" {
 		dir = os.TempDir()
 	}
-	name := fmt.Sprintf("slat-%d.sock", os.Getuid())
+	name := socketName()
 	// Socket paths can't exceed 104 bytes (macOS; 108 on Linux), and a
 	// long $TMPDIR would otherwise fail with "bind: invalid argument".
 	if p := filepath.Join(dir, name); len(p) < 104 {
@@ -63,9 +65,14 @@ func main() {
 		fmt.Println("slat", app.Version)
 		return
 	case args[0] == "-h" || args[0] == "--help" || args[0] == "help":
-		fmt.Printf(usage, config.Path())
+		fmt.Printf(usage, config.Path(), strings.Join(ui.ThemeNames(), ", "))
+		fmt.Print("\n" + cliUsage)
 		return
 	default:
+		// Agent-facing commands talk to a running session over the socket.
+		if handled, code := runCLI(socketPath(), args); handled {
+			os.Exit(code)
+		}
 		fmt.Fprintf(os.Stderr, "slat: unknown argument %q (try slat --help)\n", args[0])
 		os.Exit(2)
 	}
@@ -145,7 +152,7 @@ func spawnDaemon(sock string) error {
 	defer logf.Close()
 	cmd := exec.Command(exe, "__daemon")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = devnull, logf, logf
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.SysProcAttr = detachAttrs()
 	if err := cmd.Start(); err != nil {
 		return err
 	}

@@ -53,6 +53,10 @@ func (m *Manager) newPane(rows, cols int, dir string) (*pane.Pane, error) {
 	return p, nil
 }
 
+// Issued reports how many panes this session has ever created. Ids are
+// never reused, so any id at or below it named a pane that is now gone.
+func (m *Manager) Issued() int { return m.nextPane }
+
 // activeDir is the directory new panes start in: the active pane's.
 func (m *Manager) activeDir() string {
 	if p := m.ActivePane(); p != nil {
@@ -178,24 +182,99 @@ func (m *Manager) ActiveTab() *Tab {
 // SplitPane splits the active pane in the given direction and focuses the
 // new pane, which starts in the active pane's working directory.
 func (m *Manager) SplitPane(dir pane.SplitDirection) error {
-	tab := m.ActiveTab()
-	if tab == nil || tab.ActivePane == nil {
-		return fmt.Errorf("no active pane")
+	_, err := m.SplitAt(m.ActivePane(), dir, "")
+	return err
+}
+
+// SplitAt splits the given pane, focuses the new one and returns it. The
+// new pane starts in dir, or in the split pane's own directory when dir
+// is empty.
+func (m *Manager) SplitAt(target *pane.Pane, d pane.SplitDirection, dir string) (*pane.Pane, error) {
+	if target == nil {
+		return nil, fmt.Errorf("no such pane")
 	}
-	node := layout.FindLeaf(tab.Layout, tab.ActivePane)
+	tab := m.tabOf(target)
+	if tab == nil {
+		return nil, fmt.Errorf("pane %d is not in the session", target.ID)
+	}
+	node := layout.FindLeaf(tab.Layout, target)
 	if node == nil {
-		return fmt.Errorf("active pane not found in layout")
+		return nil, fmt.Errorf("pane %d not found in layout", target.ID)
+	}
+	if dir == "" {
+		dir = target.Cwd()
 	}
 	// Start the new shell at the exact size it will get, so it doesn't
 	// draw its first prompt at one size and immediately get resized.
-	r, c, rows, cols := tab.ActivePane.Rect()
-	_, b, _ := layout.Split(layout.Rect{Row: r, Col: c, Rows: rows, Cols: cols}, dir, 0.5)
-	newP, err := m.newPane(b.Rows, b.Cols, tab.ActivePane.Cwd())
+	r, c, rows, cols := target.Rect()
+	_, b, _ := layout.Split(layout.Rect{Row: r, Col: c, Rows: rows, Cols: cols}, d, 0.5)
+	newP, err := m.newPane(b.Rows, b.Cols, dir)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	layout.SplitNode(node, dir, newP)
+	layout.SplitNode(node, d, newP)
 	tab.ActivePane = newP
+	return newP, nil
+}
+
+// PaneRef says where a pane sits in the session.
+type PaneRef struct {
+	Pane      *pane.Pane
+	Workspace string
+	TabIndex  int // 1-based, as the status bar shows it
+	TabName   string
+	Active    bool // the focused pane of the focused tab and workspace
+}
+
+// AllPanes lists every pane in every tab of every workspace.
+func (m *Manager) AllPanes() []PaneRef {
+	active := m.ActivePane()
+	var out []PaneRef
+	for _, ws := range m.Workspaces {
+		for ti, tab := range ws.Tabs {
+			for _, p := range layout.CollectPanes(tab.Layout) {
+				out = append(out, PaneRef{
+					Pane: p, Workspace: ws.Name, TabIndex: ti + 1,
+					TabName: tab.Name, Active: p == active,
+				})
+			}
+		}
+	}
+	return out
+}
+
+// PaneByID returns the pane with that id, or nil.
+func (m *Manager) PaneByID(id int) *pane.Pane {
+	for _, r := range m.AllPanes() {
+		if r.Pane.ID == id {
+			return r.Pane
+		}
+	}
+	return nil
+}
+
+// Focus makes p the active pane, switching workspace and tab to reach it.
+func (m *Manager) Focus(p *pane.Pane) bool {
+	for wi, ws := range m.Workspaces {
+		for ti, tab := range ws.Tabs {
+			if slices.Contains(layout.CollectPanes(tab.Layout), p) {
+				m.ActiveWorkspaceIdx, ws.ActiveTabIdx, tab.ActivePane = wi, ti, p
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// tabOf finds the tab holding p.
+func (m *Manager) tabOf(p *pane.Pane) *Tab {
+	for _, ws := range m.Workspaces {
+		for _, tab := range ws.Tabs {
+			if slices.Contains(layout.CollectPanes(tab.Layout), p) {
+				return tab
+			}
+		}
+	}
 	return nil
 }
 

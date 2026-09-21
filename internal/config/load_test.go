@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func load(t *testing.T, toml string) (*Config, error) {
@@ -68,5 +69,43 @@ func TestExampleConfigLoads(t *testing.T) {
 	}
 	if _, err := load(t, string(example)); err != nil {
 		t.Fatalf("config.example.toml: %v", err)
+	}
+}
+
+func TestAgentSettings(t *testing.T) {
+	cfg, err := load(t, `
+[agent]
+settle = "2s"
+input_after = "1m"
+input_patterns = ['ready\?']
+on_idle = "notify-send done"
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := cfg.Agent
+	if a.Settle.D() != 2*time.Second || a.InputAfter.D() != time.Minute {
+		t.Errorf("durations: %v, %v", a.Settle.D(), a.InputAfter.D())
+	}
+	if len(a.Patterns) != 1 || !a.Patterns[0].MatchString("all ready?") {
+		t.Errorf("patterns = %v", a.Patterns)
+	}
+	if a.OnIdle != "notify-send done" {
+		t.Errorf("on_idle = %q", a.OnIdle)
+	}
+
+	// Unset keys keep the defaults, and bad values are refused.
+	cfg, err = load(t, "[agent]\nsettle = \"1s\"\n")
+	if err != nil || len(cfg.Agent.Patterns) != len(defaultAgent().InputPatterns) {
+		t.Errorf("defaults not kept: %v, %v", cfg.Agent, err)
+	}
+	if _, err := load(t, "[agent]\nsettle = \"-1s\"\n"); err == nil {
+		t.Error("a negative settle should be an error")
+	}
+	if _, err := load(t, "[agent]\ninput_patterns = ['(']\n"); err == nil {
+		t.Error("a bad pattern should be an error")
+	}
+	if _, err := load(t, "[agent]\nsettle_time = \"1s\"\n"); err == nil {
+		t.Error("an unknown agent setting should be an error")
 	}
 }

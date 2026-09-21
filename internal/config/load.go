@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"sort"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
 	"github.com/noturbob/slat/internal/input"
+	"github.com/noturbob/slat/internal/ui"
 )
 
 // Config holds the full application configuration.
@@ -18,20 +22,74 @@ type Config struct {
 	Shell      string            `toml:"shell"`
 	StatusBar  bool              `toml:"status_bar"`
 	Scrollback int               `toml:"scrollback"` // lines of history per pane
+	Animate    Duration          `toml:"animate"`    // how long a new pane takes to appear; 0 = off
 	Keybinds   map[string]string `toml:"keybinds"`
+	Theme      map[string]string `toml:"theme"`
+	Agent      Agent             `toml:"agent"`
 
 	PrefixByte byte `toml:"-"` // parsed Prefix
 }
 
+// Agent tunes how slat reports what a pane is doing, for `slat status`,
+// `slat wait` and the notification hooks. See docs/design/agent-cli.md.
+type Agent struct {
+	// Settle is how long a pane must be quiet, with its shell in the
+	// foreground, before it counts as idle.
+	Settle Duration `toml:"settle"`
+	// InputAfter is how long a running program must be quiet, showing a
+	// prompt-like last line, before it counts as waiting for input.
+	InputAfter Duration `toml:"input_after"`
+	// InputPatterns are the regexps that make a last line look like a
+	// question.
+	InputPatterns []string `toml:"input_patterns"`
+	// OnInput and OnIdle run when a pane enters that state: %p pane,
+	// %t tab, %s status, %c the pane's last line.
+	OnInput string `toml:"on_input"`
+	OnIdle  string `toml:"on_idle"`
+
+	Patterns []*regexp.Regexp `toml:"-"` // compiled InputPatterns
+}
+
+// Duration is a time.Duration written as a TOML string ("750ms").
+type Duration time.Duration
+
+func (d *Duration) UnmarshalText(text []byte) error {
+	v, err := time.ParseDuration(string(text))
+	if err != nil {
+		return err
+	}
+	*d = Duration(v)
+	return nil
+}
+
+func (d Duration) D() time.Duration { return time.Duration(d) }
+
 // DefaultConfig returns sensible defaults.
 func DefaultConfig() *Config {
-	return &Config{
+	cfg := &Config{
 		Prefix:     "C-s",
 		PrefixByte: 0x13,
 		Shell:      defaultShell(),
 		StatusBar:  true,
 		Scrollback: 2000,
+		Animate:    Duration(90 * time.Millisecond),
 		Keybinds:   defaultKeybinds(),
+		Agent:      defaultAgent(),
+	}
+	cfg.Agent.compile() // the built-in patterns are known good
+	return cfg
+}
+
+// defaultAgent covers the prompts common tools stop on.
+func defaultAgent() Agent {
+	return Agent{
+		Settle:     Duration(750 * time.Millisecond),
+		InputAfter: Duration(10 * time.Second),
+		InputPatterns: []string{
+			`\[[yY]/[nN]\]`, `\([yY]/[nN]\)`, `(?i)press (enter|any key)`,
+			`(?i)\bcontinue\?`, `(?i)(password|passphrase).*:\s*$`,
+			`(?i)^\s*(\[\?\]|\?)\s+\S`, `\?\s*$`,
+		},
 	}
 }
 
@@ -72,6 +130,15 @@ func defaultKeybinds() map[string]string {
 }
 
 func defaultShell() string {
+	if runtime.GOOS == "windows" {
+		// $SHELL on Windows is often an MSYS path that CreateProcess can't
+		// run, so prefer the console shell. Set shell = "powershell.exe"
+		// in the config for something else.
+		if s := os.Getenv("COMSPEC"); s != "" {
+			return s
+		}
+		return "cmd.exe"
+	}
 	if s := os.Getenv("SHELL"); s != "" {
 		return s
 	}
@@ -128,6 +195,23 @@ func (cfg *Config) merge(user *Config, md toml.MetaData) error {
 		cfg.Shell = user.Shell
 	}
 	cfg.StatusBar = user.StatusBar
+	if err := cfg.mergeAgent(user.Agent, md); err != nil {
+		return err
+	}
+	// Parsed here rather than at draw time, so a bad colour is reported
+	// when the user runs slat instead of painting something odd.
+	if len(user.Theme) > 0 {
+		if _, err := ui.ParseTheme(user.Theme); err != nil {
+			return err
+		}
+		cfg.Theme = user.Theme
+	}
+	if md.IsDefined("animate") {
+		if user.Animate.D() < 0 || user.Animate.D() > time.Second {
+			return fmt.Errorf("animate = %q: must be between 0 and 1s", user.Animate.D())
+		}
+		cfg.Animate = user.Animate
+	}
 	if md.IsDefined("scrollback") {
 		if n := user.Scrollback; n < 0 || n > 1_000_000 {
 			return fmt.Errorf("scrollback = %d: must be between 0 and 1000000", n)
@@ -169,6 +253,36 @@ func (cfg *Config) merge(user *Config, md toml.MetaData) error {
 		} else if _, clash := taken[key]; clash {
 			delete(cfg.Keybinds, name)
 		}
+	}
+	return nil
+}
+
+// mergeAgent applies the [agent] table and compiles its patterns.
+func (cfg *Config) mergeAgent(user Agent, md toml.MetaData) error {
+	if md.IsDefined("agent", "settle") {
+		cfg.Agent.Settle = user.Settle
+	}
+	if md.IsDefined("agent", "input_after") {
+		cfg.Agent.InputAfter = user.InputAfter
+	}
+	if md.IsDefined("agent", "input_patterns") {
+		cfg.Agent.InputPatterns = user.InputPatterns
+	}
+	cfg.Agent.OnInput, cfg.Agent.OnIdle = user.OnInput, user.OnIdle
+	return cfg.Agent.compile()
+}
+
+func (a *Agent) compile() error {
+	a.Patterns = nil
+	for _, p := range a.InputPatterns {
+		re, err := regexp.Compile(p)
+		if err != nil {
+			return fmt.Errorf("agent.input_patterns: %w", err)
+		}
+		a.Patterns = append(a.Patterns, re)
+	}
+	if a.Settle.D() < 0 || a.InputAfter.D() < 0 {
+		return fmt.Errorf("agent.settle and agent.input_after must not be negative")
 	}
 	return nil
 }

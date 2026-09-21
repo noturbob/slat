@@ -10,7 +10,7 @@ A terminal multiplexer with tiling panes, tabs and workspaces, written in Go.
 
 [![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-blue?style=flat-square)](#requirements)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-blue?style=flat-square)](#requirements)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-support%20slat-ff5e5b?style=flat-square&logo=ko-fi&logoColor=white)](https://ko-fi.com/bobbyanthene)
 
 [Website](https://noturbob.github.io/slat/) · [Install](#install) · [Keys](#keys) · [Configuration](#configuration) · [How it works](#how-it-works)
@@ -35,6 +35,8 @@ output included.
 - **Every pane keeps its own screen** — `clear`, vim or htop in one pane never touch another, and nothing is lost when you split, close or switch
 - **Fast** — only changed cells are sent to your terminal; half a million lines of output render in about a third of a second
 - **New panes open where you are** — a split starts in the directory of the pane you split from (Linux)
+- **Drivable from scripts and AI agents** — `slat ls`, `run`, `capture` and `wait --for idle` let anything outside the terminal work a session and know when a pane needs a human ([details](#scripting-and-agents))
+- **Themes** — five built-in palettes, or set any colour yourself
 - **One checked config file** — mistakes are reported when you run `slat`, not ignored
 
 ## Install
@@ -96,6 +98,21 @@ sudo pacman -U slat_linux_amd64.pkg.tar.zst
 ```
 
 An AUR package (`yay -S slat`) is on the way.
+
+### Windows
+
+Download `slat_windows_amd64.zip` from the
+[latest release](https://github.com/noturbob/slat/releases/latest), unzip it and
+put `slat.exe` on your `PATH`. Windows 10 1809 or later is required (that's when
+ConPTY arrived). Panes run `cmd.exe` by default; for something else:
+
+```toml
+# %USERPROFILE%\.config\slat\config.toml
+shell = "powershell.exe"
+```
+
+Windows Terminal is recommended — the old conhost window can't render
+everything slat draws.
 
 ### Fedora / RHEL
 
@@ -221,6 +238,64 @@ cancels, <kbd>Ctrl</kbd>+<kbd>U</kbd> clears.
 The session ends by itself when its last shell exits. Closing the last tab of a
 workspace removes just that workspace.
 
+## Scripting and agents
+
+Every command below talks to a running session over its socket, so scripts — and
+AI coding agents — can drive slat without a terminal attached. Nothing is sent
+anywhere: slat has no network code.
+
+```console
+$ slat ls
+*1   idle     1:shell    bash    ~/src/slat
+ 2   working  1:build    go      ~/src/slat
+
+$ slat pane new --cmd 'go test ./...'   # new pane, your focus stays put
+$ slat wait 3 --for idle --timeout 5m   # block until it finishes
+$ slat capture 3 --lines 20             # read what it printed
+```
+
+| Command | What it does |
+| --- | --- |
+| `slat ls` | every pane, with what each one is doing |
+| `slat status [PANE]` | one pane's status |
+| `slat pane new [--split v\|h] [--cwd D] [--cmd C] [--target P] [--focus]` | split a pane |
+| `slat pane close PANE` | close a pane |
+| `slat send PANE TEXT [--enter] [--key KEY]` | type into a pane |
+| `slat run PANE COMMAND...` | send a command and press Enter |
+| `slat capture PANE [--lines N] [--history]` | read a pane's text |
+| `slat wait PANE --for idle\|input\|exit\|text=REGEX [--timeout 60s]` | block until something happens |
+
+`PANE` is an id from `slat ls`, or `active` (the default). `--json` on any
+command prints one object with a `schema` field. Exit codes: **0** ok,
+**1** error, **2** timed out, **3** that pane is gone.
+
+A pane's status is one of four, which is what makes `wait` useful:
+
+- **idle** — the pane's own shell has the terminal: the command finished.
+- **working** — a program is running.
+- **input** — something has gone quiet on a question (`[y/N]`, a password
+  prompt), so an agent waiting for a build wakes up instead of hanging. Shell
+  builtins count: `read -p "Overwrite? [y/N] "` is detected even though the
+  shell itself is the foreground process, because the line doesn't end the way
+  a prompt does.
+- **exited** — the pane's program is gone.
+
+When a pane starts waiting for input, its tab is marked `2:shell ?` in the
+status bar, and slat can run a command so you don't have to watch:
+
+```toml
+[agent]
+on_input = "notify-send \"slat: pane %p needs input\" %c"
+```
+
+`%p` is the pane id, `%t` its tab, `%s` the status and `%c` the pane's last
+line. Values are shell-quoted for you, so a prompt containing a quote stays
+text. The hook runs detached; its output goes to the daemon log, never to your
+screen.
+
+Tune the detection under `[agent]` in the config; see
+[docs/design/agent-cli.md](docs/design/agent-cli.md) for the full design.
+
 ## Configuration
 
 slat reads `~/.config/slat/config.toml` (or `$XDG_CONFIG_HOME/slat/config.toml`).
@@ -231,6 +306,15 @@ prefix     = "C-a"        # Ctrl + a letter, or C-\ C-] C-^ C-_
 shell      = "/bin/zsh"   # default: $SHELL
 status_bar = true
 scrollback = 5000         # lines kept per pane; 0 turns it off
+animate    = "90ms"       # a new pane is revealed over this long; 0 = off
+
+[agent]                   # how `slat status` reads a pane (see above)
+settle      = "750ms"     # quiet for this long after output = idle
+input_after = "10s"       # quiet for this long on a prompt = waiting for input
+
+[theme]
+name = "gruvbox"          # default, gruvbox, nord, rose-pine, mono
+accent = "#fabd2f"        # override any single colour
 
 [keybinds]
 split-vertical   = "|"
@@ -239,6 +323,10 @@ resize-shrink    = "_"    # "-" was given away above
 zoom             = ""     # "" unbinds a command
 ```
 
+- `[theme]` colours are `bg`, `fg`, `dim`, `accent`, `border`, `tab_bg`,
+  `tab_fg`, `tab_active_bg` and `tab_active_fg`, written as a colour name, a
+  palette index (0-255) or `#rrggbb`. Only what slat draws is themed — pane
+  contents keep whatever colours the programs in them use.
 - Keybinds you don't set keep their defaults.
 - Giving a default key to another command takes it away from the default
   command, so bindings never silently collide.
@@ -309,12 +397,15 @@ workspace changes and check what a terminal would display.
 
 - Scroll mode can't select and copy text yet.
 - Mouse events aren't passed to programs in panes.
-- Windows isn't supported.
+- On Windows, ConPTY has no foreground process group, so a pane's status
+  comes from output timing alone: `slat status` says idle or working, never
+  which program is running, and `slat ls` shows the directory a pane started
+  in rather than where its shell has since moved.
 
 ## Requirements
 
 - Go 1.23+ to build
-- Linux or macOS
+- Linux, macOS, or Windows 10 1809 and later
 
 ## Support
 
