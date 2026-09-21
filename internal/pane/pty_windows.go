@@ -113,7 +113,7 @@ func (p *winPTY) spawn(shell, dir string) error {
 		},
 		ProcThreadAttributeList: attrs.List(),
 	}
-	cmdline, err := windows.UTF16PtrFromString(shell)
+	cmdline, err := windows.UTF16PtrFromString(quoteExe(shell))
 	if err != nil {
 		return err
 	}
@@ -244,6 +244,16 @@ func (p *winPTY) Foreground() (int, string) { return 0, "" }
 // cd would mean reading another process's memory on Windows, so this can
 // be stale; it is better than nothing for `slat ls`.
 func (p *winPTY) Cwd() string { return p.dir }
+
+// quoteExe quotes a shell path that needs it. CreateProcess parses the
+// command line itself, so C:\Program Files\PowerShell\7\pwsh.exe would
+// otherwise be read as the program "C:\Program" with arguments.
+func quoteExe(shell string) string {
+	if strings.ContainsAny(shell, " \t") && !strings.HasPrefix(shell, `"`) {
+		return `"` + shell + `"`
+	}
+	return shell
+}
 
 func defaultShell() string {
 	if s := os.Getenv("COMSPEC"); s != "" {

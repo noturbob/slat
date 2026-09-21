@@ -2,6 +2,7 @@ package pane
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +35,17 @@ func TestConPTY(t *testing.T) {
 		if !paneText(p, "hello-conpty", 15*time.Second) {
 			t.Errorf("the command's output never arrived; the pane held:\n%s",
 				strings.Join(p.Capture(0, true), "\n"))
+		}
+		// The first bug this code had: the child attached to slat's own
+		// console instead of the pseudoconsole, which looked like a working
+		// shell whose output went to the wrong terminal.
+		if pids := consoleProcesses(t); slices.Contains(pids, uint32(w.pid)) {
+			t.Errorf("the shell (pid %d) is on this process's console, not its pseudoconsole: %v", w.pid, pids)
+		}
+		// Resizing a live console must not upset it; panes are resized on
+		// every split.
+		if err := p.proc.Resize(30, 100); err != nil {
+			t.Errorf("resize: %v", err)
 		}
 		return
 	}
