@@ -20,7 +20,7 @@ type anim struct {
 // startAnim begins revealing a newly created pane. Called with the lock
 // held; a no-op when animations are switched off.
 func (a *App) startAnim(p *pane.Pane, dir pane.SplitDirection) {
-	if p == nil || a.cfg.Animate.D() <= 0 {
+	if p == nil || a.cfg.Animation.Split.D() <= 0 || a.cfg.Animation.Reveal == "none" {
 		return
 	}
 	a.anim = &anim{pane: p, dir: dir, start: time.Now()}
@@ -33,13 +33,11 @@ func (a *App) drawAnim(frame *ui.Frame, visible []*pane.Pane, now time.Time) boo
 	if !slices.Contains(visible, a.anim.pane) {
 		return false // closed, zoomed over, or on another tab now
 	}
-	progress := float64(now.Sub(a.anim.start)) / float64(a.cfg.Animate.D())
+	progress := float64(now.Sub(a.anim.start)) / float64(a.cfg.Animation.Split.D())
 	if progress >= 1 {
 		return false
 	}
-	if progress < 0 {
-		progress = 0
-	}
+	progress = a.cfg.Animation.Ease(progress)
 	row, col, rows, cols := a.anim.pane.Rect()
 	r := layout.Rect{Row: row, Col: col, Rows: rows, Cols: cols}
 	sideways := a.anim.dir == pane.SplitVertical // left/right
@@ -47,7 +45,7 @@ func (a *App) drawAnim(frame *ui.Frame, visible []*pane.Pane, now time.Time) boo
 	if sideways {
 		span = cols
 	}
-	ui.Curtain(frame, r, sideways, int(progress*float64(span)))
+	ui.Curtain(frame, r, sideways, int(progress*float64(span)), a.cfg.Animation.RevealGlyph())
 
 	// Nothing else is producing frames, so the animation drives itself.
 	time.AfterFunc(frameInterval, a.markDirty)

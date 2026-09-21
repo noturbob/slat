@@ -143,12 +143,84 @@ Block until the condition holds.
 .B --for idle
 also returns when the pane stops for input, so a wait never sleeps through a
 question.
+.SH STATUS BAR
+The bar's layout is the
+.B [status]
+table, not a fixed design:
+.PP
+.RS
+.EX
+[status]
+left  = " {workspace} | {tabs}"
+right = "{badge} pane {pane}/{panes} {time} "
+tab   = " {index}:{name}{alert} "
+alert = " ?"
+.EE
+.RE
+.PP
+.B left
+and
+.B right
+accept
+.BR {workspace} ", " {workspace_index} ", " {workspace_count} ", "
+.BR {workspaces} ", " {tabs} ", " {tab} ", " {tabs_count} ", " {pane} ", "
+.BR {panes} ", " {badge} ", " {time} ", " {seconds} " and " {date} ;
+.B tab
+accepts
+.BR {index} ", " {name} " and " {alert} .
+Anything else is literal text, so a Nerd Font glyph can go straight in. Each
+placeholder is drawn in the colour that suits it, so there is no colour markup
+to write. The right side survives a narrow terminal; the tab list is truncated.
+.SH BORDERS
+The lines between panes come from the
+.B [borders]
+table:
+.B style
+is one of
+.IR sharp ,
+.IR rounded ,
+.IR heavy ,
+.IR double ,
+.I dashed
+or
+.IR none ,
+and any single glyph can be replaced
+.RB ( vertical ", " horizontal ", " top_left ", " top_right ", "
+.BR bottom_left ", " bottom_right ", " tee_right ", " tee_left ", "
+.BR tee_down ", " tee_up ", " cross ).
+Each must be exactly one column wide, or the layout would tear.
 .SH ANIMATION
-A new pane is revealed, and two panes trading places slide past each other,
-over
-.B animate
-(default 90ms; 0 turns it off). Only the drawing is animated: the pane is its
-final size from the start, so no program in a pane is resized more than once.
+Set by the
+.B [animation]
+table:
+.B split
+is how long a new pane takes to appear and
+.B move
+how long two panes take to trade places (0 turns either off, the maximum is
+1s);
+.B easing
+is
+.IR linear ,
+.IR out-quad ,
+.I out-cubic
+or
+.IR out-back ;
+.B reveal
+is
+.I curtain
+or
+.IR none ,
+drawn with
+.BR glyph .
+.B animations
+.RI "= " false
+turns them all off at once.
+.PP
+Only the drawing is animated: panes are their final size from the first frame,
+so no program in a pane is resized more than once.
+.PP
+Fonts are the terminal's, not slat's. slat draws characters; which font paints
+them is the terminal emulator's business.
 .SH THEMES
 The status bar, pane borders and overlays take their colours from the
 .B [theme]

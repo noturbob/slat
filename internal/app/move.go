@@ -53,16 +53,14 @@ func (a *App) movePane(direction string) {
 // whether the animation is still running. Called with the lock held.
 func (a *App) drawSlide(frame *ui.Frame, now time.Time) bool {
 	s := a.slide
-	if a.cfg.Animate.D() <= 0 {
+	if a.cfg.Animation.Move.D() <= 0 {
 		return false
 	}
-	progress := float64(now.Sub(s.start)) / float64(a.cfg.Animate.D())
+	progress := float64(now.Sub(s.start)) / float64(a.cfg.Animation.Move.D())
 	if progress >= 1 {
 		return false
 	}
-	if progress < 0 {
-		progress = 0
-	}
+	progress = a.cfg.Animation.Ease(progress)
 	s.a.DrawAt(frame.Lines, lerp(s.aFrom.Row, s.aTo.Row, progress), lerp(s.aFrom.Col, s.aTo.Col, progress))
 	s.b.DrawAt(frame.Lines, lerp(s.bFrom.Row, s.bTo.Row, progress), lerp(s.bFrom.Col, s.bTo.Col, progress))
 

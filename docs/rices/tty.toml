@@ -1,0 +1,36 @@
+# For a bare Linux console or an old remote: 16 colours, ASCII only, no
+# glyphs that need a font with box drawing.
+
+[theme]
+bg            = "black"
+fg            = "white"
+dim           = "bright-black"
+accent        = "bright-cyan"
+border        = "bright-black"
+tab_bg        = "black"
+tab_fg        = "white"
+tab_active_bg = "blue"
+tab_active_fg = "bright-white"
+
+[borders]
+vertical    = "|"
+horizontal  = "-"
+top_left    = "+"
+top_right   = "+"
+bottom_left = "+"
+bottom_right = "+"
+tee_right   = "+"
+tee_left    = "+"
+tee_down    = "+"
+tee_up      = "+"
+cross       = "+"
+
+[animation]
+reveal = "none"        # a console redraws slowly enough already
+move   = "0ms"
+
+[status]
+left  = " {workspace} | {tabs}"
+tab   = " {index}:{name}{alert} "
+right = "pane {pane}/{panes} "
+alert = " !"

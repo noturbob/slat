@@ -92,7 +92,7 @@ func TestThemeReachesTheScreen(t *testing.T) {
 // at its final size the whole time, so nothing is resized twice.
 func TestSplitAnimation(t *testing.T) {
 	a, term := start(t, func(c *config.Config) {
-		c.Animate = config.Duration(400 * time.Millisecond)
+		c.Animation.Split = config.Duration(400 * time.Millisecond)
 	})
 	before := a.Panes()[0]
 
@@ -117,7 +117,9 @@ func TestSplitAnimation(t *testing.T) {
 
 // Animations can be switched off, and then nothing is drawn over a pane.
 func TestAnimationOff(t *testing.T) {
-	a, term := start(t, func(c *config.Config) { c.Animate = 0 })
+	a, term := start(t, func(c *config.Config) {
+		c.Animation.Split, c.Animation.Move = 0, 0
+	})
 	a.FeedInput([]byte{prefix, 'v'})
 	waitFor(t, term, "slat$", 2)
 	if strings.Contains(term.String(), "░") {

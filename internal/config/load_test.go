@@ -109,3 +109,106 @@ on_idle = "notify-send done"
 		t.Error("an unknown agent setting should be an error")
 	}
 }
+
+func TestAnimationSettings(t *testing.T) {
+	cfg, err := load(t, `
+[animation]
+split  = "50ms"
+move   = "200ms"
+easing = "linear"
+reveal = "none"
+glyph  = "▓"
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := cfg.Animation
+	if a.Split.D() != 50*time.Millisecond || a.Move.D() != 200*time.Millisecond {
+		t.Errorf("durations: %v, %v", a.Split.D(), a.Move.D())
+	}
+	if a.Reveal != "none" || a.RevealGlyph() != '▓' {
+		t.Errorf("reveal = %q %q", a.Reveal, a.RevealGlyph())
+	}
+	// linear leaves progress alone; the default curve does not.
+	if got := a.Ease(0.5); got != 0.5 {
+		t.Errorf("linear Ease(0.5) = %v", got)
+	}
+	if got := DefaultConfig().Animation.Ease(0.5); got <= 0.5 {
+		t.Errorf("out-cubic Ease(0.5) = %v, want more than half way", got)
+	}
+
+	// The old single knob still works, and one switch turns everything off.
+	if cfg, err := load(t, `animate = "300ms"`); err != nil ||
+		cfg.Animation.Split.D() != 300*time.Millisecond || cfg.Animation.Move.D() != 300*time.Millisecond {
+		t.Errorf("animate shorthand: %+v, %v", cfg.Animation, err)
+	}
+	if cfg, err := load(t, "animations = false"); err != nil ||
+		cfg.Animation.Split != 0 || cfg.Animation.Move != 0 {
+		t.Errorf("animations = false: %+v, %v", cfg.Animation, err)
+	}
+
+	for _, bad := range []string{
+		"[animation]\neasing = \"bouncy\"\n",
+		"[animation]\nreveal = \"sparkle\"\n",
+		"[animation]\nglyph = \"ab\"\n",
+		"[animation]\nsplit = \"-1s\"\n",
+		"[animation]\nsplit = \"5s\"\n", // long enough to be in the way
+		"[animation]\nspin = \"1s\"\n",  // unknown setting
+	} {
+		if _, err := load(t, bad); err == nil {
+			t.Errorf("%q should have been refused", bad)
+		}
+	}
+}
+
+func TestBordersAndStatusSettings(t *testing.T) {
+	cfg, err := load(t, `
+[borders]
+style = "rounded"
+vertical = "┇"
+
+[status]
+left  = " {workspace} {tabs}"
+right = "{time} "
+tab   = "[{index}]"
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Borders["style"] != "rounded" || cfg.Status["tab"] != "[{index}]" {
+		t.Errorf("tables not kept: %v %v", cfg.Borders, cfg.Status)
+	}
+
+	// Mistakes are refused when slat starts, not drawn oddly later.
+	for _, bad := range []string{
+		"[borders]\nstyle = \"fancy\"\n",
+		"[borders]\nvertical = \"too long\"\n",
+		"[borders]\ncorner = \"+\"\n",
+		"[status]\nleft = \"{workspaec}\"\n",
+		"[status]\nmiddle = \"x\"\n",
+	} {
+		if _, err := load(t, bad); err == nil {
+			t.Errorf("%q should have been refused", bad)
+		}
+	}
+}
+
+// Every rice in the gallery must load: a broken example is worse than none.
+func TestGalleryRicesLoad(t *testing.T) {
+	rices, err := filepath.Glob("../../docs/rices/*.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rices) == 0 {
+		t.Fatal("no rices found: did docs/rices move?")
+	}
+	for _, path := range rices {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := load(t, string(body)); err != nil {
+			t.Errorf("%s: %v", filepath.Base(path), err)
+		}
+	}
+}
