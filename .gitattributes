@@ -13,9 +13,11 @@ docs/demo.mp4 export-ignore
 docs/demo-poster.jpg export-ignore
 docs/social-preview.png export-ignore
 docs/logo.svg export-ignore
+docs/logo-ink.svg export-ignore
 
-# The website.
-docs/index.html export-ignore
+# The website: a Next.js app, built by CI. Nothing generated is committed,
+# and none of it is needed to build slat.
+website/** export-ignore
 
 # Continuous integration, release tooling and other distributions' recipes.
 .github/ export-ignore

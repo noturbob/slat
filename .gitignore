@@ -20,3 +20,8 @@ pkg/
 /slat.exe
 # goreleaser output
 /dist/
+
+# Website build output (the pages workflow builds it from source)
+/website/node_modules/
+/website/.next/
+/website/out/

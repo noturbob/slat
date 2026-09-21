@@ -1,11 +1,16 @@
-# Publishes the website (docs/) and the signed apt repository (/apt) to
-# GitHub Pages. Repo settings: Pages → Source → "GitHub Actions".
+# Publishes the website and the signed apt repository (/apt) to GitHub
+# Pages. Repo settings: Pages → Source → "GitHub Actions".
+#
+# The site is a Next.js app in website/, built here from source: nothing
+# generated is committed, which keeps minified bundles out of the source
+# tree (and out of Debian's tarball).
 name: pages
 
 on:
   push:
     branches: [main]
-    paths: ["docs/**", "packaging/apt/**", ".github/workflows/pages.yml"]
+    paths:
+      ["website/**", "docs/**", "packaging/apt/**", ".github/workflows/pages.yml"]
   workflow_dispatch: # also started by release.yml after each release
 
 permissions:
@@ -23,6 +28,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Build the site
+        working-directory: website
+        run: |
+          # The demo media lives in docs/ so the repository keeps one copy.
+          cp ../docs/demo.mp4 ../docs/demo-poster.jpg ../docs/social-preview.png public/
+          npm ci
+          npm run build
+
       - name: Download .deb packages from the latest releases
         env:
           GH_TOKEN: ${{ github.token }}
@@ -36,7 +55,7 @@ jobs:
         env:
           APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
         run: |
-          cp -r docs _site
+          cp -r website/out _site
           if ! find debs -name '*.deb' | grep -q .; then
             echo "No released .deb yet; publishing the site only."
             exit 0

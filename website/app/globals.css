@@ -1,0 +1,231 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ─────────────────────────────────────────────────────────────────────────
+   slat's own colours.
+
+   These are not invented for the website: they are the values the program
+   paints its default theme with, straight out of internal/ui/theme.go —
+   xterm-256 44 for the focused pane border, 252 for status bar text, 248
+   for the dim half of it, 25 for the active tab. Light mode is slat's
+   "mono" theme, so the toggle in the header really is a theme switch.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Light: slat's "mono" theme, with the cyan darkened to clear 4.5:1 on
+     white — xterm 44 on a light canvas fails the contrast floor. */
+  --canvas: #f4f4f5;
+  --ink: #16181a;
+  --ink-muted: #55585e;
+  --ink-faint: #85898f;
+  --cyan: #00706f;
+  --tab-blue: #004f92;
+  --hairline: color-mix(in oklab, var(--ink) 14%, transparent);
+  --glass: color-mix(in oklab, var(--ink) 3%, transparent);
+  --glass-strong: color-mix(in oklab, var(--ink) 6%, transparent);
+  --grid-line: color-mix(in oklab, var(--ink) 7%, transparent);
+
+  --background: var(--canvas);
+  --foreground: var(--ink);
+  --card: var(--glass);
+  --card-foreground: var(--ink);
+  --popover: var(--canvas);
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: var(--canvas);
+  --secondary: var(--glass-strong);
+  --secondary-foreground: var(--ink);
+  --muted: var(--glass);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--glass-strong);
+  --accent-foreground: var(--ink);
+  --destructive: #a33;
+  --border: var(--hairline);
+  --input: var(--hairline);
+  --ring: var(--cyan);
+  --radius: 0.5rem;
+
+  /* One character cell. The session fits as many columns as the box
+     allows, so this decides how much terminal you see. */
+  --cell-size: clamp(8.5px, 0.92vw, 13px);
+}
+
+.dark {
+  --canvas: #08090a;
+  --ink: #d0d0d0; /* xterm 252 — slat's status bar text */
+  --ink-muted: #a8a8a8; /* 248 — its dim half */
+  --ink-faint: #6b6f74;
+  --cyan: #00d7d7; /* 44 — the focused pane border */
+  --tab-blue: #2b6cb0; /* 25, lifted for legibility on the page */
+  --hairline: color-mix(in oklab, var(--ink) 12%, transparent);
+  --glass: color-mix(in oklab, var(--ink) 3%, transparent);
+  --glass-strong: color-mix(in oklab, var(--ink) 7%, transparent);
+  --grid-line: color-mix(in oklab, var(--ink) 5%, transparent);
+
+  --background: var(--canvas);
+  --foreground: var(--ink);
+  --card: var(--glass);
+  --card-foreground: var(--ink);
+  --popover: #0c0d0f;
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: #08090a;
+  --secondary: var(--glass-strong);
+  --secondary-foreground: var(--ink);
+  --muted: var(--glass);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--glass-strong);
+  --accent-foreground: var(--ink);
+  --destructive: #e06c75;
+  --border: var(--hairline);
+  --input: var(--hairline);
+  --ring: var(--cyan);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-canvas: var(--canvas);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-cyan: var(--cyan);
+  --color-tab-blue: var(--tab-blue);
+  --color-hairline: var(--hairline);
+  --color-glass: var(--glass);
+  --color-glass-strong: var(--glass-strong);
+
+  --font-sans: var(--font-plex-sans);
+  --font-mono: var(--font-plex-mono);
+  --font-heading: var(--font-plex-mono);
+
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/60;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+  }
+  section[id] {
+    scroll-margin-top: 5rem; /* the header is fixed; don't hide under it */
+  }
+  html {
+    @apply font-sans;
+    -webkit-font-smoothing: antialiased;
+    scroll-behavior: smooth;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--cyan) 30%, transparent);
+    color: var(--ink);
+  }
+  :focus-visible {
+    outline: 2px solid var(--cyan);
+    outline-offset: 2px;
+  }
+}
+
+/* The blueprint grid: one hairline every 80px, faded away from the top so
+   the page has a horizon rather than wallpaper. */
+.grid-field {
+  background-image:
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 80px 80px;
+  background-position: center top;
+  mask-image: radial-gradient(120% 70% at 50% 0%, #000 20%, transparent 78%);
+}
+
+/* A pane of frosted glass: edge drawn as an inset hairline, never a border,
+   and lit from inside rather than dropped onto the page. */
+.glass {
+  background: var(--glass);
+  box-shadow:
+    inset 0 0 0 1px var(--hairline),
+    inset 0 1px 0 0 color-mix(in oklab, var(--ink) 10%, transparent),
+    0 24px 48px -24px rgb(0 0 0 / 0.12);
+  backdrop-filter: blur(12px);
+}
+
+.dark .glass {
+  box-shadow:
+    inset 0 0 0 1px var(--hairline),
+    inset 0 1px 0 0 color-mix(in oklab, var(--ink) 10%, transparent),
+    0 24px 48px -24px rgb(0 0 0 / 0.55);
+}
+
+.hairline-top {
+  box-shadow: inset 0 1px 0 0 var(--hairline);
+}
+
+/* The one place cyan is allowed to glow: behind the session, as if the
+   screen were the only light in the room. */
+.session-halo::before {
+  content: "";
+  position: absolute;
+  inset: -12% -6% 20%;
+  background: radial-gradient(
+    60% 50% at 50% 0%,
+    color-mix(in oklab, var(--cyan) 16%, transparent),
+    transparent 70%
+  );
+  filter: blur(40px);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Magic UI's theme transition: the new theme is revealed through an
+   expanding clip-path instead of swapping instantly. */
+html[data-magicui-theme-vt="active"]::view-transition-old(root),
+html[data-magicui-theme-vt="active"]::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+html[data-magicui-theme-vt="active"]::view-transition-old(root) {
+  z-index: 0;
+}
+html[data-magicui-theme-vt="active"]::view-transition-new(root) {
+  z-index: 1;
+  clip-path: var(--magicui-theme-vt-clip-from);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
