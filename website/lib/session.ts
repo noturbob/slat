@@ -41,7 +41,8 @@ export type CellStyle =
   | "tabActive"
   | "badge"
   | "curtain"
-  | "prompt";
+  | "prompt"
+  | "cursor";
 
 export type Cell = { ch: string; style: CellStyle };
 
@@ -180,8 +181,10 @@ export function blit(g: Grid, rect: Rect, lines: string[], offset = { row: 0, co
       const ch = line[x];
       if (ch === "\u0000") continue;
       // The prompt character is the one thing a pane paints in the accent
-      // colour, so a reader can find where each command begins.
-      const style: CellStyle = line.startsWith("$ ") && x === 0 ? "prompt" : "text";
+      // colour, so a reader can find where each command begins; the block
+      // at the end of a line is a cursor, and cursors blink.
+      const style: CellStyle =
+        ch === "█" ? "cursor" : line.startsWith("$ ") && x === 0 ? "prompt" : "text";
       set(g, rect.col + offset.col + x, rect.row + offset.row + y, { ch, style });
     }
   }

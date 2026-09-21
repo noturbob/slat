@@ -63,7 +63,7 @@ export function Hero() {
           Split the terminal.
           <br />
           Keep it running.
-          <span className="ml-1 inline-block h-[0.78em] w-[0.5em] translate-y-[0.04em] bg-cyan align-baseline" />
+          <span className="cursor-blink ml-1 inline-block h-[0.78em] w-[0.5em] translate-y-[0.04em] bg-cyan align-baseline" />
         </h1>
 
         <p className="hero-lead mt-6 max-w-[64ch] text-[17px] leading-[1.65] text-ink-muted sm:text-[19px]">
