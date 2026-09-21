@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -71,15 +70,6 @@ const (
 	right
 )
 
-var borderGlyph = map[int]rune{
-	up: '│', down: '│', up | down: '│',
-	left: '─', right: '─', left | right: '─',
-	down | right: '┌', down | left: '┐', up | right: '└', up | left: '┘',
-	up | down | right: '├', up | down | left: '┤',
-	left | right | down: '┬', left | right | up: '┴',
-	up | down | left | right: '┼',
-}
-
 // DrawBorders draws the separators between panes, joining where they meet,
 // and highlights the ones around the active pane.
 func DrawBorders(f *Frame, borders []layout.Rect, active layout.Rect) {
@@ -107,10 +97,7 @@ func DrawBorders(f *Frame, borders []layout.Rect, active layout.Rect) {
 		if cells[[2]int{x + 1, y}] {
 			mask |= right
 		}
-		g, ok := borderGlyph[mask]
-		if !ok {
-			g = '│'
-		}
+		g := borderSet.glyph(mask)
 		st := styleBorder
 		if around.Contains(y, x) {
 			st = styleBorderOn
@@ -135,56 +122,40 @@ type Status struct {
 	Message        string // shown instead of the tabs while set
 }
 
-// DrawStatusBar draws the status bar on row y.
-func DrawStatusBar(f *Frame, y int, st Status) {
+// DrawStatusBar draws the status bar on row y, laid out by f. The right
+// side wins when the two sides don't fit: a bar that hides which pane you
+// are in is worse than one with a truncated tab list.
+func DrawStatusBar(f *Frame, y int, st Status, format StatusFormat) {
 	w := f.W
 	Fill(f, 0, y, w, styleBar)
 
-	right := fmt.Sprintf(" pane %d/%d ", st.PaneIndex+1, st.PaneCount)
-	if st.WorkspaceCount > 1 {
-		right = fmt.Sprintf(" ws %d/%d ·%s", st.WorkspaceIndex+1, st.WorkspaceCount, right)
-	}
-	badge := ""
-	if st.Badge != "" {
-		badge = " " + st.Badge + " "
-	}
-	rightW := vt.StringWidth(badge) + vt.StringWidth(right)
+	right := renderStatus(format.Right, st, format)
+	rightW := width(right)
 	if rightW > w {
-		badge, right, rightW = "", "", 0
+		right, rightW = nil, 0
 	}
-	budget := w - rightW - 1 // keep a gap before the right side
+	left := renderStatus(format.Left, st, format)
+	if st.Message != "" {
+		left = []segment{{text: " " + st.Message, style: styleBar}}
+	}
 
 	x := 0
-	put := func(s string, sty vt.Style) bool {
-		if x+vt.StringWidth(s) > budget {
-			Text(f, x, y, Truncate(s, budget-x), sty)
-			x = budget
-			return false
+	budget := w - rightW
+	for _, seg := range left {
+		if x >= budget {
+			break
 		}
-		x = Text(f, x, y, s, sty)
-		return true
-	}
-	if st.Message != "" {
-		put(" "+st.Message, styleBar)
-	} else if put(" "+st.Workspace+" ", styleWorkspace) && put("│ ", styleDim) {
-		for i, name := range st.Tabs {
-			sty := styleTab
-			if i == st.ActiveTab {
-				sty = styleTabActive
-			}
-			mark := ""
-			if i < len(st.TabAlert) && st.TabAlert[i] {
-				mark = " ?"
-			}
-			if !put(fmt.Sprintf(" %d:%s%s ", i+1, name, mark), sty) || !put(" ", styleBar) {
-				break
-			}
+		text := seg.text
+		if x+vt.StringWidth(text) > budget {
+			text = Truncate(text, budget-x)
 		}
+		x = Text(f, x, y, text, seg.style)
 	}
 
 	x = w - rightW
-	x = Text(f, x, y, badge, styleBadge)
-	Text(f, x, y, right, styleDim)
+	for _, seg := range right {
+		x = Text(f, x, y, seg.text, seg.style)
+	}
 }
 
 // DrawPrompt draws an input line on row y, returning the cursor column.
@@ -297,13 +268,13 @@ func DrawBanner(f *Frame, version, hint string) {
 // split slides into place instead of appearing all at once. revealed is
 // how far the reveal has got: columns for a left/right split, rows for a
 // top/bottom one.
-func Curtain(f *Frame, r layout.Rect, sideways bool, revealed int) {
+func Curtain(f *Frame, r layout.Rect, sideways bool, revealed int, glyph rune) {
 	for y := r.Row; y < r.Row+r.Rows; y++ {
 		for x := r.Col; x < r.Col+r.Cols; x++ {
 			if sideways && x-r.Col < revealed || !sideways && y-r.Row < revealed {
 				continue
 			}
-			f.Set(x, y, vt.Cell{R: '░', Style: styleBorder})
+			f.Set(x, y, vt.Cell{R: glyph, Style: styleBorder})
 		}
 	}
 }

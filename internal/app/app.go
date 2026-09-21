@@ -39,6 +39,7 @@ const (
 // Every exported method is safe to call from any goroutine.
 type App struct {
 	cfg      *config.Config
+	status   ui.StatusFormat
 	help     []ui.HelpEntry
 	quit     chan struct{}
 	quitOnce sync.Once
@@ -82,8 +83,18 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 	theme.Apply()
+	borders, err := ui.ParseBorders(cfg.Borders)
+	if err != nil {
+		return nil, err
+	}
+	borders.Apply()
+	status, err := ui.ParseStatusFormat(cfg.Status)
+	if err != nil {
+		return nil, err
+	}
 	a := &App{
 		cfg:      cfg,
+		status:   status,
 		help:     helpEntries(cfg),
 		quit:     make(chan struct{}),
 		detachCh: make(chan struct{}, 1),
@@ -271,7 +282,7 @@ func (a *App) render() {
 	}
 
 	if a.cfg.StatusBar {
-		ui.DrawStatusBar(frame, a.rows-1, a.status(now))
+		ui.DrawStatusBar(frame, a.rows-1, a.statusOfBar(now), a.status)
 	}
 	if a.prompt != nil {
 		x := ui.DrawPrompt(frame, a.rows-1, a.prompt.label, string(a.prompt.text))
@@ -284,7 +295,7 @@ func (a *App) render() {
 	a.screen.Render(frame, cur, modes)
 }
 
-func (a *App) status(now time.Time) ui.Status {
+func (a *App) statusOfBar(now time.Time) ui.Status {
 	ws := a.manager.ActiveWorkspace()
 	st := ui.Status{
 		Workspace:      ws.Name,

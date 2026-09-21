@@ -22,9 +22,13 @@ type Config struct {
 	Shell      string            `toml:"shell"`
 	StatusBar  bool              `toml:"status_bar"`
 	Scrollback int               `toml:"scrollback"` // lines of history per pane
-	Animate    Duration          `toml:"animate"`    // how long a new pane takes to appear; 0 = off
+	Animate    Duration          `toml:"animate"`    // shorthand: one duration for every animation
+	Animations bool              `toml:"animations"` // false turns them all off
+	Animation  Animation         `toml:"animation"`
 	Keybinds   map[string]string `toml:"keybinds"`
 	Theme      map[string]string `toml:"theme"`
+	Borders    map[string]string `toml:"borders"`
+	Status     map[string]string `toml:"status"`
 	Agent      Agent             `toml:"agent"`
 
 	PrefixByte byte `toml:"-"` // parsed Prefix
@@ -72,7 +76,8 @@ func DefaultConfig() *Config {
 		Shell:      defaultShell(),
 		StatusBar:  true,
 		Scrollback: 2000,
-		Animate:    Duration(90 * time.Millisecond),
+		Animations: true,
+		Animation:  defaultAnimation(),
 		Keybinds:   defaultKeybinds(),
 		Agent:      defaultAgent(),
 	}
@@ -171,7 +176,7 @@ func Load() (*Config, error) {
 	if path == "" {
 		return cfg, nil
 	}
-	user := &Config{StatusBar: true}
+	user := &Config{StatusBar: true, Animations: true}
 	md, err := toml.DecodeFile(path, user)
 	if errors.Is(err, os.ErrNotExist) {
 		return cfg, nil
@@ -211,11 +216,20 @@ func (cfg *Config) merge(user *Config, md toml.MetaData) error {
 		}
 		cfg.Theme = user.Theme
 	}
-	if md.IsDefined("animate") {
-		if user.Animate.D() < 0 || user.Animate.D() > time.Second {
-			return fmt.Errorf("animate = %q: must be between 0 and 1s", user.Animate.D())
+	if len(user.Borders) > 0 {
+		if _, err := ui.ParseBorders(user.Borders); err != nil {
+			return err
 		}
-		cfg.Animate = user.Animate
+		cfg.Borders = user.Borders
+	}
+	if len(user.Status) > 0 {
+		if _, err := ui.ParseStatusFormat(user.Status); err != nil {
+			return err
+		}
+		cfg.Status = user.Status
+	}
+	if err := cfg.mergeAnimation(user, md); err != nil {
+		return err
 	}
 	if md.IsDefined("scrollback") {
 		if n := user.Scrollback; n < 0 || n > 1_000_000 {

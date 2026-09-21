@@ -15,10 +15,15 @@ status_bar = true
 # Lines of output each pane keeps for scroll mode (0 turns it off)
 scrollback = 2000
 
-# How long a new pane takes to slide into place. Only the drawing is
-# animated — the pane is its final size throughout, so no program is
-# resized more than once. 0 turns it off; the maximum is 1s.
-animate = "90ms"
+# Animations. Only the drawing is animated — panes are their final size
+# throughout, so no program is resized more than once.
+animations = true         # false turns every animation off
+[animation]
+split  = "90ms"           # a new pane appearing; 0 turns it off
+move   = "120ms"          # two panes trading places
+easing = "out-cubic"      # linear, out-quad, out-cubic, out-back
+reveal = "curtain"        # how a new pane appears: curtain or none
+glyph  = "░"              # the curtain's character
 
 # Colours for the parts slat draws: the status bar, pane borders and
 # overlays. Programs running in panes keep their own colours.
@@ -36,6 +41,33 @@ name = "default"
 # tab_fg        = 250
 # tab_active_bg = 25
 # tab_active_fg = 231
+
+# The lines between panes.
+[borders]
+style = "sharp"           # sharp, rounded, heavy, double, dashed, none
+# Or set any glyph yourself; each must be one column wide.
+# vertical = "┃"
+# horizontal = "━"
+# top_left = "┏"
+# top_right = "┓"
+# bottom_left = "┗"
+# bottom_right = "┛"
+# tee_right = "┣"
+# tee_left = "┫"
+# tee_down = "┳"
+# tee_up = "┻"
+# cross = "╋"
+
+# The status bar's layout. Placeholders for left and right: {workspace}
+# {workspace_index} {workspace_count} {workspaces} {tabs} {tab} {tabs_count}
+# {pane} {panes} {badge} {time} {seconds} {date}. In tab: {index} {name}
+# {alert}. Everything else is literal text — put a Nerd Font glyph in if
+# your terminal's font has one.
+[status]
+left  = " {workspace} │ {tabs}"
+right = "{badge}{workspaces} pane {pane}/{panes} "
+tab   = " {index}:{name}{alert} "
+alert = " ?"               # marks a tab whose pane is waiting for input
 
 # How `slat status`, `slat ls` and `slat wait` read a pane, for scripts and
 # AI agents. See the README's "Scripting and agents" section.

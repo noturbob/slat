@@ -1,0 +1,16 @@
+# Nothing but tab numbers and a pane counter. No animation, no borders drawn.
+
+animations = false
+
+[borders]
+style = "none"
+
+[theme]
+name = "default"
+accent = "white"
+
+[status]
+left  = " {tabs}"
+tab   = "{index}{alert} "
+right = "{pane}/{panes} "
+alert = "!"

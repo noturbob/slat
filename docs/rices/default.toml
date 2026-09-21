@@ -1,0 +1,24 @@
+# slat's defaults, written out. A starting point: change a line and restart.
+prefix     = "C-s"
+status_bar = true
+scrollback = 2000
+animations = true
+
+[animation]
+split  = "90ms"
+move   = "120ms"
+easing = "out-cubic"
+reveal = "curtain"
+glyph  = "░"
+
+[borders]
+style = "sharp"
+
+[theme]
+name = "default"
+
+[status]
+left  = " {workspace} │ {tabs}"
+right = "{badge}{workspaces} pane {pane}/{panes} "
+tab   = " {index}:{name}{alert} "
+alert = " ?"

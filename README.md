@@ -309,7 +309,7 @@ prefix     = "C-a"        # Ctrl + a letter, or C-\ C-] C-^ C-_
 shell      = "/bin/zsh"   # default: $SHELL
 status_bar = true
 scrollback = 5000         # lines kept per pane; 0 turns it off
-animate    = "90ms"       # a new pane is revealed over this long; 0 = off
+animations = true         # false turns every animation off
 
 [agent]                   # how `slat status` reads a pane (see above)
 settle      = "750ms"     # quiet for this long after output = idle
@@ -318,6 +318,23 @@ input_after = "10s"       # quiet for this long on a prompt = waiting for input
 [theme]
 name = "gruvbox"          # default, gruvbox, nord, rose-pine, mono
 accent = "#fabd2f"        # override any single colour
+
+[borders]
+style = "rounded"         # sharp, rounded, heavy, double, dashed, none
+# vertical = "┃"          # …or set any glyph yourself
+
+[animation]
+split  = "90ms"           # a new pane appearing; 0 turns it off
+move   = "120ms"          # two panes trading places
+easing = "out-cubic"      # linear, out-quad, out-cubic, out-back
+reveal = "curtain"        # curtain or none
+glyph  = "░"
+
+[status]
+left  = " {workspace} │ {tabs}"
+right = "{badge} pane {pane}/{panes}  {time} "
+tab   = " {index}:{name}{alert} "
+alert = " ●"
 
 [keybinds]
 split-vertical   = "|"
@@ -330,6 +347,20 @@ zoom             = ""     # "" unbinds a command
   `tab_fg`, `tab_active_bg` and `tab_active_fg`, written as a colour name, a
   palette index (0-255) or `#rrggbb`. Only what slat draws is themed — pane
   contents keep whatever colours the programs in them use.
+- `[status]` takes `left`, `right`, `tab` and `alert`. The sides accept
+  `{workspace}` `{workspace_index}` `{workspace_count}` `{workspaces}` `{tabs}`
+  `{tab}` `{tabs_count}` `{pane}` `{panes}` `{badge}` `{time}` `{seconds}`
+  `{date}`; `tab` accepts `{index}` `{name}` `{alert}`. Everything else is
+  literal text, so a Nerd Font glyph goes straight in — and each placeholder is
+  drawn in the colour that suits it, so there's no colour markup to write.
+- A mistake anywhere — an unknown colour, a glyph two columns wide, a
+  placeholder that doesn't exist, an easing curve that doesn't either — is
+  reported when you run `slat`, never quietly drawn.
+- **Fonts belong to your terminal, not to slat.** slat draws characters; which
+  font paints them is Kitty's, Alacritty's or WezTerm's business. Point that at
+  a Nerd Font and its glyphs work here like any other character.
+- Ready-made setups live in [`docs/rices/`](docs/rices/) — copy one and edit it,
+  or send yours in.
 - Keybinds you don't set keep their defaults.
 - Giving a default key to another command takes it away from the default
   command, so bindings never silently collide.
