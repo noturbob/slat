@@ -1,6 +1,28 @@
-# Demo media for the README and website: kept in the repo, but left out of
-# source archives (GitHub "Source code" downloads, Debian's orig tarball),
-# which don't need them.
-assets/demo.gif export-ignore
+# Source archives — GitHub's "Source code" downloads and, through them,
+# Debian's orig tarball — should contain what it takes to build slat and
+# nothing else. Everything listed here is for developing it, publishing it
+# or showing it off, so it stays in the repository and leaves the archive.
+#
+# Kept in archives on purpose: the Go source and its tests, README.md,
+# LICENSE, slat.1, config.example.toml, Makefile, docs/design (how it works)
+# and docs/rices (example configurations, which a test reads).
+
+# Demo media and artwork: megabytes that no build reads.
+assets/ export-ignore
 docs/demo.mp4 export-ignore
 docs/demo-poster.jpg export-ignore
+docs/social-preview.png export-ignore
+docs/logo.svg export-ignore
+
+# The website.
+docs/index.html export-ignore
+
+# Continuous integration, release tooling and other distributions' recipes.
+.github/ export-ignore
+.goreleaser.yaml export-ignore
+packaging/ export-ignore
+Dockerfile export-ignore
+
+# Git's own bookkeeping.
+.gitattributes export-ignore
+.gitignore export-ignore
