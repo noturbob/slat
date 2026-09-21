@@ -156,7 +156,16 @@ func (p *Pane) Rect() (row, col, rows, cols int) {
 func (p *Pane) Draw(screen [][]vt.Cell) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.draw(screen, p.term.Line)
+	p.draw(screen, p.row, p.col, p.term.Line)
+}
+
+// DrawAt is Draw with the screen painted at another position, for animating
+// a pane on its way somewhere. The pane's own size and position are
+// untouched, so nothing it runs is resized or reflowed.
+func (p *Pane) DrawAt(screen [][]vt.Cell, row, col int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.draw(screen, row, col, p.term.Line)
 }
 
 // DrawHistory is Draw for a view scrolled back through history: the view's
@@ -164,16 +173,16 @@ func (p *Pane) Draw(screen [][]vt.Cell) {
 func (p *Pane) DrawHistory(screen [][]vt.Cell, top int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.draw(screen, func(y int) []vt.Cell { return p.term.LineAt(top + y) })
+	p.draw(screen, p.row, p.col, func(y int) []vt.Cell { return p.term.LineAt(top + y) })
 }
 
-func (p *Pane) draw(screen [][]vt.Cell, line func(y int) []vt.Cell) {
+func (p *Pane) draw(screen [][]vt.Cell, row, col int, line func(y int) []vt.Cell) {
 	cols, rows := p.term.Size()
-	for y := 0; y < rows && p.row+y < len(screen); y++ {
-		if p.row+y < 0 || p.col >= len(screen[p.row+y]) {
+	for y := 0; y < rows && row+y < len(screen); y++ {
+		if row+y < 0 || col < 0 || col >= len(screen[row+y]) {
 			continue
 		}
-		dst := screen[p.row+y][p.col:]
+		dst := screen[row+y][col:]
 		dst = dst[:min(cols, len(dst))]
 		n := copy(dst, line(y)) // history lines may be shorter or longer
 		if n > 0 && dst[n-1].Wide == vt.WideHead {

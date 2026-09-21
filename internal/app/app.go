@@ -47,6 +47,8 @@ type App struct {
 
 	mu          sync.Mutex     // guards everything below
 	anim        *anim          // a pane being revealed
+	slide       *slide         // two panes trading places
+	moving      bool           // move mode: direction keys walk the pane
 	lastStatus  map[int]string // pane id -> status, for the hooks
 	attention   map[int]bool   // panes waiting for input
 	manager     *session.Manager
@@ -238,11 +240,17 @@ func (a *App) render() {
 		return
 	}
 
+	if a.slide != nil && !a.drawSlide(frame, now) {
+		a.slide = nil
+	}
 	active := a.manager.ActivePane()
 	for _, p := range visible {
-		if a.scroll != nil && p == a.scroll.pane {
+		switch {
+		case a.slide.sliding(p):
+			// drawSlide painted it on its way across.
+		case a.scroll != nil && p == a.scroll.pane:
 			a.drawScroll(frame)
-		} else {
+		default:
 			p.Draw(frame.Lines)
 		}
 	}
@@ -256,7 +264,9 @@ func (a *App) render() {
 	cur := ui.Cursor{X: ac + x, Y: ar + y, Visible: vis, Style: style}
 	var modes ui.Modes
 	modes.AppCursor, modes.BracketedPaste = active.Modes()
-	if a.scroll != nil {
+	if a.scroll != nil || a.slide != nil {
+		// Mid-slide the pane is painted away from its real position, and a
+		// cursor left at the destination would look detached from it.
 		cur.Visible = false
 	}
 
@@ -296,6 +306,8 @@ func (a *App) status(now time.Time) ui.Status {
 		st.Badge = "HELP"
 	case a.scroll != nil:
 		st.Badge = a.scrollBadge()
+	case a.moving:
+		st.Badge = "MOVE"
 	case a.zoomed != nil:
 		st.Badge = "ZOOM"
 	}
@@ -336,6 +348,28 @@ func (a *App) FeedInput(buf []byte) {
 			a.scroll = nil // any command leaves scroll mode
 		}
 
+		if a.moving && b != a.handler.PrefixByte() {
+			if dir, ok := moveKeys[b]; ok {
+				a.movePane(dir)
+				continue
+			}
+			if b == 0x1b && i+2 < len(buf) && (buf[i+1] == '[' || buf[i+1] == 'O') {
+				if dir, ok := arrowDirections[buf[i+2]]; ok {
+					a.movePane(dir)
+					i += 2
+					continue
+				}
+			}
+			// Anything else leaves move mode, and q and Esc mean only that.
+			a.moving = false
+			if b == 'q' || b == 0x1b {
+				if b == 0x1b {
+					return // drop the rest of the sequence Esc started
+				}
+				continue
+			}
+		}
+
 		if b == 0x1b && a.handler.IsPrefixActive() {
 			// prefix + arrow key selects a pane in that direction;
 			// prefix + PageUp scrolls back.
@@ -372,6 +406,11 @@ func (a *App) FeedInput(buf []byte) {
 			return
 		}
 	}
+}
+
+// arrowDirections is the arrow keys as directions, for move mode.
+var arrowDirections = map[byte]string{
+	'A': "up", 'B': "down", 'C': "right", 'D': "left",
 }
 
 var arrowActions = map[byte]input.Action{
@@ -416,6 +455,17 @@ func (a *App) do(action input.Action, b byte) bool {
 		a.selectPane("up")
 	case input.ActionSelectPaneDown:
 		a.selectPane("down")
+	case input.ActionMoveMode:
+		a.moving = !a.moving
+	case input.ActionMovePaneUp:
+		a.movePane("up")
+	case input.ActionMovePaneDown:
+		a.movePane("down")
+	case input.ActionMovePaneLeft:
+		a.movePane("left")
+	case input.ActionMovePaneRight:
+		a.movePane("right")
+
 	case input.ActionSelectPaneLeft:
 		a.selectPane("left")
 	case input.ActionSelectPaneRight:

@@ -54,6 +54,11 @@ const (
 	ActionSelectPaneLeft
 	ActionSelectPaneRight
 	ActionSwapPane
+	ActionMovePaneUp
+	ActionMovePaneDown
+	ActionMovePaneLeft
+	ActionMovePaneRight
+	ActionMoveMode
 	ActionResizeGrow
 	ActionResizeShrink
 	ActionEqualizeLayout
@@ -104,6 +109,11 @@ var Bindings = []Binding{
 	{"select-pane-left", "Panes", "Pane left (or ←)", ActionSelectPaneLeft},
 	{"select-pane-right", "Panes", "Pane right (or →)", ActionSelectPaneRight},
 	{"swap-pane", "Panes", "Swap with next pane", ActionSwapPane},
+	{"move-mode", "Panes", "Move the pane around (hjkl, q exits)", ActionMoveMode},
+	{"move-pane-up", "Panes", "Move pane up", ActionMovePaneUp},
+	{"move-pane-down", "Panes", "Move pane down", ActionMovePaneDown},
+	{"move-pane-left", "Panes", "Move pane left", ActionMovePaneLeft},
+	{"move-pane-right", "Panes", "Move pane right", ActionMovePaneRight},
 	{"resize-grow", "Panes", "Grow pane", ActionResizeGrow},
 	{"resize-shrink", "Panes", "Shrink pane", ActionResizeShrink},
 	{"equalize", "Panes", "Equalize sizes", ActionEqualizeLayout},

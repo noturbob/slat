@@ -147,3 +147,85 @@ func TestShellPrompt(t *testing.T) {
 		}
 	}
 }
+
+// column reports where s sits on screen, or -1. Panes are laid out side by
+// side, so the column says which pane holds the text.
+func column(term *terminal, s string) int {
+	for _, line := range strings.Split(term.String(), "\n") {
+		if i := strings.Index(line, s); i >= 0 {
+			return i
+		}
+	}
+	return -1
+}
+
+func waitColumn(t *testing.T, term *terminal, s string, leftOfHalf bool) int {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		if c := column(term, s); c >= 0 && (c < 50) == leftOfHalf {
+			return c
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	side := "the right half"
+	if leftOfHalf {
+		side = "the left half"
+	}
+	t.Fatalf("%q never reached %s (column %d); screen:\n%s", s, side, column(term, s), term.String())
+	return -1
+}
+
+// A pane can be walked around the layout, the way a tiling window manager
+// moves a window: the two panes trade places and focus follows the one that
+// moved.
+func TestMovePaneInDirection(t *testing.T) {
+	a, term := start(t)
+	a.FeedInput([]byte{prefix, 'v'}) // split left/right; focus moves right
+	waitFor(t, term, "slat$", 2)
+	a.FeedInput([]byte("echo RIGHTMARK\r"))
+	waitColumn(t, term, "RIGHTMARK", false)
+
+	a.FeedInput([]byte{prefix, 'H'}) // focus the left pane
+	a.FeedInput([]byte("echo LEFTMARK\r"))
+	waitColumn(t, term, "LEFTMARK", true)
+
+	// Move the focused (left) pane to the right: they swap sides.
+	a.FeedInput([]byte{prefix, '>'})
+	waitColumn(t, term, "LEFTMARK", false)
+	waitColumn(t, term, "RIGHTMARK", true)
+
+	// Focus followed the pane that moved, so typing lands in it.
+	a.FeedInput([]byte("echo STILLFOCUSED\r"))
+	waitColumn(t, term, "STILLFOCUSED", false)
+
+	// And back again.
+	a.FeedInput([]byte{prefix, '<'})
+	waitColumn(t, term, "LEFTMARK", true)
+}
+
+// Move mode walks the pane with unprefixed keys and says so in the bar.
+func TestMoveMode(t *testing.T) {
+	a, term := start(t)
+	a.FeedInput([]byte{prefix, 'v'})
+	waitFor(t, term, "slat$", 2)
+	a.FeedInput([]byte("echo WALKER\r"))
+	waitColumn(t, term, "WALKER", false)
+
+	a.FeedInput([]byte{prefix, 'm'})
+	waitFor(t, term, "MOVE", 1) // the badge
+
+	// No prefix needed: h moves it left, l brings it back.
+	a.FeedInput([]byte("h"))
+	waitColumn(t, term, "WALKER", true)
+	a.FeedInput([]byte("l"))
+	waitColumn(t, term, "WALKER", false)
+
+	// q leaves, and the key isn't passed to the shell.
+	a.FeedInput([]byte("q"))
+	waitGone(t, term, "MOVE")
+	a.FeedInput([]byte("echo AFTERWARDS\r"))
+	waitColumn(t, term, "AFTERWARDS", false)
+	if strings.Contains(term.String(), "qecho") {
+		t.Error("the q that left move mode reached the shell")
+	}
+}

@@ -107,7 +107,7 @@ func (s *Server) wait(req control.Request, pane string) control.Response {
 			// The pane left the session: that is the exit we waited for.
 			met = true
 		} else {
-			return control.Errorf(control.CodeError, "%v", err)
+			return paneErr(err)
 		}
 	}
 	resp := control.Response{Schema: control.Schema, Matched: &met, Pane: &info}
