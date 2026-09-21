@@ -1,0 +1,335 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ─────────────────────────────────────────────────────────────────────────
+   slat's own colours.
+
+   These are not invented for the website: they are the values the program
+   paints its default theme with, straight out of internal/ui/theme.go —
+   xterm-256 44 for the focused pane border, 252 for status bar text, 248
+   for the dim half of it, 25 for the active tab. Light mode is slat's
+   "mono" theme, so the toggle in the header really is a theme switch.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Light: slat's "mono" theme, with the cyan darkened to clear 4.5:1 on
+     white — xterm 44 on a light canvas fails the contrast floor. */
+  --canvas: #f4f4f5;
+  --ink: #16181a;
+  --ink-muted: #55585e;
+  --ink-faint: #85898f;
+  --cyan: #00706f;
+  --tab-blue: #004f92;
+  --hairline: color-mix(in oklab, var(--ink) 14%, transparent);
+  --glass: color-mix(in oklab, var(--ink) 3%, transparent);
+  --glass-strong: color-mix(in oklab, var(--ink) 6%, transparent);
+  --grid-line: color-mix(in oklab, var(--ink) 12%, transparent);
+  /* Glass, light theme: a bright pane over a bright page needs a dark rim
+     to read as an edge, and the sheen comes from near-white. */
+  --glass-fill: rgb(255 255 255 / 0.55);
+  --glass-fill-hover: rgb(255 255 255 / 0.72);
+  --glass-sheen: rgb(255 255 255 / 0.9);
+  --glass-sheen-soft: rgb(255 255 255 / 0.5);
+  --glass-rim: rgb(16 18 20 / 0.12);
+  --glass-drop: rgb(16 18 20 / 0.16);
+
+  --background: var(--canvas);
+  --foreground: var(--ink);
+  --card: var(--glass);
+  --card-foreground: var(--ink);
+  --popover: var(--canvas);
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: var(--canvas);
+  --secondary: var(--glass-strong);
+  --secondary-foreground: var(--ink);
+  --muted: var(--glass);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--glass-strong);
+  --accent-foreground: var(--ink);
+  --destructive: #a33;
+  --border: var(--hairline);
+  --input: var(--hairline);
+  --ring: var(--cyan);
+  --radius: 0.5rem;
+
+  /* One character cell. The session fits as many columns as the box
+     allows, so this decides how much terminal you see. */
+  --cell-size: clamp(8.5px, 0.92vw, 13px);
+
+  /* The page's rhythm: the space above and below every section, and the
+     gap between a heading and what it introduces. Everything else is a
+     multiple of these two, so sections cannot drift apart. */
+  --section-gap: clamp(64px, 7.5vw, 104px);
+  --block-gap: clamp(32px, 3.5vw, 48px);
+}
+
+.dark {
+  --canvas: #08090a;
+  --ink: #d0d0d0; /* xterm 252 — slat's status bar text */
+  --ink-muted: #a8a8a8; /* 248 — its dim half */
+  --ink-faint: #6b6f74;
+  --cyan: #00d7d7; /* 44 — the focused pane border */
+  --tab-blue: #2b6cb0; /* 25, lifted for legibility on the page */
+  --hairline: color-mix(in oklab, var(--ink) 12%, transparent);
+  --glass: color-mix(in oklab, var(--ink) 3%, transparent);
+  --glass-strong: color-mix(in oklab, var(--ink) 7%, transparent);
+  --grid-line: color-mix(in oklab, var(--ink) 11%, transparent);
+  /* Glass, dark theme: the pane is lit from its top edge, so the rim
+     highlight does the work the fill can't. */
+  --glass-fill: rgb(255 255 255 / 0.07);
+  --glass-fill-hover: rgb(255 255 255 / 0.12);
+  --glass-sheen: rgb(255 255 255 / 0.34);
+  --glass-sheen-soft: rgb(255 255 255 / 0.14);
+  --glass-rim: rgb(255 255 255 / 0.12);
+  --glass-drop: rgb(0 0 0 / 0.5);
+
+  --background: var(--canvas);
+  --foreground: var(--ink);
+  --card: var(--glass);
+  --card-foreground: var(--ink);
+  --popover: #0c0d0f;
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: #08090a;
+  --secondary: var(--glass-strong);
+  --secondary-foreground: var(--ink);
+  --muted: var(--glass);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--glass-strong);
+  --accent-foreground: var(--ink);
+  --destructive: #e06c75;
+  --border: var(--hairline);
+  --input: var(--hairline);
+  --ring: var(--cyan);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-canvas: var(--canvas);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-cyan: var(--cyan);
+  --color-tab-blue: var(--tab-blue);
+  --color-hairline: var(--hairline);
+  --color-glass: var(--glass);
+  --color-glass-strong: var(--glass-strong);
+
+  --font-sans: var(--font-plex-sans);
+  --font-mono: var(--font-plex-mono);
+  --font-heading: var(--font-plex-mono);
+
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/60;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+  }
+  section[id] {
+    /* The header floats over the top 4rem. Landing the section 1rem below
+       the viewport top leaves its own padding as the gap, so every jump
+       lands with the same air above the heading. */
+    scroll-margin-top: 1rem;
+  }
+  html {
+    @apply font-sans;
+    -webkit-font-smoothing: antialiased;
+    scroll-behavior: smooth;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--cyan) 30%, transparent);
+    color: var(--ink);
+  }
+  :focus-visible {
+    outline: 2px solid var(--cyan);
+    outline-offset: 2px;
+  }
+}
+
+/* The blueprint grid: one hairline every 80px, faded away from the top so
+   the page has a horizon rather than wallpaper. */
+.grid-field {
+  background-image:
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 80px 80px;
+  background-position: center top;
+  mask-image: radial-gradient(135% 85% at 50% 0%, #000 30%, transparent 88%);
+}
+
+/* A pane of frosted glass: edge drawn as an inset hairline, never a border,
+   and lit from inside rather than dropped onto the page. */
+.glass {
+  background: var(--glass);
+  box-shadow:
+    inset 0 0 0 1px var(--hairline),
+    inset 0 1px 0 0 color-mix(in oklab, var(--ink) 10%, transparent),
+    0 24px 48px -24px rgb(0 0 0 / 0.12);
+  backdrop-filter: blur(12px);
+}
+
+.dark .glass {
+  box-shadow:
+    inset 0 0 0 1px var(--hairline),
+    inset 0 1px 0 0 color-mix(in oklab, var(--ink) 10%, transparent),
+    0 24px 48px -24px rgb(0 0 0 / 0.55);
+}
+
+.hairline-top {
+  box-shadow: inset 0 1px 0 0 var(--hairline);
+}
+
+/* The one place cyan is allowed to glow: behind the session, as if the
+   screen were the only light in the room. */
+.session-halo::before {
+  content: "";
+  position: absolute;
+  inset: -12% 0 20%;
+  background: radial-gradient(
+    60% 50% at 50% 0%,
+    color-mix(in oklab, var(--cyan) 16%, transparent),
+    transparent 70%
+  );
+  filter: blur(40px);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Magic UI's theme transition: the new theme is revealed through an
+   expanding clip-path instead of swapping instantly. */
+html[data-magicui-theme-vt="active"]::view-transition-old(root),
+html[data-magicui-theme-vt="active"]::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+html[data-magicui-theme-vt="active"]::view-transition-old(root) {
+  z-index: 0;
+}
+html[data-magicui-theme-vt="active"]::view-transition-new(root) {
+  z-index: 1;
+  clip-path: var(--magicui-theme-vt-clip-from);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ─── Liquid glass ───────────────────────────────────────────────────────
+   A pane of glass rather than a tinted rectangle: it bends what is behind
+   it (blur, saturate, a touch of brightness), catches a hard highlight
+   along its top edge, and carries a diagonal sheen across its face. The
+   sheen is a gradient layer of the background, not an overlay, so the
+   label underneath stays crisp. It lifts slightly under the pointer. */
+.liquid {
+  position: relative;
+  background:
+    linear-gradient(
+      135deg,
+      var(--glass-sheen-soft) 0%,
+      transparent 38%,
+      transparent 62%,
+      color-mix(in oklab, var(--glass-sheen-soft) 55%, transparent) 100%
+    ),
+    var(--glass-fill);
+  backdrop-filter: blur(16px) saturate(200%) brightness(1.08);
+  box-shadow:
+    inset 0 1px 0.5px 0 var(--glass-sheen),
+    inset 0 -1px 0.5px 0 var(--glass-sheen-soft),
+    inset 0 0 0 1px var(--glass-rim),
+    0 1px 1px -0.5px var(--glass-drop),
+    0 8px 20px -10px var(--glass-drop);
+  transition:
+    background 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.liquid:hover {
+  background:
+    linear-gradient(
+      135deg,
+      var(--glass-sheen-soft) 0%,
+      transparent 40%,
+      transparent 60%,
+      color-mix(in oklab, var(--glass-sheen-soft) 70%, transparent) 100%
+    ),
+    var(--glass-fill-hover);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0.5px 0 var(--glass-sheen),
+    inset 0 -1px 0.5px 0 var(--glass-sheen-soft),
+    inset 0 0 0 1px color-mix(in oklab, var(--glass-rim) 160%, transparent),
+    0 2px 2px -1px var(--glass-drop),
+    0 14px 28px -12px var(--glass-drop);
+}
+
+.liquid:active {
+  transform: translateY(0) scale(0.985);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .liquid,
+  .liquid:hover,
+  .liquid:active {
+    transform: none;
+  }
+}
+
+/* A laptop screen is shorter than a desktop one; the hero's copy gives way
+   so the terminal and its caption still land above the fold. */
+@media (max-height: 920px) {
+  #top h1 {
+    font-size: 44px;
+  }
+  #top .hero-lead {
+    font-size: 16.5px;
+    line-height: 1.55;
+  }
+}
+
+@media (max-height: 780px) {
+  #top h1 {
+    font-size: 38px;
+  }
+}

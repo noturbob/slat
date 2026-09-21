@@ -1,0 +1,46 @@
+<!--
+  The source of docs/social-preview.png. Regenerate after a brand change:
+
+    npx playwright@latest install chromium --only-shell
+    node -e "const{chromium}=require('playwright');(async()=>{const b=await chromium.launch();\
+    const p=await b.newPage({viewport:{width:1280,height:640}});\
+    await p.goto('file://'+process.cwd()+'/website/social-preview.html',{waitUntil:'networkidle'});\
+    await p.waitForTimeout(1200);await p.screenshot({path:'docs/social-preview.png'});await b.close()})()"
+-->
+<!doctype html><html><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:1280px; height:640px; background:#08090a; color:#d0d0d0;
+         font-family:'IBM Plex Sans',sans-serif; position:relative; overflow:hidden; }
+  .grid { position:absolute; inset:0;
+    background-image:linear-gradient(to right,rgba(208,208,208,.05) 1px,transparent 1px),
+                     linear-gradient(to bottom,rgba(208,208,208,.05) 1px,transparent 1px);
+    background-size:80px 80px;
+    -webkit-mask-image:radial-gradient(110% 70% at 50% 0%,#000 25%,transparent 75%); }
+  .halo { position:absolute; left:50%; top:-220px; width:900px; height:520px; transform:translateX(-50%);
+    background:radial-gradient(50% 50% at 50% 50%,rgba(0,215,215,.16),transparent 70%); filter:blur(50px); }
+  .wrap { position:relative; padding:96px 88px; height:100%; display:flex; flex-direction:column; }
+  .mark { display:flex; align-items:center; gap:18px; }
+  .mark span { font-family:'IBM Plex Mono',monospace; font-size:40px; font-weight:500; color:#fff; letter-spacing:-.02em; }
+  h1 { font-family:'IBM Plex Mono',monospace; font-size:76px; font-weight:500; line-height:1.08;
+       letter-spacing:-.03em; color:#e8e8e8; margin-top:auto; }
+  .cursor { display:inline-block; width:.5em; height:.78em; background:#00d7d7; vertical-align:baseline; }
+  p { font-size:27px; line-height:1.5; color:#a8a8a8; margin-top:26px; max-width:46ch; }
+  .foot { margin-top:auto; font-family:'IBM Plex Mono',monospace; font-size:21px; color:#6b6f74; }
+</style></head><body>
+<div class="grid"></div><div class="halo"></div>
+<div class="wrap">
+  <div class="mark">
+    <svg viewBox="0 0 64 64" width="44" height="44" fill="#fff">
+      <rect x="8" y="12" width="48" height="7" rx="2"/><rect x="8" y="26" width="26" height="7" rx="2"/>
+      <rect x="38" y="26" width="18" height="7" rx="2"/><rect x="8" y="36" width="20" height="7" rx="2"/>
+      <rect x="38" y="36" width="18" height="7" rx="2"/><rect x="8" y="46" width="26" height="7" rx="2"/>
+      <rect x="38" y="46" width="12" height="7" rx="2"/>
+    </svg><span>slat</span>
+  </div>
+  <h1>Split the terminal.<br>Keep it running.<span class="cursor"></span></h1>
+  <p>Panes, tabs and workspaces that outlive the window — and a command line agents can drive.</p>
+  <div class="foot">github.com/noturbob/slat · Linux · macOS · Windows</div>
+</div></body></html>
