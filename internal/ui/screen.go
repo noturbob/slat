@@ -76,6 +76,14 @@ type Screen struct {
 // NewScreen returns a Screen that writes to w.
 func NewScreen(w io.Writer) *Screen { return &Screen{w: w} }
 
+// WriteRaw sends bytes straight to the terminal, outside the frame
+// diffing — for sequences the terminal itself must see, like the OSC 52
+// that puts text on the system clipboard.
+func (s *Screen) WriteRaw(p []byte) error {
+	_, err := s.w.Write(p)
+	return err
+}
+
 // Invalidate forgets what the terminal shows, forcing the next Render to
 // repaint everything, e.g. after a new client attaches.
 func (s *Screen) Invalidate() { s.prev = nil }

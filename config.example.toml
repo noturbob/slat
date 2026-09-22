@@ -25,6 +25,16 @@ easing = "out-cubic"      # linear, out-quad, out-cubic, out-back
 reveal = "curtain"        # how a new pane appears: curtain or none
 glyph  = "░"              # the curtain's character
 
+# What happens to text you copy in scroll mode with `y`.
+[copy]
+# Ask the terminal to put it on the system clipboard (OSC 52). This is the
+# only method that works over ssh, because the clipboard is on your
+# machine, not on the one slat runs on.
+osc52 = true
+# Optionally pipe it to a local program as well, for terminals that refuse
+# OSC 52: "wl-copy", "xclip -selection clipboard", "pbcopy".
+# command = ""
+
 # Colours for the parts slat draws: the status bar, pane borders and
 # overlays. Programs running in panes keep their own colours.
 [theme]

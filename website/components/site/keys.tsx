@@ -13,7 +13,7 @@ const GROUPS: { title: string; keys: [string, string][] }[] = [
       ["+ - =", "grow, shrink, equalize"],
       ["z", "zoom the pane to full size"],
       ["x", "close the pane"],
-      ["[", "scroll back through its output, and search it"],
+      ["[", "scroll back, search, select and copy (v, V, y)"],
     ],
   },
   {

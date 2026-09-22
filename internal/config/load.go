@@ -29,6 +29,7 @@ type Config struct {
 	Theme      map[string]string `toml:"theme"`
 	Borders    map[string]string `toml:"borders"`
 	Status     map[string]string `toml:"status"`
+	Copy       Copy              `toml:"copy"`
 	Agent      Agent             `toml:"agent"`
 
 	PrefixByte byte `toml:"-"` // parsed Prefix
@@ -52,6 +53,18 @@ type Agent struct {
 	OnIdle  string `toml:"on_idle"`
 
 	Patterns []*regexp.Regexp `toml:"-"` // compiled InputPatterns
+}
+
+// Copy is how yanked text leaves slat.
+type Copy struct {
+	// OSC52 asks the terminal to put the text on the system clipboard.
+	// It is the only method that works over ssh, since the terminal in
+	// front of the user is the one holding the clipboard.
+	OSC52 bool `toml:"osc52"`
+	// Command is an optional local program to pipe the text into as well
+	// — wl-copy, xclip -sel clip, pbcopy — for terminals that refuse
+	// OSC 52.
+	Command string `toml:"command"`
 }
 
 // Duration is a time.Duration written as a TOML string ("750ms").
@@ -78,6 +91,7 @@ func DefaultConfig() *Config {
 		Scrollback: 2000,
 		Animations: true,
 		Animation:  defaultAnimation(),
+		Copy:       Copy{OSC52: true},
 		Keybinds:   defaultKeybinds(),
 		Agent:      defaultAgent(),
 	}
@@ -230,6 +244,12 @@ func (cfg *Config) merge(user *Config, md toml.MetaData) error {
 	}
 	if err := cfg.mergeAnimation(user, md); err != nil {
 		return err
+	}
+	if md.IsDefined("copy", "osc52") {
+		cfg.Copy.OSC52 = user.Copy.OSC52
+	}
+	if md.IsDefined("copy", "command") {
+		cfg.Copy.Command = user.Copy.Command
 	}
 	if md.IsDefined("scrollback") {
 		if n := user.Scrollback; n < 0 || n > 1_000_000 {

@@ -17,12 +17,21 @@ import (
 type terminal struct {
 	mu  sync.Mutex
 	emu *vt.Terminal
+	raw []byte // everything written, including sequences the screen swallows
 }
 
 func (t *terminal) Write(p []byte) (int, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.raw = append(t.raw, p...)
 	return t.emu.Write(p)
+}
+
+// rawString is every byte slat has sent to the terminal.
+func (t *terminal) rawString() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return string(t.raw)
 }
 
 func (t *terminal) String() string {

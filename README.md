@@ -190,7 +190,7 @@ every key inside slat.
 | `=` | Equalize all sizes |
 | `z` | Zoom the pane to full size (toggle) |
 | `x` | Close the pane |
-| `[` or PageUp | Scroll mode (see below) |
+| `[` or PageUp | Scroll and copy mode (see below) |
 
 ### Tabs
 
@@ -218,31 +218,35 @@ every key inside slat.
 | `q` | Quit — ends every shell |
 | `?` | Show all keys |
 
-### Scroll mode
+### Scroll and copy mode
 
-Prefix then `[` (or PageUp) shows the active pane's earlier output. The view
-stays put while new output arrives. Your mouse wheel scrolls too, in terminals
-that send arrow keys for it.
+`[` (or PageUp) scrolls back through a pane's own history. The view is
+anchored to the output, so it holds still while the program keeps writing.
 
 | Key | Action |
 | --- | --- |
-| `k` `j`, arrows | Up / down a line |
-| `Ctrl-U` `Ctrl-D`, `u` `d` | Up / down half a page |
-| `Ctrl-B` `Ctrl-F`, PageUp PageDown, `b` `f` space | Up / down a page |
-| `g` `G`, Home End | Oldest output / live screen |
-| `/` `?` | Search up / down (a query with no capitals ignores case) |
-| `n` `N` | Next match in the same / opposite direction |
-| `q`, Esc | Leave scroll mode |
+| `k` `j` `h` `l`, arrows | Move the cursor; the view follows it |
+| `Ctrl`+`u` / `Ctrl`+`d` | Half a screen up / down |
+| `Ctrl`+`b` / `Ctrl`+`f`, PageUp / PageDown | A screen up / down |
+| `g` / `G` | Oldest line / back to the live screen |
+| `0` / `$` | Start / end of the line |
+| `/` `?` | Search up / down — smart case; the cursor moves to the match |
+| `n` / `N` | Next / previous match |
+| `v` / `V` | Select characters / whole lines |
+| `y` | Copy the selection and leave |
+| `Esc` | Drop the selection, then leave |
+| `q` | Leave |
 
-Each pane keeps 2000 lines by default (`scrollback` in the config). Full-screen
-programs like vim and less use their own screen and add nothing to it, and
-`clear` wipes it, as in most terminals.
+Copying uses OSC 52, which asks your terminal to put the text on the system
+clipboard — so it works over `ssh`, where slat runs on the far machine and
+the clipboard is on yours. Some terminals refuse OSC 52 or need it enabled
+(`set -g set-clipboard on` territory); for those, name a local command:
 
-In a rename prompt: <kbd>Enter</kbd> saves, <kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd>
-cancels, <kbd>Ctrl</kbd>+<kbd>U</kbd> clears.
-
-The session ends by itself when its last shell exits. Closing the last tab of a
-workspace removes just that workspace.
+```toml
+[copy]
+osc52   = true          # ask the terminal; the only way that works over ssh
+command = "wl-copy"     # …and/or pipe it locally: xclip -sel clip, pbcopy
+```
 
 ## Scripting and agents
 
