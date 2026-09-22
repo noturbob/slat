@@ -15,15 +15,16 @@ export function Watch() {
     >
       <figure>
         <div className="glass overflow-hidden rounded-2xl p-2">
-          {/* Recorded by docs/demo.tape, so it is regenerated rather than
-              re-shot whenever the program's look changes. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          {/* The same film the README carries, as video rather than the GIF:
+              a quarter of the bytes, and it does not re-download on loop. */}
+          <video
             className="w-full rounded-xl"
-            src={`${base}/demo.gif`}
-            loading="lazy"
-            decoding="async"
-            alt="A recording of slat: splitting panes, running two commands, scrolling back, detaching and reattaching"
+            src={`${base}/demo.mp4`}
+            poster={`${base}/demo-poster.jpg`}
+            controls
+            playsInline
+            preload="none"
+            aria-label="A recording of slat: splitting panes, running two commands, searching and copying a line, detaching, listing the session from outside, and reattaching"
           />
         </div>
       </figure>

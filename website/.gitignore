@@ -41,5 +41,6 @@ yarn-error.log*
 next-env.d.ts
 
 # Demo media lives in docs/; the workflow copies it in at build time.
-/public/demo.gif
+/public/demo.mp4
+/public/demo-poster.jpg
 /public/social-preview.png
