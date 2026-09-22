@@ -16,3 +16,4 @@ test:
 
 clean:
 	rm -rf bin
+

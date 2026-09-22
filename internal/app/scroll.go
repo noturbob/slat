@@ -275,7 +275,7 @@ func (a *App) scrollBadge() string {
 	if s.sel != nil {
 		fromAbs, _, toAbs, _ := s.ordered()
 		if s.sel.byLine || toAbs > fromAbs {
-			return fmt.Sprintf("COPY %d lines", toAbs-fromAbs+1)
+			return "COPY " + plural(toAbs-fromAbs+1, "line")
 		}
 		return "COPY"
 	}

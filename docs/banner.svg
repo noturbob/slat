@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400"
+     role="img" aria-label="slat — split your terminal, keep it running when you leave">
+  <!--
+    The README's banner, painted in the website's colours, which are slat's
+    own: canvas #08090a, text xterm 252, the focused border xterm 44. Dark on
+    purpose, so it reads the same under GitHub's light and dark themes.
+    One file, no fonts to download, no raster anywhere.
+  -->
+  <defs>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.07"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.015"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.1" r="0.75">
+      <stop offset="0" stop-color="#00d7d7" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#00d7d7" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#d0d0d0" stroke-opacity="0.055" stroke-width="1"/>
+    </pattern>
+    <clipPath id="card"><rect width="1280" height="400" rx="20"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#card)">
+    <rect width="1280" height="400" fill="#08090a"/>
+    <rect width="1280" height="400" fill="url(#grid)"/>
+    <rect width="1280" height="400" fill="url(#glow)"/>
+    <rect width="1280" height="400" fill="url(#sheen)"/>
+
+    <!-- The mark: four slats, the lower three broken at one column. -->
+    <g fill="#f2f2f2" transform="translate(96 118) scale(1.45)">
+      <rect x="0" y="0"  width="48" height="7" rx="2"/>
+      <rect x="0" y="14" width="26" height="7" rx="2"/>
+      <rect x="30" y="14" width="18" height="7" rx="2"/>
+      <rect x="0" y="24" width="20" height="7" rx="2"/>
+      <rect x="30" y="24" width="18" height="7" rx="2"/>
+      <rect x="0" y="34" width="26" height="7" rx="2"/>
+      <rect x="30" y="34" width="12" height="7" rx="2"/>
+    </g>
+
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+      <text x="212" y="172" font-size="72" font-weight="600" fill="#f2f2f2" letter-spacing="-1">slat</text>
+      <text x="216" y="216" font-size="19" fill="#d0d0d0">Split your terminal. Keep it running when you leave.</text>
+      <text x="216" y="248" font-size="15" fill="#6b6f74">tiling panes · tabs · workspaces · detach · scrollback · copy · Go</text>
+    </g>
+
+    <!-- A session, drawn the way slat would tile it: one pane focused. -->
+    <g transform="translate(900 76)" fill="none" stroke-width="1.5">
+      <rect x="0"   y="0"   width="150" height="196" rx="8" stroke="#00d7d7" stroke-opacity="0.85"/>
+      <rect x="162" y="0"   width="150" height="92"  rx="8" stroke="#d0d0d0" stroke-opacity="0.22"/>
+      <rect x="162" y="104" width="150" height="92"  rx="8" stroke="#d0d0d0" stroke-opacity="0.22"/>
+      <g fill="#d0d0d0" stroke="none">
+        <rect x="14"  y="20"  width="72"  height="5" rx="2.5" fill-opacity="0.5"/>
+        <rect x="14"  y="36"  width="110" height="5" rx="2.5" fill-opacity="0.25"/>
+        <rect x="14"  y="52"  width="54"  height="5" rx="2.5" fill-opacity="0.25"/>
+        <rect x="14"  y="74"  width="88"  height="5" rx="2.5" fill-opacity="0.25"/>
+        <rect x="14"  y="92"  width="34"  height="11" rx="2" fill="#00d7d7" fill-opacity="0.75"/>
+        <rect x="176" y="20"  width="80"  height="5" rx="2.5" fill-opacity="0.3"/>
+        <rect x="176" y="36"  width="48"  height="5" rx="2.5" fill-opacity="0.18"/>
+        <rect x="176" y="124" width="100" height="5" rx="2.5" fill-opacity="0.3"/>
+        <rect x="176" y="140" width="62"  height="5" rx="2.5" fill-opacity="0.18"/>
+      </g>
+    </g>
+
+    <!-- The status bar, the same shape the program draws. -->
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15">
+      <rect x="0" y="348" width="1280" height="52" fill="#d0d0d0" fill-opacity="0.04"/>
+      <line x1="0" y1="348" x2="1280" y2="348" stroke="#d0d0d0" stroke-opacity="0.12"/>
+      <text x="96" y="380" fill="#6b6f74">main <tspan fill="#00d7d7">│</tspan> <tspan fill="#f2f2f2">1:shell</tspan>  2:build  3:logs</text>
+      <text x="1184" y="380" fill="#6b6f74" text-anchor="end">pane 1/3</text>
+    </g>
+
+    <rect x="0.75" y="0.75" width="1278.5" height="398.5" rx="20" fill="none"
+          stroke="#d0d0d0" stroke-opacity="0.14"/>
+  </g>
+</svg>

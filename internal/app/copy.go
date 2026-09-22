@@ -92,6 +92,7 @@ func osc52(text string) []byte {
 // held.
 func (a *App) yank() {
 	text := a.selectedText()
+	byLine := a.scroll != nil && a.scroll.sel != nil && a.scroll.sel.byLine
 	a.scroll = nil
 	if text == "" {
 		return
@@ -110,13 +111,23 @@ func (a *App) yank() {
 	if !strings.HasSuffix(text, "\n") {
 		lines++
 	}
-	switch {
-	case lines > 1:
-		a.notify(fmt.Sprintf("copied %d lines", lines))
-	default:
-		a.notify(fmt.Sprintf("copied %d characters", len([]rune(text))))
+	// A whole-line selection is counted in lines even when it is one line:
+	// that is what the user asked for with V, and "copied 43 characters"
+	// reads like the wrong thing was taken.
+	if byLine || lines > 1 {
+		a.notify("copied " + plural(lines, "line"))
+	} else {
+		a.notify("copied " + plural(len([]rune(text)), "character"))
 	}
 	a.markDirty()
+}
+
+// plural renders a count with its noun: "1 line", "2 lines".
+func plural(n int, noun string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, noun)
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 // pipeTo runs a command with the text on its standard input, the same way

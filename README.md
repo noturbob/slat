@@ -1,13 +1,8 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/logo.svg">
-  <img src="docs/logo-ink.svg" width="96" height="96" alt="slat logo">
-</picture>
+<img src="docs/banner.svg" alt="slat — split your terminal, keep it running when you leave" width="100%">
 
-# slat
-
-**Split your terminal. Keep it running when you leave.**
+<br>
 
 A terminal multiplexer with tiling panes, tabs and workspaces, written in Go.
 
@@ -21,8 +16,10 @@ A terminal multiplexer with tiling panes, tabs and workspaces, written in Go.
 </div>
 
 <p align="center">
-  <img src="assets/demo.gif" alt="slat splitting a terminal into panes, running htop and go test side by side, scrolling back and searching the output, then detaching and reattaching with everything still running" width="100%">
+  <img src="docs/demo.gif" alt="slat splitting a terminal into panes, running two commands side by side, scrolling back and copying from the output, then detaching and reattaching with everything still running" width="100%">
 </p>
+
+<p align="center"><sub>A real session, captured through slat's own emulator and cut into a film — not a mock-up.</sub></p>
 
 ---
 
@@ -34,13 +31,15 @@ output included.
 - **Panes** — split left/right or top/bottom, move between them by direction, swap, resize, zoom
 - **Tabs and workspaces** — group tabs into named workspaces, rename them in place
 - **Detach and reattach** — `d` disconnects; running `slat` from any terminal reattaches
-- **Scroll mode** — page back through each pane's output and search it, vim-style
+- **Scroll and copy mode** — page back through a pane's output, search it vim-style, select characters or lines and yank them to your system clipboard (over `ssh` too, via OSC 52)
 - **Every pane keeps its own screen** — `clear`, vim or htop in one pane never touch another, and nothing is lost when you split, close or switch
 - **Fast** — only changed cells are sent to your terminal; half a million lines of output render in about a third of a second
 - **New panes open where you are** — a split starts in the directory of the pane you split from (Linux)
 - **Drivable from scripts and AI agents** — `slat ls`, `run`, `capture` and `wait --for idle` let anything outside the terminal work a session and know when a pane needs a human ([details](#scripting-and-agents))
 - **Move panes around** — walk a pane through the layout like a tiling window manager; the swap slides instead of jumping
-- **Themes** — five built-in palettes, or set any colour yourself
+- **Rice it** — five palettes or your own colours, six border styles or your own
+  glyphs, a status bar you write as a format string, and animation timing and
+  easing you can tune or switch off entirely
 - **One checked config file** — mistakes are reported when you run `slat`, not ignored
 
 ## Install
@@ -420,10 +419,16 @@ internal/
   pane/          a shell on a PTY with its emulator
   input/         prefix key and command table
   config/        TOML loading and validation
-docs/            the website (GitHub Pages)
+website/         the site at noturbob.github.io/slat (Next.js, built by CI)
+docs/design/     how the agent CLI was designed
+docs/rices/      ready-made configurations, one of which the tests read
 packaging/aur/   the AUR package
 packaging/apt/   builds the signed apt repository
 ```
+
+None of `website/`, `docs/` artwork, `packaging/` or `.github/` reaches the
+source archive — [`.gitattributes`](.gitattributes) keeps `git archive` (and
+so the Debian tarball) down to what actually builds slat.
 
 Releases are built by [GoReleaser](.goreleaser.yaml) when a `v*` tag is pushed:
 binaries, `.deb`, `.rpm` and Arch packages for Linux and macOS on amd64 and arm64.
@@ -436,8 +441,10 @@ workspace changes and check what a terminal would display.
 
 ## Limitations
 
-- Scroll mode can't select and copy text yet.
 - Mouse events aren't passed to programs in panes.
+- A session doesn't survive a reboot: the daemon holds your shells in
+  memory, so it outlives a closed window or a dropped SSH connection, not a
+  restart.
 - On Windows, ConPTY has no foreground process group, so a pane's status
   comes from output timing alone: `slat status` says idle or working, never
   which program is running, and `slat ls` shows the directory a pane started

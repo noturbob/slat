@@ -7,10 +7,12 @@
 # LICENSE, slat.1, config.example.toml, Makefile, docs/design (how it works)
 # and docs/rices (example configurations, which a test reads).
 
-# Demo media and artwork: megabytes that no build reads.
-assets/ export-ignore
+# Demo media and artwork: megabytes that no build reads. The GIF is for
+# the README, which cannot play video; the MP4 is for the website, which can.
+docs/demo.gif export-ignore
 docs/demo.mp4 export-ignore
 docs/demo-poster.jpg export-ignore
+docs/banner.svg export-ignore
 docs/social-preview.png export-ignore
 docs/logo.svg export-ignore
 docs/logo-ink.svg export-ignore
