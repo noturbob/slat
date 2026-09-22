@@ -69,21 +69,23 @@ Zoom the active pane to full size, or back.
 .B x
 Close the pane.
 .TP
-.BR [ " or PageUp"
-Scroll mode: move with
-.BR k / j ,
-PageUp/PageDown or
-.BR g / G ,
-search with
+.B [
+Scroll and copy mode: move with
+.BR h ", " j ", " k ", " l
+or the arrows,
 .B /
+searches (the cursor moves to the match),
+.B v
 and
-.BR ? ,
-repeat with
-.BR n / N ,
-leave with
+.B V
+select characters or whole lines,
+.B y
+copies the selection and leaves, and
 .B q
-or Escape.
-.TP
+leaves. Copying uses OSC 52, so it reaches your clipboard even when slat is
+running on the far end of an ssh connection; set
+.B copy.command
+for terminals that refuse it..TP
 .BR c ", " n ", " p ", " 1 \- 9 ", " , ", " X
 New tab, next, previous, go to tab N, rename, close.
 .TP

@@ -10,8 +10,8 @@ const FACTS: [string, string][] = [
     "Split a pane either way, move between them by direction, walk a pane around the layout, zoom one to full size, group tabs into named workspaces.",
   ],
   [
-    "Scroll back and search",
-    "Every pane keeps its own history, with vim keys and smart-case search. A pane's screen survives splitting, closing and switching tabs.",
+    "Scroll back, search, copy",
+    "Every pane keeps its own history, with vim keys and smart-case search. Select with v or V and press y — it copies over ssh too, because the clipboard asked for is yours, not the remote machine's.",
   ],
   [
     "Only what changed is drawn",

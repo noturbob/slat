@@ -17,11 +17,20 @@ type scroll struct {
 	query string
 	dir   int // direction of the last search: -1 older, +1 newer
 
+	// Where the copy cursor sits, and what it has selected so far. The
+	// cursor is what h/j/k/l move; the view follows it.
+	curAbs, curCol int
+	sel            *selection
+
 	matched                    bool
 	matchAbs, matchCol, matchW int
 }
 
-var matchStyle = vt.Style{Fg: vt.Indexed(16), Bg: vt.Indexed(220)}
+var (
+	matchStyle     = vt.Style{Fg: vt.Indexed(16), Bg: vt.Indexed(220)}
+	selectionStyle = vt.Style{Attrs: vt.Reverse}
+	cursorStyle    = vt.Style{Fg: vt.Indexed(16), Bg: vt.Indexed(252)}
+)
 
 // enterScroll puts the active pane into scroll mode.
 func (a *App) enterScroll() bool {
@@ -31,7 +40,8 @@ func (a *App) enterScroll() bool {
 		a.notify("scroll back after the full-screen program exits (it keeps no history)")
 		return false
 	}
-	a.scroll = &scroll{pane: p, top: screenTop}
+	_, _, rows, _ := p.Rect()
+	a.scroll = &scroll{pane: p, top: screenTop, curAbs: screenTop + rows - 1}
 	return true
 }
 
@@ -40,6 +50,34 @@ func (a *App) scrollBy(n int) {
 	s := a.scroll
 	first, screenTop, _ := s.pane.History()
 	s.top = min(max(s.top+n, first), screenTop)
+}
+
+// moveCursor moves the copy cursor and brings the view with it, so the
+// cursor never walks off the screen.
+func (a *App) moveCursor(dRows, dCols int) {
+	s := a.scroll
+	first, screenTop, _ := s.pane.History()
+	_, _, rows, cols := s.pane.Rect()
+
+	s.curAbs = min(max(s.curAbs+dRows, first), screenTop+rows-1)
+	s.curCol = min(max(s.curCol+dCols, 0), max(cols-1, 0))
+
+	switch {
+	case s.curAbs < s.top:
+		s.top = s.curAbs
+	case s.curAbs >= s.top+rows:
+		s.top = s.curAbs - rows + 1
+	}
+	a.scrollBy(0) // clamp the view to the history that still exists
+}
+
+// cursorToLineEnd puts the cursor on the last character of its line, not
+// in the blank padding after it.
+func (a *App) cursorToLineEnd() {
+	s := a.scroll
+	_, _, _, cols := s.pane.Rect()
+	text := []rune(s.pane.LineText(s.curAbs))
+	s.curCol = min(max(len(text)-1, 0), max(cols-1, 0))
 }
 
 func (a *App) scrollRows() int {
@@ -52,6 +90,11 @@ func (a *App) scrollRows() int {
 var scrollKeys = map[string]string{
 	"k": "up", "[A": "up", "OA": "up", "\x19": "up", // Ctrl-Y
 	"j": "down", "[B": "down", "OB": "down", "\x05": "down", "\r": "down", // Ctrl-E
+	"h": "left", "[D": "left", "OD": "left",
+	"l": "right", "[C": "right", "OC": "right",
+	"0": "line-start", "^": "line-start",
+	"$": "line-end",
+	"v": "select", "V": "select-lines", "y": "yank",
 	"\x15": "half-up", "u": "half-up", // Ctrl-U
 	"\x04": "half-down", "d": "half-down", // Ctrl-D
 	"\x02": "page-up", "b": "page-up", "[5~": "page-up", // Ctrl-B
@@ -70,7 +113,13 @@ func (a *App) scrollKey(buf []byte, i int) int {
 	if buf[i] == 0x1b {
 		switch {
 		case i+1 == len(buf):
-			a.scroll = nil // a lone Esc
+			// Esc steps back one level: it drops a selection first, and
+			// only leaves scroll mode when there is nothing to drop.
+			if a.scroll.sel != nil {
+				a.scroll.sel = nil
+			} else {
+				a.scroll = nil
+			}
 			return i
 		case buf[i+1] == '[' || buf[i+1] == 'O':
 			j := i + 2
@@ -89,21 +138,42 @@ func (a *App) scrollKey(buf []byte, i int) int {
 	rows := a.scrollRows()
 	switch scrollKeys[key] {
 	case "up":
-		a.scrollBy(-1)
+		a.moveCursor(-1, 0)
 	case "down":
-		a.scrollBy(1)
+		a.moveCursor(1, 0)
+	case "left":
+		a.moveCursor(0, -1)
+	case "right":
+		a.moveCursor(0, 1)
+	case "line-start":
+		a.scroll.curCol = 0
+	case "line-end":
+		a.cursorToLineEnd()
 	case "half-up":
-		a.scrollBy(-max(rows/2, 1))
+		a.moveCursor(-max(rows/2, 1), 0)
 	case "half-down":
-		a.scrollBy(max(rows/2, 1))
+		a.moveCursor(max(rows/2, 1), 0)
 	case "page-up":
-		a.scrollBy(-max(rows-1, 1))
+		a.moveCursor(-max(rows-1, 1), 0)
 	case "page-down":
-		a.scrollBy(max(rows-1, 1))
+		a.moveCursor(max(rows-1, 1), 0)
 	case "top":
-		a.scrollBy(-1 << 30)
+		a.moveCursor(-1<<30, 0)
 	case "bottom":
-		a.scrollBy(1 << 30)
+		a.moveCursor(1<<30, 0)
+	case "select", "select-lines":
+		s := a.scroll
+		if s.sel != nil {
+			s.sel = nil // pressing it again drops the selection
+			break
+		}
+		s.sel = &selection{
+			anchorAbs: s.curAbs,
+			anchorCol: s.curCol,
+			byLine:    scrollKeys[key] == "select-lines",
+		}
+	case "yank":
+		a.yank()
 	case "search-up", "search-down":
 		dir := -1
 		if key == "?" {
@@ -152,6 +222,9 @@ func (a *App) findFrom(query string, dir int) {
 		return
 	}
 	s.matched, s.matchAbs, s.matchCol, s.matchW = true, abs, col, w
+	// The cursor follows the match, so a search is how you get the copy
+	// cursor to the line you want without pressing k forty times.
+	s.curAbs, s.curCol = abs, col
 	if abs < s.top || abs >= s.top+rows {
 		s.top = abs - rows/3 // show the match with some context above it
 		a.scrollBy(0)        // clamp
@@ -164,6 +237,20 @@ func (a *App) drawScroll(frame *ui.Frame) {
 	a.scrollBy(0) // history may have been trimmed since the last frame
 	s.pane.DrawHistory(frame.Lines, s.top)
 	pr, pc, rows, cols := s.pane.Rect()
+
+	// The selection first, so a search hit inside it still stands out.
+	for y := 0; y < rows; y++ {
+		from, to, ok := s.selectedSpan(s.top+y, cols)
+		if !ok {
+			continue
+		}
+		for x := from; x <= to && x < cols; x++ {
+			if pr+y < frame.H && pc+x < frame.W {
+				frame.Lines[pr+y][pc+x].Style = selectionStyle
+			}
+		}
+	}
+
 	if y := s.matchAbs - s.top; s.matched && y >= 0 && y < rows {
 		for x := s.matchCol; x < s.matchCol+s.matchW && x < cols; x++ {
 			if pr+y < frame.H && pc+x < frame.W {
@@ -171,11 +258,26 @@ func (a *App) drawScroll(frame *ui.Frame) {
 			}
 		}
 	}
+
+	// The copy cursor: slat draws it itself, because the terminal's own
+	// cursor is parked with the live screen.
+	if y := s.curAbs - s.top; y >= 0 && y < rows && s.curCol < cols &&
+		pr+y < frame.H && pc+s.curCol < frame.W {
+		frame.Lines[pr+y][pc+s.curCol].Style = cursorStyle
+	}
 }
 
 // scrollBadge is the status bar label: lines above the live screen, out
 // of the history kept.
 func (a *App) scrollBadge() string {
-	first, screenTop, _ := a.scroll.pane.History()
-	return fmt.Sprintf("SCROLL %d/%d", screenTop-a.scroll.top, screenTop-first)
+	s := a.scroll
+	first, screenTop, _ := s.pane.History()
+	if s.sel != nil {
+		fromAbs, _, toAbs, _ := s.ordered()
+		if s.sel.byLine || toAbs > fromAbs {
+			return fmt.Sprintf("COPY %d lines", toAbs-fromAbs+1)
+		}
+		return "COPY"
+	}
+	return fmt.Sprintf("SCROLL %d/%d", screenTop-s.top, screenTop-first)
 }

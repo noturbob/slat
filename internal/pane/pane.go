@@ -191,6 +191,14 @@ func (p *Pane) draw(screen [][]vt.Cell, row, col int, line func(y int) []vt.Cell
 	}
 }
 
+// LineText returns the text of the line with absolute index abs, as
+// Capture would render it: left padding kept, trailing blanks dropped.
+func (p *Pane) LineText(abs int) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return lineText(p.term.LineAt(abs))
+}
+
 // History reports the absolute line indexes of the oldest line kept and of
 // the screen's first row, and whether a full-screen program is using the
 // alternate screen (which has no history).
