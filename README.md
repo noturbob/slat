@@ -19,7 +19,7 @@ A terminal multiplexer with tiling panes, tabs and workspaces, written in Go.
   <img src="docs/demo.gif" alt="slat splitting a terminal into panes, running two commands side by side, scrolling back and copying from the output, then detaching and reattaching with everything still running" width="100%">
 </p>
 
-<p align="center"><sub>Recorded by <a href="docs/demo.tape">docs/demo.tape</a> — <code>vhs docs/demo.tape</code> regenerates it.</sub></p>
+<p align="center"><sub>A real session, captured through slat's own emulator and cut into a film — not a mock-up.</sub></p>
 
 ---
 
