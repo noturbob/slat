@@ -13,16 +13,17 @@ export function Watch() {
       title="Here it is, actually running"
       lead="Splitting, running two things at once, scrolling back through the output, then detaching and picking the session up again with everything still alive."
     >
-      <figure className="">
+      <figure>
         <div className="glass overflow-hidden rounded-2xl p-2">
-          <video
+          {/* Recorded by docs/demo.tape, so it is regenerated rather than
+              re-shot whenever the program's look changes. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
             className="w-full rounded-xl"
-            src={`${base}/demo.mp4`}
-            poster={`${base}/demo-poster.jpg`}
-            controls
-            playsInline
-            preload="none"
-            aria-label="A recording of slat: splitting panes, running two commands, scrolling back, detaching and reattaching"
+            src={`${base}/demo.gif`}
+            loading="lazy"
+            decoding="async"
+            alt="A recording of slat: splitting panes, running two commands, scrolling back, detaching and reattaching"
           />
         </div>
       </figure>

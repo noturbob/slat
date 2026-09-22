@@ -38,7 +38,7 @@ jobs:
         working-directory: website
         run: |
           # The demo media lives in docs/ so the repository keeps one copy.
-          cp ../docs/demo.mp4 ../docs/demo-poster.jpg ../docs/social-preview.png public/
+          cp ../docs/demo.gif ../docs/social-preview.png public/
           npm ci
           npm run build
 

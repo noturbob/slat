@@ -7,10 +7,11 @@
 # LICENSE, slat.1, config.example.toml, Makefile, docs/design (how it works)
 # and docs/rices (example configurations, which a test reads).
 
-# Demo media and artwork: megabytes that no build reads.
-assets/ export-ignore
-docs/demo.mp4 export-ignore
-docs/demo-poster.jpg export-ignore
+# Demo media and artwork: megabytes that no build reads. docs/demo.tape is
+# the script that records the demo; it needs vhs, not a Go toolchain.
+docs/demo.gif export-ignore
+docs/demo.tape export-ignore
+docs/banner.svg export-ignore
 docs/social-preview.png export-ignore
 docs/logo.svg export-ignore
 docs/logo-ink.svg export-ignore
