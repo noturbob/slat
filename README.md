@@ -31,6 +31,7 @@ output included.
 - **Panes** — split left/right or top/bottom, move between them by direction, swap, resize, zoom
 - **Tabs and workspaces** — group tabs into named workspaces, rename them in place
 - **Detach and reattach** — `d` disconnects; running `slat` from any terminal reattaches
+- **Survives a reboot** — the layout, each pane's directory and the output it had printed are saved and put back when slat starts again
 - **Scroll and copy mode** — page back through a pane's output, search it vim-style, select characters or lines and yank them to your system clipboard (over `ssh` too, via OSC 52)
 - **Mouse** — click a pane to focus it, wheel through its history; programs that want the mouse themselves get the events, translated to their pane
 - **Every pane keeps its own screen** — `clear`, vim or htop in one pane never touch another, and nothing is lost when you split, close or switch
@@ -248,6 +249,31 @@ osc52   = true          # ask the terminal; the only way that works over ssh
 command = "wl-copy"     # …and/or pipe it locally: xclip -sel clip, pbcopy
 ```
 
+### Session restore
+
+A reboot used to end everything: the daemon holds your shells in memory, so
+it outlives a closed window or a dropped connection, but not a restart.
+
+slat now writes the session out — workspaces, tabs, the layout, each pane's
+working directory and the output it had printed — and puts it back the next
+time it starts. Panes come back in the same shape, in the same directories,
+with their old output above the prompt and a dim rule marking where the
+previous session ended.
+
+What comes back is the **output, not the programs**. Nothing portable can
+restore a running process, so a pane that was running `vim` comes back as a
+shell in the same directory, with what `vim` had drawn left behind as text.
+
+Quitting with <kbd>q</kbd> clears the saved session — ending a session
+means ending it. Detaching, closing the window and rebooting do not. The
+file lives in `$XDG_STATE_HOME/slat/session.json` (`~/.local/state` by
+default), is written every 15 seconds while anything changes and again on
+the way out, and keeps up to 2000 lines per pane.
+
+```toml
+restore = false     # start clean every time
+```
+
 ### Mouse
 
 Click a pane to focus it, and the wheel scrolls back through its output.
@@ -331,6 +357,8 @@ prefix     = "C-a"        # Ctrl + a letter, or C-\ C-] C-^ C-_
 shell      = "/bin/zsh"   # default: $SHELL
 status_bar = true
 scrollback = 5000         # lines kept per pane; 0 turns it off
+mouse      = true         # false hands the mouse back to your terminal
+restore    = true         # bring the session back after a reboot
 animations = true         # false turns every animation off
 
 [agent]                   # how `slat status` reads a pane (see above)
@@ -457,9 +485,9 @@ workspace changes and check what a terminal would display.
 
 ## Limitations
 
-- A session doesn't survive a reboot: the daemon holds your shells in
-  memory, so it outlives a closed window or a dropped SSH connection, not a
-  restart.
+- A restored session brings back output, not running programs: nothing
+  portable can restore a process, so each pane comes back as a fresh shell
+  in the same directory.
 - On Windows, ConPTY has no foreground process group, so a pane's status
   comes from output timing alone: `slat status` says idle or working, never
   which program is running, and `slat ls` shows the directory a pane started

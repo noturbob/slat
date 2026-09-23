@@ -25,6 +25,7 @@ type Config struct {
 	Animate    Duration          `toml:"animate"`    // shorthand: one duration for every animation
 	Animations bool              `toml:"animations"` // false turns them all off
 	Mouse      bool              `toml:"mouse"`      // false hands the mouse back to the terminal
+	Restore    bool              `toml:"restore"`    // bring the session back after a reboot
 	Animation  Animation         `toml:"animation"`
 	Keybinds   map[string]string `toml:"keybinds"`
 	Theme      map[string]string `toml:"theme"`
@@ -92,6 +93,7 @@ func DefaultConfig() *Config {
 		Scrollback: 2000,
 		Animations: true,
 		Mouse:      true,
+		Restore:    true,
 		Animation:  defaultAnimation(),
 		Copy:       Copy{OSC52: true},
 		Keybinds:   defaultKeybinds(),
@@ -255,6 +257,9 @@ func (cfg *Config) merge(user *Config, md toml.MetaData) error {
 	}
 	if md.IsDefined("mouse") {
 		cfg.Mouse = user.Mouse
+	}
+	if md.IsDefined("restore") {
+		cfg.Restore = user.Restore
 	}
 	if md.IsDefined("scrollback") {
 		if n := user.Scrollback; n < 0 || n > 1_000_000 {

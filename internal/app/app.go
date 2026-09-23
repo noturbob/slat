@@ -65,6 +65,10 @@ type App struct {
 	bannerEnd   time.Time
 	bannerShown bool
 	attached    bool
+
+	statePath     string    // where the session is saved between runs
+	restoredFrom  time.Time // when the restored session was saved
+	restoredPanes int
 }
 
 type prompt struct {
@@ -103,6 +107,13 @@ func New(cfg *config.Config) (*App, error) {
 		screen:   ui.NewScreen(io.Discard),
 	}
 	a.manager = session.NewManager(cfg.Shell, cfg.Scrollback, a.markDirty)
+	if cfg.Restore {
+		// A path we cannot work out only means this session will not be
+		// saved; it is no reason to refuse to start.
+		if path, err := session.StatePath(); err == nil {
+			a.statePath = path
+		}
+	}
 	return a, nil
 }
 
@@ -118,11 +129,14 @@ func (a *App) Start(cols, rows int) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.cols, a.rows = max(cols, 1), max(rows, 1)
-	if err := a.manager.AddWorkspace(a.paneArea()); err != nil {
-		return err
+	if !a.restoreSession() {
+		if err := a.manager.AddWorkspace(a.paneArea()); err != nil {
+			return err
+		}
 	}
 	go a.renderLoop()
 	go a.watch()
+	go a.saveLoop()
 	return nil
 }
 
@@ -139,6 +153,12 @@ func (a *App) Attach(cols, rows int) {
 		a.bannerShown = true
 		a.bannerEnd = time.Now().Add(bannerTime)
 		time.AfterFunc(bannerTime, a.markDirty)
+	}
+	// Say so once, on the first attach: output that predates the reboot
+	// looks like output from this one otherwise.
+	if a.restoredPanes > 0 {
+		a.notify(fmt.Sprintf("restored %s from %s", plural(a.restoredPanes, "pane"), ago(a.restoredFrom)))
+		a.restoredPanes = 0
 	}
 	a.markDirty()
 }
@@ -168,6 +188,10 @@ func (a *App) DetachRequested() <-chan struct{} { return a.detachCh }
 
 // Shutdown terminates every pane's shell.
 func (a *App) Shutdown() {
+	// Saved before the shells are torn down, so a daemon told to stop --
+	// by a reboot, or by anything else that is not the user quitting --
+	// leaves the session where the next run can find it.
+	a.saveSession()
 	a.doQuit()
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -557,6 +581,8 @@ func (a *App) do(action input.Action, b byte) bool {
 		}
 		return false
 	case input.ActionQuit:
+		// Quitting ends the session for good: nothing to come back to.
+		a.forgetSession()
 		a.doQuit()
 		return false
 
