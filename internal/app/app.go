@@ -275,6 +275,7 @@ func (a *App) render() {
 	cur := ui.Cursor{X: ac + x, Y: ar + y, Visible: vis, Style: style}
 	var modes ui.Modes
 	modes.AppCursor, modes.BracketedPaste = active.Modes()
+	modes.Mouse = a.cfg.Mouse
 	if a.scroll != nil || a.slide != nil {
 		// Mid-slide the pane is painted away from its real position, and a
 		// cursor left at the destination would look detached from it.
@@ -338,6 +339,14 @@ func (a *App) FeedInput(buf []byte) {
 
 	for i := 0; i < len(buf); i++ {
 		b := buf[i]
+		// Mouse reports are handled wherever they land: they are not text,
+		// so they must never reach a prompt, the help overlay or a shell.
+		if b == 0x1b && a.cfg.Mouse {
+			if _, _, ok := parseMouse(buf, i); ok {
+				i = a.mouseKey(buf, i)
+				continue
+			}
+		}
 		if a.prompt != nil {
 			if !a.promptKey(b) {
 				return // ESC: drop the rest of the key sequence it started

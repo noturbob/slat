@@ -32,6 +32,7 @@ output included.
 - **Tabs and workspaces** — group tabs into named workspaces, rename them in place
 - **Detach and reattach** — `d` disconnects; running `slat` from any terminal reattaches
 - **Scroll and copy mode** — page back through a pane's output, search it vim-style, select characters or lines and yank them to your system clipboard (over `ssh` too, via OSC 52)
+- **Mouse** — click a pane to focus it, wheel through its history; programs that want the mouse themselves get the events, translated to their pane
 - **Every pane keeps its own screen** — `clear`, vim or htop in one pane never touch another, and nothing is lost when you split, close or switch
 - **Fast** — only changed cells are sent to your terminal; half a million lines of output render in about a third of a second
 - **New panes open where you are** — a split starts in the directory of the pane you split from (Linux)
@@ -247,6 +248,21 @@ osc52   = true          # ask the terminal; the only way that works over ssh
 command = "wl-copy"     # …and/or pipe it locally: xclip -sel clip, pbcopy
 ```
 
+### Mouse
+
+Click a pane to focus it, and the wheel scrolls back through its output.
+Programs that ask for the mouse — vim, htop, less — receive the events
+themselves, with the coordinates translated into their pane, so they behave
+as they do outside slat.
+
+Your terminal hands its clicks to slat while this is on, so its own
+click-drag selection is unavailable; hold <kbd>Shift</kbd> for it in most
+terminals. To keep the terminal's mouse instead:
+
+```toml
+mouse = false
+```
+
 ## Scripting and agents
 
 Every command below talks to a running session over its socket, so scripts — and
@@ -441,7 +457,6 @@ workspace changes and check what a terminal would display.
 
 ## Limitations
 
-- Mouse events aren't passed to programs in panes.
 - A session doesn't survive a reboot: the daemon holds your shells in
   memory, so it outlives a closed window or a dropped SSH connection, not a
   restart.

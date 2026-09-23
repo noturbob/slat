@@ -232,6 +232,17 @@ func (p *Pane) Modes() (appCursor, bracketedPaste bool) {
 	return p.term.AppCursor(), p.term.BracketedPaste()
 }
 
+// MouseMode reports the mouse tracking the pane's program turned on: the
+// DECSET mode (0 for none) and whether it wants SGR-encoded coordinates.
+func (p *Pane) MouseMode() (mode int, sgr bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.dead {
+		return 0, false
+	}
+	return p.term.Mouse()
+}
+
 // Activity reports when the pane's program last produced output.
 func (p *Pane) Activity() time.Time {
 	p.mu.Lock()
