@@ -37,7 +37,7 @@ func TestSessionSurvivesTheDaemon(t *testing.T) {
 
 	b, term2 := start(t)
 	defer b.Shutdown()
-	if n := len(b.manager.ActivePanes()); n != 2 {
+	if n := len(activePanes(b)); n != 2 {
 		t.Fatalf("restored %d panes, want 2", n)
 	}
 	waitFor(t, term2, "before-the-reboot", 1)
@@ -66,7 +66,7 @@ func TestQuitForgetsTheSession(t *testing.T) {
 
 	b, term2 := start(t)
 	defer b.Shutdown()
-	if n := len(b.manager.ActivePanes()); n != 1 {
+	if n := len(activePanes(b)); n != 1 {
 		t.Fatalf("after quitting, a new session has %d panes, want 1", n)
 	}
 	if s := term2.String(); strings.Contains(s, "doomed") {
@@ -106,7 +106,7 @@ func TestUnreadableStateStartsCleanly(t *testing.T) {
 			t.Fatal(err)
 		}
 		a, _ := start(t)
-		if n := len(a.manager.ActivePanes()); n != 1 {
+		if n := len(activePanes(a)); n != 1 {
 			t.Fatalf("state %q: got %d panes, want a clean session of 1", content, n)
 		}
 		a.Shutdown()
@@ -143,7 +143,7 @@ type rect struct{ row, col, rows, cols int }
 
 func paneRects(a *App) []rect {
 	var out []rect
-	for _, p := range a.manager.ActivePanes() {
+	for _, p := range activePanes(a) {
 		r, c, rows, cols := p.Rect()
 		out = append(out, rect{r, c, rows, cols})
 	}

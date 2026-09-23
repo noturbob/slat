@@ -96,20 +96,20 @@ func TestClickFocusesPane(t *testing.T) {
 	a.FeedInput([]byte{prefix, 'v'}) // split left/right
 	waitFor(t, term, "slat$", 2)
 
-	panes := a.manager.ActivePanes()
+	panes := activePanes(a)
 	if len(panes) != 2 {
 		t.Fatalf("got %d panes, want 2", len(panes))
 	}
 	// Focus the one that is not active, by clicking its middle.
 	var other = panes[0]
-	if other == a.manager.ActivePane() {
+	if other == activePane(a) {
 		other = panes[1]
 	}
 	row, col, rows, cols := other.Rect()
 	x, y := col+cols/2+1, row+rows/2+1
 
 	a.FeedInput([]byte("\x1b[<0;" + itoa(x) + ";" + itoa(y) + "M"))
-	if got := a.manager.ActivePane(); got != other {
+	if got := activePane(a); got != other {
 		t.Fatalf("click at (%d,%d) did not focus the pane under it", x, y)
 	}
 }
@@ -159,19 +159,21 @@ func TestWheelEntersScrollMode(t *testing.T) {
 	waitFor(t, term, "200", 1)
 
 	a.FeedInput([]byte("\x1b[<64;5;5M")) // wheel up
-	if a.scroll == nil {
+	if open, _ := scrollState(a); !open {
 		t.Fatal("wheel up did not enter scroll mode")
 	}
 	waitFor(t, term, "SCROLL", 1)
 
 	// and the wheel keeps moving the view once it is open
-	before := a.scroll.top
+	_, before := scrollState(a)
 	a.FeedInput([]byte("\x1b[<64;5;5M"))
-	if a.scroll == nil || a.scroll.top >= before {
+	open, after := scrollState(a)
+	if !open || after >= before {
 		t.Fatal("a second wheel up did not scroll further back")
 	}
 	a.FeedInput([]byte("\x1b[<65;5;5M")) // wheel down
-	if a.scroll == nil || a.scroll.top <= before-3 {
+	open, back := scrollState(a)
+	if !open || back <= before-3 {
 		t.Fatal("wheel down did not scroll forward")
 	}
 }
