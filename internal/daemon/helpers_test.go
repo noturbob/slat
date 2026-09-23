@@ -4,6 +4,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +19,11 @@ func session(t *testing.T, tweak ...func(*config.Config)) string {
 	t.Helper()
 	t.Setenv("PS1", "$ ")
 	t.Setenv("ENV", "")
+	// …and never the user's saved session either: these daemons save on
+	// shutdown, which would otherwise overwrite a real one.
+	if os.Getenv("XDG_STATE_HOME") == "" {
+		t.Setenv("XDG_STATE_HOME", t.TempDir())
+	}
 	// Short, and never the user's own socket: a test must not be able to
 	// reach a real session.
 	dir, err := os.MkdirTemp("", "slat")
@@ -39,6 +45,7 @@ func session(t *testing.T, tweak ...func(*config.Config)) string {
 	}
 	done := make(chan struct{})
 	go func() { srv.Run(); close(done) }()
+	servers.Store(sock, &running{srv: srv, done: done})
 	t.Cleanup(func() {
 		srv.Stop()
 		select {
@@ -87,4 +94,30 @@ func statusEventually(t *testing.T, sock, pane, want string) control.Response {
 	}
 	t.Fatalf("pane %s: %v", pane, last.Error)
 	return last
+}
+
+// running is a daemon a test started, so a test can also stop one on
+// purpose -- the case the restore tests are about.
+type running struct {
+	srv  *daemon.Server
+	done chan struct{}
+}
+
+var servers sync.Map // socket path -> *running
+
+// stopSession ends a daemon the way a shutdown does and waits for it to
+// finish, so whatever it writes on the way out is on disk when it returns.
+func stopSession(t *testing.T, sock string) {
+	t.Helper()
+	v, ok := servers.Load(sock)
+	if !ok {
+		t.Fatalf("no daemon for %s", sock)
+	}
+	r := v.(*running)
+	r.srv.Stop()
+	select {
+	case <-r.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("daemon did not stop")
+	}
 }

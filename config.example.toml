@@ -15,6 +15,25 @@ status_bar = true
 # Lines of output each pane keeps for scroll mode (0 turns it off)
 scrollback = 2000
 
+# The mouse: click a pane to focus it, and the wheel scrolls its history.
+# Programs that ask for the mouse themselves (vim, htop, less) get the
+# events instead, with the coordinates translated to their pane.
+#
+# While this is on, your terminal gives its clicks to slat, so its own
+# click-drag selection is unavailable -- hold Shift to get it back in most
+# terminals, or set this to false and use copy mode instead.
+mouse = true
+
+# Bring the session back after a reboot. slat saves the shape of the
+# session -- workspaces, tabs, layout, each pane's directory -- and what
+# each pane had printed, then restores it the next time it starts.
+#
+# What comes back is the output, not the programs: nothing portable can
+# restore a running process, so each pane is a fresh shell in the same
+# directory with its old output above the prompt. Quitting with q clears
+# the saved session; detaching and rebooting do not.
+restore = true
+
 # Animations. Only the drawing is animated — panes are their final size
 # throughout, so no program is resized more than once.
 animations = true         # false turns every animation off

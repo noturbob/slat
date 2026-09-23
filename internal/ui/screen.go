@@ -59,7 +59,16 @@ type Cursor struct {
 type Modes struct {
 	AppCursor      bool
 	BracketedPaste bool
+	// Mouse asks the terminal to report clicks, drags and the wheel.
+	// slat needs the reports whatever the pane's program wants, because a
+	// click picks the pane the event then belongs to.
+	Mouse bool
 }
+
+// mouseModes is what slat turns on to receive reports: button events with
+// drag (1002) in SGR encoding (1006), which is the only one that works
+// past column 223.
+func mouseSeq(on bool) string { return modeSeq(1002, on) + modeSeq(1006, on) }
 
 // Screen paints frames onto a real terminal. It remembers what the terminal
 // currently shows and sends only the cells that changed, so redraws are
@@ -110,6 +119,7 @@ func (s *Screen) Render(frame *Frame, cur Cursor, modes Modes) error {
 		b.WriteString("\x1b[0m\x1b[?25l\x1b[H\x1b[2J")
 		// Unknown terminal state: set every mode explicitly.
 		b.WriteString(modeSeq(1, modes.AppCursor) + modeSeq(2004, modes.BracketedPaste))
+		b.WriteString(mouseSeq(modes.Mouse))
 		fmt.Fprintf(b, "\x1b[%d q", cur.Style)
 	} else {
 		if modes.AppCursor != s.modes.AppCursor {
@@ -117,6 +127,9 @@ func (s *Screen) Render(frame *Frame, cur Cursor, modes Modes) error {
 		}
 		if modes.BracketedPaste != s.modes.BracketedPaste {
 			b.WriteString(modeSeq(2004, modes.BracketedPaste))
+		}
+		if modes.Mouse != s.modes.Mouse {
+			b.WriteString(mouseSeq(modes.Mouse))
 		}
 		if cur.Style != s.cursor.Style {
 			fmt.Fprintf(b, "\x1b[%d q", cur.Style)

@@ -3,12 +3,14 @@
 package app
 
 import (
+	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/noturbob/slat/internal/config"
+	"github.com/noturbob/slat/internal/pane"
 	"github.com/noturbob/slat/internal/vt"
 )
 
@@ -56,6 +58,12 @@ const prefix = 0x13 // Ctrl-S
 func start(t *testing.T, tweak ...func(*config.Config)) (*App, *terminal) {
 	t.Helper()
 	t.Setenv("PS1", "slat$ ")
+	// Never the real one: a test must not read, write or delete the
+	// session the user has running. A test that wants two runs to share a
+	// session sets this itself, and keeps it.
+	if os.Getenv("XDG_STATE_HOME") == "" {
+		t.Setenv("XDG_STATE_HOME", t.TempDir())
+	}
 	t.Setenv("ENV", "") // keep sh from sourcing rc files that reset PS1
 	cfg := config.DefaultConfig()
 	cfg.Shell = "/bin/sh"
@@ -201,6 +209,8 @@ func TestScrollMode(t *testing.T) {
 
 	// New output doesn't move a scrolled-back view.
 	a.mu.Lock()
+	// Already under the lock: the helpers below take it themselves, so
+	// calling one here would deadlock against this very line.
 	a.manager.ActivePane().Write([]byte("echo fresh-output\r"))
 	a.mu.Unlock()
 	time.Sleep(300 * time.Millisecond)
@@ -225,4 +235,30 @@ func TestScrollMode(t *testing.T) {
 	waitGone(t, term, "SCROLL")
 	a.FeedInput([]byte("echo clean\r"))
 	waitFor(t, term, "slat$ echo clean", 1)
+}
+
+// The app's fields belong to its mutex, and a test runs beside the render
+// loop, so tests read them through these rather than directly: without the
+// lock the race detector is right to complain, and intermittently does.
+
+func activePanes(a *App) []*pane.Pane {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.manager.ActivePanes()
+}
+
+func activePane(a *App) *pane.Pane {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.manager.ActivePane()
+}
+
+// scrollState reports whether scroll mode is open and where its view sits.
+func scrollState(a *App) (open bool, top int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.scroll == nil {
+		return false, 0
+	}
+	return true, a.scroll.top
 }

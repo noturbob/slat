@@ -45,6 +45,20 @@ type Pane struct {
 // keeping scrollback lines of history. onChange is called from another
 // goroutine whenever the pane's screen changes or its process exits.
 func New(id int, rows, cols int, shell, dir string, scrollback int, onChange func()) (*Pane, error) {
+	return start(id, rows, cols, shell, dir, scrollback, nil, onChange)
+}
+
+// NewRestored is New with output from a previous session already on the
+// pane's screen. The text is written before the shell is read from, so the
+// old output can never interleave with the new prompt.
+//
+// It is text, not a running program: colours and anything a full-screen
+// program drew are gone, and the shell underneath is new.
+func NewRestored(id int, rows, cols int, shell, dir string, scrollback int, history []string, onChange func()) (*Pane, error) {
+	return start(id, rows, cols, shell, dir, scrollback, history, onChange)
+}
+
+func start(id int, rows, cols int, shell, dir string, scrollback int, history []string, onChange func()) (*Pane, error) {
 	rows, cols = max(rows, 1), max(cols, 1)
 	proc, err := startPTY(shell, dir, rows, cols)
 	if err != nil {
@@ -57,9 +71,26 @@ func New(id int, rows, cols int, shell, dir string, scrollback int, onChange fun
 	// first prompt yet is starting up, not idle.
 	p := &Pane{ID: id, proc: proc, term: vt.New(cols, rows), onChange: onChange, lastOut: time.Now()}
 	p.term.SetScrollback(scrollback)
+	p.seed(history)
 	go p.readLoop()
 	go p.waitLoop()
 	return p, nil
+}
+
+// seed puts saved output on the screen and draws a rule under it, so it is
+// obvious where the old session ended and this one began.
+func (p *Pane) seed(history []string) {
+	if len(history) == 0 {
+		return
+	}
+	for _, line := range history {
+		p.term.Write([]byte(line))
+		p.term.Write([]byte("\r\n"))
+	}
+	cols, _ := p.term.Size()
+	rule := strings.Repeat("\u2500", max(min(cols, 60)-12, 3))
+	p.term.Write([]byte("\x1b[2m" + rule + " restored \x1b[0m\r\n"))
+	p.term.Replies() // the saved text cannot ask the terminal questions
 }
 
 func (p *Pane) readLoop() {
@@ -230,6 +261,17 @@ func (p *Pane) Modes() (appCursor, bracketedPaste bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.term.AppCursor(), p.term.BracketedPaste()
+}
+
+// MouseMode reports the mouse tracking the pane's program turned on: the
+// DECSET mode (0 for none) and whether it wants SGR-encoded coordinates.
+func (p *Pane) MouseMode() (mode int, sgr bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.dead {
+		return 0, false
+	}
+	return p.term.Mouse()
 }
 
 // Activity reports when the pane's program last produced output.

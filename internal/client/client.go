@@ -16,7 +16,9 @@ const (
 	// is untouched and comes back intact on exit.
 	enterScreen = "\x1b[?1049h"
 	// Undo anything the session may have left set on the terminal.
-	leaveScreen = "\x1b[0m\x1b[?25h\x1b[0 q\x1b[?1l\x1b[?2004l\x1b[r\x1b[?1049l"
+	// Mouse reporting is turned off here too: leaving it on would cost the
+	// user their terminal's own selection after slat exits.
+	leaveScreen = "\x1b[0m\x1b[?25h\x1b[0 q\x1b[?1l\x1b[?2004l\x1b[?1002l\x1b[?1006l\x1b[r\x1b[?1049l"
 )
 
 // Run attaches this terminal to the daemon at sockPath and returns once the

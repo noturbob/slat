@@ -153,7 +153,13 @@ type Terminal struct {
 	autowrap, insert, altScreen bool
 	appCursor, bracketedPaste   bool
 	cursorHidden                bool
-	cursorStyle                 int
+	// Mouse reporting the program asked for: the DECSET mode it enabled
+	// (1000 click, 1002 drag, 1003 any motion; 0 = off) and whether it
+	// wants SGR-encoded coordinates (1006), which is the only encoding
+	// that survives past column 223.
+	mouseMode   int
+	mouseSGR    bool
+	cursorStyle int
 
 	state   parseState
 	utf     []byte
@@ -198,6 +204,7 @@ func (t *Terminal) reset() {
 	t.resetTabs()
 	t.autowrap, t.insert = true, false
 	t.appCursor, t.bracketedPaste, t.cursorHidden = false, false, false
+	t.mouseMode, t.mouseSGR = 0, false
 	t.cursorStyle = 0
 	t.state = ground
 }
@@ -242,6 +249,10 @@ func (t *Terminal) AppCursor() bool { return t.appCursor }
 
 // BracketedPaste reports whether pastes should be bracketed.
 func (t *Terminal) BracketedPaste() bool { return t.bracketedPaste }
+
+// Mouse reports what mouse tracking the program turned on: the DECSET
+// mode (0 when it wants none) and whether it asked for SGR coordinates.
+func (t *Terminal) Mouse() (mode int, sgr bool) { return t.mouseMode, t.mouseSGR }
 
 // AltScreen reports whether the alternate screen is active.
 func (t *Terminal) AltScreen() bool { return t.altScreen }
@@ -712,6 +723,16 @@ func (t *Terminal) setPrivateMode(mode int, on bool) {
 			t.switchScreen(false, false)
 			t.restoreCursor()
 		}
+	case 1000, 1002, 1003:
+		// Programs set these independently; the last one on wins, and
+		// turning one off only stops tracking if it is the live one.
+		if on {
+			t.mouseMode = mode
+		} else if t.mouseMode == mode {
+			t.mouseMode = 0
+		}
+	case 1006:
+		t.mouseSGR = on
 	case 2004:
 		t.bracketedPaste = on
 	}
