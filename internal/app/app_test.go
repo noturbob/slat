@@ -209,7 +209,9 @@ func TestScrollMode(t *testing.T) {
 
 	// New output doesn't move a scrolled-back view.
 	a.mu.Lock()
-	activePane(a).Write([]byte("echo fresh-output\r"))
+	// Already under the lock: the helpers below take it themselves, so
+	// calling one here would deadlock against this very line.
+	a.manager.ActivePane().Write([]byte("echo fresh-output\r"))
 	a.mu.Unlock()
 	time.Sleep(300 * time.Millisecond)
 	waitFor(t, term, "row-1\n", 1)
