@@ -33,13 +33,13 @@ output included.
 - **Detach and reattach** — `d` disconnects; running `slat` from any terminal reattaches
 - **Survives a reboot** — the layout, each pane's directory and the output it had printed are saved and put back when slat starts again
 - **Scroll and copy mode** — page back through a pane's output, search it vim-style, select characters or lines and yank them to your system clipboard (over `ssh` too, via OSC 52)
-- **Mouse** — click a pane to focus it, wheel through its history; programs that want the mouse themselves get the events, translated to their pane
+- **Mouse** — click a pane to focus it, drag a border to resize, wheel through its history; programs that want the mouse themselves get the events, translated to their pane
 - **Every pane keeps its own screen** — `clear`, vim or htop in one pane never touch another, and nothing is lost when you split, close or switch
 - **Fast** — only changed cells are sent to your terminal; half a million lines of output render in about a third of a second
 - **New panes open where you are** — a split starts in the directory of the pane you split from (Linux)
 - **Drivable from scripts and AI agents** — `slat ls`, `run`, `capture` and `wait --for idle` let anything outside the terminal work a session and know when a pane needs a human ([details](#scripting-and-agents))
 - **Move panes around** — walk a pane through the layout like a tiling window manager; the swap slides instead of jumping
-- **Rice it** — five palettes or your own colours, six border styles or your own
+- **Rice it** — ten palettes or your own colours, six border styles or your own
   glyphs, a status bar you write as a format string, and animation timing and
   easing you can tune or switch off entirely
 - **One checked config file** — mistakes are reported when you run `slat`, not ignored
@@ -276,7 +276,8 @@ restore = false     # start clean every time
 
 ### Mouse
 
-Click a pane to focus it, and the wheel scrolls back through its output.
+Click a pane to focus it, drag a border to resize, and the wheel scrolls
+back through its output.
 Programs that ask for the mouse — vim, htop, less — receive the events
 themselves, with the coordinates translated into their pane, so they behave
 as they do outside slat.
@@ -366,7 +367,7 @@ settle      = "750ms"     # quiet for this long after output = idle
 input_after = "10s"       # quiet for this long on a prompt = waiting for input
 
 [theme]
-name = "gruvbox"          # default, gruvbox, nord, rose-pine, mono
+name = "catppuccin"       # catppuccin, default, dracula, gruvbox, latte, mono, nord, rose-pine, solarized, tokyo-night
 accent = "#fabd2f"        # override any single colour
 
 [borders]

@@ -5,8 +5,10 @@ package app
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/noturbob/slat/internal/config"
+	"github.com/noturbob/slat/internal/pane"
 )
 
 func TestParseMouse(t *testing.T) {
@@ -176,4 +178,96 @@ func TestWheelEntersScrollMode(t *testing.T) {
 	if !open || back <= before-3 {
 		t.Fatal("wheel down did not scroll forward")
 	}
+}
+
+// Dragging the border between two panes resizes them, which is the first
+// thing anyone tries once they notice the mouse works.
+func TestDragBorderResizes(t *testing.T) {
+	a, term := start(t)
+	a.FeedInput([]byte{prefix, 'v'}) // left | right
+	waitFor(t, term, "slat$", 2)
+
+	panes := activePanes(a)
+	if len(panes) != 2 {
+		t.Fatalf("got %d panes, want 2", len(panes))
+	}
+	_, _, _, leftCols := panes[0].Rect()
+	border := leftCols + 1 // 1-based screen column of the divider
+
+	// Press on the border, drag left, release.
+	a.FeedInput([]byte("\x1b[<0;" + itoa(border) + ";5M"))
+	a.FeedInput([]byte("\x1b[<32;" + itoa(border-10) + ";5M"))
+	a.FeedInput([]byte("\x1b[<0;" + itoa(border-10) + ";5m"))
+
+	narrower := waitCols(t, panes[0], func(c int) bool { return c < leftCols },
+		"narrower than %d after dragging left", leftCols)
+	// and back the other way
+	a.FeedInput([]byte("\x1b[<0;" + itoa(narrower+1) + ";5M"))
+	a.FeedInput([]byte("\x1b[<32;" + itoa(narrower+21) + ";5M"))
+	a.FeedInput([]byte("\x1b[<0;" + itoa(narrower+21) + ";5m"))
+	waitCols(t, panes[0], func(c int) bool { return c > narrower },
+		"wider than %d after dragging right", narrower)
+}
+
+// A drag keeps the border even when the pointer wanders off it, and lets go
+// on release.
+func TestDragSurvivesLeavingTheBorder(t *testing.T) {
+	a, term := start(t)
+	a.FeedInput([]byte{prefix, 'v'})
+	waitFor(t, term, "slat$", 2)
+
+	panes := activePanes(a)
+	_, _, _, leftCols := panes[0].Rect()
+	border := leftCols + 1
+
+	a.FeedInput([]byte("\x1b[<0;" + itoa(border) + ";5M"))
+	// deep inside the right pane, still dragging
+	a.FeedInput([]byte("\x1b[<32;" + itoa(border+15) + ";9M"))
+	waitCols(t, panes[0], func(c int) bool { return c > leftCols },
+		"wider than %d after dragging into the far pane", leftCols)
+	a.FeedInput([]byte("\x1b[<0;" + itoa(border+15) + ";9m")) // release
+	if dragging(a) {
+		t.Fatal("the drag outlived the button")
+	}
+	// After release, a plain click in that pane focuses it instead.
+	wide, _, _, _ := panes[1].Rect()
+	_ = wide
+	a.FeedInput([]byte("\x1b[<0;" + itoa(border+15) + ";9M"))
+	if got := activePane(a); got != panes[1] {
+		t.Fatal("a click after the drag did not focus the pane under it")
+	}
+}
+
+// Clicking a pane must never start a resize.
+func TestClickInsideAPaneIsNotADrag(t *testing.T) {
+	a, term := start(t)
+	a.FeedInput([]byte{prefix, 'v'})
+	waitFor(t, term, "slat$", 2)
+	a.FeedInput([]byte("\x1b[<0;3;3M"))
+	if dragging(a) {
+		t.Fatal("a click inside a pane started a border drag")
+	}
+}
+
+func dragging(a *App) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.drag != nil
+}
+
+// waitCols waits for a pane to reach a width, since a ratio only becomes a
+// size when the render loop next lays the tree out.
+func waitCols(t *testing.T, p *pane.Pane, ok func(int) bool, what string, args ...any) int {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	var cols int
+	for time.Now().Before(deadline) {
+		_, _, _, cols = p.Rect()
+		if ok(cols) {
+			return cols
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("pane is %d columns; wanted "+what, append([]any{cols}, args...)...)
+	return cols
 }

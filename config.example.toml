@@ -15,7 +15,8 @@ status_bar = true
 # Lines of output each pane keeps for scroll mode (0 turns it off)
 scrollback = 2000
 
-# The mouse: click a pane to focus it, and the wheel scrolls its history.
+# The mouse: click a pane to focus it, drag a border to resize it, and the
+# wheel scrolls its history.
 # Programs that ask for the mouse themselves (vim, htop, less) get the
 # events instead, with the coordinates translated to their pane.
 #
@@ -57,7 +58,9 @@ osc52 = true
 # Colours for the parts slat draws: the status bar, pane borders and
 # overlays. Programs running in panes keep their own colours.
 [theme]
-# A palette to start from: default, gruvbox, nord, rose-pine, mono
+# A palette to start from:
+#   catppuccin, default, dracula, gruvbox, latte, mono, nord, rose-pine, solarized, tokyo-night
+# latte and mono are the two for a light terminal.
 name = "default"
 # Override any single colour: a name (red, bright-blue), a palette index
 # (0-255) or #rrggbb.

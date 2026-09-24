@@ -49,7 +49,7 @@ func TestParseTheme(t *testing.T) {
 
 	// Typos are errors, not surprises later.
 	for _, bad := range []map[string]string{
-		{"name": "solarized"},
+		{"name": "no-such-theme"},
 		{"accnet": "red"},
 		{"border": "mauve"},
 	} {

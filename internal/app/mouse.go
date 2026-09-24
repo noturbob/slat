@@ -3,8 +3,16 @@ package app
 import (
 	"fmt"
 
+	"github.com/noturbob/slat/internal/layout"
 	"github.com/noturbob/slat/internal/pane"
 )
+
+// drag is a border being pulled: the split it belongs to and the area that
+// split divides, which is what its ratio is measured against.
+type drag struct {
+	node *layout.Node
+	area layout.Rect
+}
 
 // A mouse report from the real terminal. slat asks for SGR encoding
 // (DECSET 1006), so that is the only form it has to read: coordinates are
@@ -94,6 +102,22 @@ func (a *App) mouseKey(buf []byte, i int) int {
 	}
 	target := a.paneAt(ev.x, ev.y)
 
+	// A border being dragged owns the mouse until the button comes up, so
+	// the pointer can wander over panes without losing the border.
+	if a.drag != nil {
+		if ev.press {
+			a.dragTo(ev)
+		} else {
+			a.drag = nil
+		}
+		return i + n - 1
+	}
+	if target == nil && ev.press && ev.button == 0 && !ev.motion {
+		if a.startDrag(ev) {
+			return i + n - 1
+		}
+	}
+
 	// In scroll mode the wheel drives the view, whatever the pane runs.
 	if a.scroll != nil {
 		if d := ev.wheel(); d != 0 {
@@ -174,4 +198,33 @@ func encodeMouse(ev mouseEvent, sgr bool, x, y int) []byte {
 		return nil
 	}
 	return []byte{0x1b, '[', 'M', byte(32 + b), byte(32 + x), byte(32 + y)}
+}
+
+// startDrag begins a resize if the press landed on a border. It reports
+// whether it did.
+func (a *App) startDrag(ev mouseEvent) bool {
+	// A zoomed pane covers the layout: there are no borders to pull.
+	if a.zoomed != nil || a.scroll != nil {
+		return false
+	}
+	tab := a.manager.ActiveTab()
+	if tab == nil {
+		return false
+	}
+	node, area, ok := layout.DividerAt(tab.Layout, a.paneArea(), ev.y-1, ev.x-1)
+	if !ok {
+		return false
+	}
+	a.drag = &drag{node: node, area: area}
+	return true
+}
+
+// dragTo moves the border being dragged to the pointer.
+func (a *App) dragTo(ev mouseEvent) {
+	r := layout.RatioAt(a.drag.node, a.drag.area, ev.y-1, ev.x-1)
+	if r == a.drag.node.Ratio {
+		return
+	}
+	a.drag.node.Ratio = r
+	a.markDirty()
 }

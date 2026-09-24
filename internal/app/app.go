@@ -50,6 +50,7 @@ type App struct {
 	anim        *anim          // a pane being revealed
 	slide       *slide         // two panes trading places
 	moving      bool           // move mode: direction keys walk the pane
+	drag        *drag          // a border being pulled with the mouse
 	lastStatus  map[int]string // pane id -> status, for the hooks
 	attention   map[int]bool   // panes waiting for input
 	manager     *session.Manager

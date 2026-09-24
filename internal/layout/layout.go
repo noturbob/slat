@@ -83,6 +83,39 @@ func Apply(n *Node, area Rect) (borders []Rect) {
 	return append(borders, Apply(n.Children[1], b)...)
 }
 
+// DividerAt returns the split whose border runs through the cell (row,
+// col), together with the area that split was laid out in. The area is
+// what a ratio means: dragging the border to a column is only meaningful
+// against the space the split had to divide.
+func DividerAt(n *Node, area Rect, row, col int) (*Node, Rect, bool) {
+	if n == nil || n.Pane != nil {
+		return nil, Rect{}, false
+	}
+	a, b, border := Split(area, n.Split, n.Ratio)
+	if border.Contains(row, col) {
+		return n, area, true
+	}
+	if a.Contains(row, col) {
+		return DividerAt(n.Children[0], a, row, col)
+	}
+	if b.Contains(row, col) {
+		return DividerAt(n.Children[1], b, row, col)
+	}
+	return nil, Rect{}, false
+}
+
+// RatioAt is the ratio that puts a split's border at (row, col) of area.
+// It is clamped so a drag can never collapse either side out of existence.
+func RatioAt(n *Node, area Rect, row, col int) float64 {
+	var r float64
+	if n.Split == pane.SplitVertical {
+		r = float64(col-area.Col) / float64(max(area.Cols, 1))
+	} else {
+		r = float64(row-area.Row) / float64(max(area.Rows, 1))
+	}
+	return min(max(r, 0.1), 0.9)
+}
+
 // FindLeaf returns the leaf node containing the given pane, or nil.
 func FindLeaf(n *Node, p *pane.Pane) *Node {
 	if n == nil {
