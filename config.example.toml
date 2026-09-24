@@ -58,7 +58,9 @@ osc52 = true
 # Colours for the parts slat draws: the status bar, pane borders and
 # overlays. Programs running in panes keep their own colours.
 [theme]
-# A palette to start from: default, gruvbox, nord, rose-pine, mono
+# A palette to start from:
+#   catppuccin, default, dracula, gruvbox, latte, mono, nord, rose-pine, solarized, tokyo-night
+# latte and mono are the two for a light terminal.
 name = "default"
 # Override any single colour: a name (red, bright-blue), a palette index
 # (0-255) or #rrggbb.

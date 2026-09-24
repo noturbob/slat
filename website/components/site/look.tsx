@@ -34,7 +34,7 @@ export function Look() {
       id="look"
       marker="$EDITOR ~/.config/slat/config.toml"
       title="Make it yours"
-      lead="Colour, shape and motion all belong to whoever runs it: five palettes or your own, six border styles or your own glyphs, a status bar written as a format string, and animation timing per event. Pick two and watch the session change."
+      lead="Colour, shape and motion all belong to whoever runs it: ten palettes or your own, six border styles or your own glyphs, a status bar written as a format string, and animation timing per event. Pick two and watch the session change."
     >
       {/* The controls sit above both panels, so the session and the config
           it produces start on the same line. */}

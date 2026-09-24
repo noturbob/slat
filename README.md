@@ -39,7 +39,7 @@ output included.
 - **New panes open where you are** — a split starts in the directory of the pane you split from (Linux)
 - **Drivable from scripts and AI agents** — `slat ls`, `run`, `capture` and `wait --for idle` let anything outside the terminal work a session and know when a pane needs a human ([details](#scripting-and-agents))
 - **Move panes around** — walk a pane through the layout like a tiling window manager; the swap slides instead of jumping
-- **Rice it** — five palettes or your own colours, six border styles or your own
+- **Rice it** — ten palettes or your own colours, six border styles or your own
   glyphs, a status bar you write as a format string, and animation timing and
   easing you can tune or switch off entirely
 - **One checked config file** — mistakes are reported when you run `slat`, not ignored
@@ -367,7 +367,7 @@ settle      = "750ms"     # quiet for this long after output = idle
 input_after = "10s"       # quiet for this long on a prompt = waiting for input
 
 [theme]
-name = "gruvbox"          # default, gruvbox, nord, rose-pine, mono
+name = "catppuccin"       # catppuccin, default, dracula, gruvbox, latte, mono, nord, rose-pine, solarized, tokyo-night
 accent = "#fabd2f"        # override any single colour
 
 [borders]
