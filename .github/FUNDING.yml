@@ -1,2 +1,5 @@
-# Shows the "Sponsor" button on the GitHub repo page.
+# Shows the "Sponsor" button on the repository, and — because the first
+# entry is a GitHub Sponsors profile — on the owner's profile, hovercards
+# and repository listings too, which a third-party link alone does not get.
+github: noturbob
 ko_fi: bobbyanthene
