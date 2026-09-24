@@ -33,7 +33,7 @@ output included.
 - **Detach and reattach** — `d` disconnects; running `slat` from any terminal reattaches
 - **Survives a reboot** — the layout, each pane's directory and the output it had printed are saved and put back when slat starts again
 - **Scroll and copy mode** — page back through a pane's output, search it vim-style, select characters or lines and yank them to your system clipboard (over `ssh` too, via OSC 52)
-- **Mouse** — click a pane to focus it, wheel through its history; programs that want the mouse themselves get the events, translated to their pane
+- **Mouse** — click a pane to focus it, drag a border to resize, wheel through its history; programs that want the mouse themselves get the events, translated to their pane
 - **Every pane keeps its own screen** — `clear`, vim or htop in one pane never touch another, and nothing is lost when you split, close or switch
 - **Fast** — only changed cells are sent to your terminal; half a million lines of output render in about a third of a second
 - **New panes open where you are** — a split starts in the directory of the pane you split from (Linux)
@@ -276,7 +276,8 @@ restore = false     # start clean every time
 
 ### Mouse
 
-Click a pane to focus it, and the wheel scrolls back through its output.
+Click a pane to focus it, drag a border to resize, and the wheel scrolls
+back through its output.
 Programs that ask for the mouse — vim, htop, less — receive the events
 themselves, with the coordinates translated into their pane, so they behave
 as they do outside slat.

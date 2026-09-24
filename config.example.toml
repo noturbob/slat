@@ -15,7 +15,8 @@ status_bar = true
 # Lines of output each pane keeps for scroll mode (0 turns it off)
 scrollback = 2000
 
-# The mouse: click a pane to focus it, and the wheel scrolls its history.
+# The mouse: click a pane to focus it, drag a border to resize it, and the
+# wheel scrolls its history.
 # Programs that ask for the mouse themselves (vim, htop, less) get the
 # events instead, with the coordinates translated to their pane.
 #
