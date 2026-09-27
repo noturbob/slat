@@ -11,12 +11,13 @@ export function Watch() {
     <Section
       marker="slat   # in a real terminal"
       title="Here it is, actually running"
-      lead="Splitting, running two things at once, scrolling back through the output, then detaching and picking the session up again with everything still alive."
+      lead="One terminal split any way you like, panes walked around the layout, tabs and workspaces named in place, the scrollback searched and copied over ssh, a session that survives a reboot, and the whole thing driven from outside."
     >
       <figure>
         <div className="glass overflow-hidden rounded-2xl p-2">
-          {/* The same film the README carries, as video rather than the GIF:
-              a quarter of the bytes, and it does not re-download on loop. */}
+          {/* The whole film. The README carries an excerpt of it as a GIF,
+              because GitHub will not play video in a readme; here there is
+              no such excuse, so the video is the full forty seconds. */}
           <video
             className="w-full rounded-xl"
             src={`${base}/demo.mp4`}
@@ -24,7 +25,7 @@ export function Watch() {
             controls
             playsInline
             preload="none"
-            aria-label="A recording of slat: splitting panes, running two commands, searching and copying a line, detaching, listing the session from outside, and reattaching"
+            aria-label="A recording of slat: splitting panes, walking one around the layout, naming tabs and workspaces, searching and copying from the scrollback, detaching and reattaching, being driven by a script, and changing palette"
           />
         </div>
       </figure>
