@@ -393,7 +393,8 @@ $ slat capture 3 --lines 20             # read what it printed
 | `slat status [PANE]` | one pane's status |
 | `slat pane new [--split v\|h] [--cwd D] [--cmd C] [--target P] [--focus]` | split a pane |
 | `slat pane close PANE` | close a pane |
-| `slat send PANE TEXT [--enter] [--key KEY]` | type into a pane (supports `--session`, `--workspace`, `--tab`, or `[SESSION:][WORKSPACE/[TAB/]]PANE`, e.g. `work:dev/active`) |
+| `slat send PANE TEXT... [--enter] [--key KEY]` | type into a pane (supports `--session`, `--workspace`, `--tab`, or `[SESSION:][WORKSPACE/[TAB/]]PANE`, e.g. `work:dev/active`) |
+| `slat focus left\|down\|up\|right` | move pane focus in a direction (used by seamless Neovim navigation) |
 | `slat run PANE COMMAND...` | send a command and press Enter |
 | `slat capture PANE [--lines N] [--history]` | read a pane's text |
 | `slat wait PANE --for idle\|input\|exit\|text=REGEX [--timeout 60s]` | block until something happens |
@@ -560,7 +561,7 @@ zoom             = ""     # "" unbinds a command
   font paints them is Kitty's, Alacritty's or WezTerm's business. Point that at
   a Nerd Font and its glyphs work here like any other character.
 - Ready-made setups live in [`docs/rices/`](docs/rices/) and [`examples/configs/`](examples/configs/) (`minimal`, `catppuccin-studio`, `tokyo-power`, `tokyonight-storm`, `cyberpunk`, `vice-city`, `nord`, `gruvbox-blocks`, `dracula-squares`) — copy one and edit it,
-  or send yours in. Example helper scripts for `slat send`, `[shortcuts]`, and `[status.scripts]` live in [`examples/scripts/`](examples/scripts/).
+  or send yours in. Example helper scripts for `slat send`, `[shortcuts]`, and `[status.scripts]` live in [`examples/scripts/`](examples/scripts/), and the Neovim extension (`slat.nvim`) lives in [`examples/nvim/slat.nvim/`](examples/nvim/slat.nvim/).
 - Keybinds you don't set keep their defaults.
 - Giving a default key to another command takes it away from the default
   command, so bindings never silently collide.

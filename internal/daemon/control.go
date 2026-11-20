@@ -46,6 +46,12 @@ func (s *Server) run(req control.Request) control.Response {
 		return control.Response{Schema: control.Schema, Tree: a.ExportTree()}
 
 	case "focus":
+		if req.Direction != "" {
+			if err := a.FocusDirection(req.Direction); err != nil {
+				return control.Errorf(control.CodeError, "%v", err)
+			}
+			return control.Response{Schema: control.Schema}
+		}
 		a.FocusTarget(req.Workspace, req.Tab, req.PaneID)
 		return control.Response{Schema: control.Schema}
 

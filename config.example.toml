@@ -160,6 +160,13 @@ quit             = "q"
 # [shortcuts]
 # "Alt+1" = "~/.config/slat/scripts/save-note.sh"
 
+# Seamless Neovim/Vim split & pane navigation (prefix-less, single keystroke).
+# In normal panes, switches slat pane; when inside nvim/vim, passes the key
+# through so Neovim switches splits first and calls `slat focus` at the edge.
+[navigation]
+keys = "alt"               # "alt" (Alt+h/j/k/l, default), "ctrl" (Ctrl+h/j/k/l), or "off"
+apps = ["nvim", "vim"]     # foreground programs to pass navigation keys through to
+
 # ── 5. Clipboard & Agent Hooks ───────────────────────────────────────────────
 [copy]
 osc52 = true

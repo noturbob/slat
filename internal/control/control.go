@@ -40,6 +40,7 @@ type Request struct {
 	Timeout         string `json:"timeout,omitempty"`          // wait
 	TargetWorkspace string `json:"target_workspace,omitempty"` // workspace name or 1-based index
 	TargetTab       string `json:"target_tab,omitempty"`       // tab name or 1-based index
+	Direction       string `json:"direction,omitempty"`        // focus: left, down, up, right
 	Workspace       int    `json:"workspace,omitempty"`
 	Tab             int    `json:"tab,omitempty"`
 	PaneID          int    `json:"pane_id,omitempty"`

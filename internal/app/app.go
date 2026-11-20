@@ -700,6 +700,15 @@ func (a *App) FeedInput(buf []byte) {
 				i += n - 1
 				continue
 			}
+			if dir, n := matchNavigation(buf[i:], a.cfg.Navigation.Keys); n > 0 {
+				if a.isNavigationPassthrough() {
+					a.forward(buf[i : i+n])
+				} else {
+					a.selectPane(dir)
+				}
+				i += n - 1
+				continue
+			}
 		}
 
 		action := a.handler.ProcessByte(b)
@@ -898,6 +907,60 @@ func (a *App) selectPane(dir string) {
 		return
 	}
 	a.manager.SelectPaneInDirection(dir)
+}
+
+func matchNavigation(buf []byte, mode string) (dir string, consumed int) {
+	if len(buf) == 0 {
+		return "", 0
+	}
+	switch mode {
+	case "alt":
+		if len(buf) >= 2 && buf[0] == 0x1b {
+			switch buf[1] {
+			case 'h':
+				return "left", 2
+			case 'j':
+				return "down", 2
+			case 'k':
+				return "up", 2
+			case 'l':
+				return "right", 2
+			}
+		}
+	case "ctrl":
+		switch buf[0] {
+		case 0x08: // Ctrl-H
+			return "left", 1
+		case 0x0a: // Ctrl-J
+			return "down", 1
+		case 0x0b: // Ctrl-K
+			return "up", 1
+		case 0x0c: // Ctrl-L
+			return "right", 1
+		}
+	}
+	return "", 0
+}
+
+func (a *App) isNavigationPassthrough() bool {
+	if len(a.cfg.Navigation.Apps) == 0 {
+		return false
+	}
+	p := a.manager.ActivePane()
+	if p == nil {
+		return false
+	}
+	_, fg, _ := p.Foreground()
+	if fg == "" {
+		return false
+	}
+	base := filepath.Base(fg)
+	for _, appName := range a.cfg.Navigation.Apps {
+		if base == appName || fg == appName {
+			return true
+		}
+	}
+	return false
 }
 
 // ─── Prompt ─────────────────────────────────────────────────────────────────

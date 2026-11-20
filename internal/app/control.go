@@ -440,6 +440,20 @@ func (a *App) CaptureTarget(t PaneTarget, n int, history bool) ([]string, error)
 	return r.Pane.Capture(n, history), nil
 }
 
+// FocusDirection moves focus to the neighbouring pane in dir ("left", "down", "up", "right").
+func (a *App) FocusDirection(dir string) error {
+	switch dir {
+	case "left", "down", "up", "right":
+	default:
+		return fmt.Errorf("invalid direction %q (want left, down, up, right)", dir)
+	}
+	a.mu.Lock()
+	a.selectPane(dir)
+	a.mu.Unlock()
+	a.markDirty()
+	return nil
+}
+
 type errPaneGone struct{ id int }
 
 func (e errPaneGone) Error() string { return fmt.Sprintf("pane %d is gone", e.id) }

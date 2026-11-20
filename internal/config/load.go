@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -40,8 +41,16 @@ type Config struct {
 	Status     ui.StatusConfig   `toml:"status"`
 	Copy       Copy              `toml:"copy"`
 	Agent      Agent             `toml:"agent"`
+	Navigation Navigation        `toml:"navigation"`
 
 	PrefixKey input.Prefix `toml:"-"` // parsed Prefix
+}
+
+// Navigation configures direct, prefix-less pane navigation (e.g. Alt+h/j/k/l)
+// with passthrough for editors like Neovim that handle split navigation themselves.
+type Navigation struct {
+	Keys string   `toml:"keys"` // "alt" (default), "ctrl", or "off"
+	Apps []string `toml:"apps"` // foreground process names to pass keys through to
 }
 
 // Agent tunes how slat reports what a pane is doing, for `slat status`,
@@ -129,9 +138,17 @@ func DefaultConfig() *Config {
 		Copy:       Copy{OSC52: true},
 		Keybinds:   defaultKeybinds(),
 		Agent:      defaultAgent(),
+		Navigation: defaultNavigation(),
 	}
 	cfg.Agent.compile() // the built-in patterns are known good
 	return cfg
+}
+
+func defaultNavigation() Navigation {
+	return Navigation{
+		Keys: "alt",
+		Apps: []string{"nvim", "vim"},
+	}
 }
 
 // defaultAgent covers the prompts common tools stop on.
@@ -235,11 +252,11 @@ func Load() (*Config, error) {
 	return loadFile(Path(), true)
 }
 
-// LoadFrom reads the config file at path. Unlike Load, a missing file is an
-// error because the user explicitly pointed to it.
+// LoadFrom reads the config file at path, or falls back to Load() when path is
+// empty. Unlike Load, an explicit non-empty path that is missing is an error.
 func LoadFrom(path string) (*Config, error) {
-	if path == "" {
-		return nil, fmt.Errorf("config path must not be empty")
+	if strings.TrimSpace(path) == "" {
+		return Load()
 	}
 	return loadFile(path, false)
 }
@@ -380,6 +397,18 @@ func (cfg *Config) merge(user *Config, md toml.MetaData) error {
 			return err
 		}
 		cfg.Shortcuts = user.Shortcuts
+	}
+	if md.IsDefined("navigation", "keys") {
+		k := strings.ToLower(strings.TrimSpace(user.Navigation.Keys))
+		switch k {
+		case "", "off", "alt", "ctrl":
+			cfg.Navigation.Keys = k
+		default:
+			return fmt.Errorf("navigation.keys = %q: must be \"alt\", \"ctrl\", or \"off\"", user.Navigation.Keys)
+		}
+	}
+	if md.IsDefined("navigation", "apps") {
+		cfg.Navigation.Apps = user.Navigation.Apps
 	}
 	return nil
 }

@@ -169,3 +169,49 @@ func TestSendTargetAcrossWorkspacesAndTabs(t *testing.T) {
 		t.Errorf("PanesIn(ws-2): %v", err)
 	}
 }
+
+func TestNavigationKeysAndFocusDirection(t *testing.T) {
+	a, _ := start(t)
+
+	// Split vertically -> pane 1 (left) and pane 2 (right, active).
+	a.FeedInput([]byte{prefix, 'v'})
+	a.mu.Lock()
+	a.render()
+	if a.manager.ActivePane().ID != 2 {
+		a.mu.Unlock()
+		t.Fatalf("expected pane 2 active after split, got %d", a.manager.ActivePane().ID)
+	}
+	a.mu.Unlock()
+
+	// Default navigation.keys = "alt": Alt+h (\x1bh) switches to pane 1.
+	a.FeedInput([]byte("\x1bh"))
+	a.mu.Lock()
+	if a.manager.ActivePane().ID != 1 {
+		a.mu.Unlock()
+		t.Fatalf("expected pane 1 active after Alt+h, got %d", a.manager.ActivePane().ID)
+	}
+	a.mu.Unlock()
+
+	// FocusDirection("right") moves back to pane 2.
+	if err := a.FocusDirection("right"); err != nil {
+		t.Fatalf("FocusDirection(right): %v", err)
+	}
+	a.mu.Lock()
+	if a.manager.ActivePane().ID != 2 {
+		a.mu.Unlock()
+		t.Fatalf("expected pane 2 active after FocusDirection(right), got %d", a.manager.ActivePane().ID)
+	}
+	a.mu.Unlock()
+
+	// Ctrl mode (0x08 = Ctrl-H) when configured.
+	a.mu.Lock()
+	a.cfg.Navigation.Keys = "ctrl"
+	a.mu.Unlock()
+	a.FeedInput([]byte{0x08})
+	a.mu.Lock()
+	if a.manager.ActivePane().ID != 1 {
+		a.mu.Unlock()
+		t.Fatalf("expected pane 1 active after Ctrl-H, got %d", a.manager.ActivePane().ID)
+	}
+	a.mu.Unlock()
+}

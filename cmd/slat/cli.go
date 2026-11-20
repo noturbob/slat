@@ -24,6 +24,7 @@ const cliUsage = `slat commands (for scripts and agents):
   slat pane close PANE
   slat send PANE TEXT... [--enter] [--key KEY]
   slat run PANE COMMAND...               send COMMAND and press Enter
+  slat focus left|down|up|right          move pane focus in a direction
   slat capture PANE [--lines N] [--history]
   slat wait PANE --for idle|input|exit|text=REGEX [--timeout 60s]
 
@@ -44,7 +45,7 @@ func runCLI(sock string, args []string) (handled bool, code int) {
 		return false, 0
 	}
 	switch args[0] {
-	case "ls", "status", "pane", "send", "run", "capture", "wait":
+	case "ls", "status", "pane", "send", "run", "capture", "wait", "focus":
 	default:
 		return false, 0
 	}
@@ -122,9 +123,22 @@ func parseCLIWithSession(args []string) (control.Request, string, bool, error) {
 	}
 
 	// The first bare word is the pane for every command that takes one.
-	takesPane := req.Cmd != "ls" && req.Cmd != "pane-new"
+	takesPane := req.Cmd != "ls" && req.Cmd != "pane-new" && req.Cmd != "focus"
 	if takesPane && len(words) > 0 {
 		req.Pane, words = words[0], words[1:]
+	}
+
+	if req.Cmd == "focus" {
+		if len(words) != 1 {
+			return req, "", false, fmt.Errorf("focus needs a direction: left, down, up, or right")
+		}
+		switch words[0] {
+		case "left", "down", "up", "right":
+			req.Direction = words[0]
+		default:
+			return req, "", false, fmt.Errorf("focus: invalid direction %q (want left, down, up, right)", words[0])
+		}
+		return req, *flagSession, *asJSON, nil
 	}
 
 	sess, ws, tab, paneSpec, err := parseTarget(req.Pane, *flagSession, *flagWS, *flagTab)

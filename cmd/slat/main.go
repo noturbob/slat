@@ -177,18 +177,13 @@ func extractConfigFlag(args []string) (configPath string, rest []string, err err
 			configPath = args[i]
 		case strings.HasPrefix(a, "--config="):
 			configPath = strings.TrimPrefix(a, "--config=")
-			if configPath == "" {
-				return "", nil, fmt.Errorf("--config= needs a config file path")
-			}
 		case strings.HasPrefix(a, "-c="):
 			configPath = strings.TrimPrefix(a, "-c=")
-			if configPath == "" {
-				return "", nil, fmt.Errorf("-c= needs a config file path")
-			}
 		default:
 			rest = append(rest, a)
 		}
 	}
+	configPath = strings.TrimSpace(configPath)
 	if configPath != "" {
 		if abs, absErr := filepath.Abs(configPath); absErr == nil {
 			configPath = abs

@@ -320,6 +320,17 @@ fallback = "{fg=red}err{/}"
 	if cfgScripts.Status.Scripts["git"].Command != "git branch --show-current" {
 		t.Errorf("Status.Scripts[git] = %+v", cfgScripts.Status.Scripts["git"])
 	}
+
+	if cfgScripts.Navigation.Keys != "alt" {
+		t.Errorf("default Navigation.Keys = %q, want alt", cfgScripts.Navigation.Keys)
+	}
+	cfgNav, err := load(t, "[navigation]\nkeys = \"ctrl\"\napps = [\"nvim\"]\n")
+	if err != nil || cfgNav.Navigation.Keys != "ctrl" || len(cfgNav.Navigation.Apps) != 1 {
+		t.Errorf("custom navigation = (%+v, %v)", cfgNav.Navigation, err)
+	}
+	if _, err := load(t, "[navigation]\nkeys = \"bad\"\n"); err == nil {
+		t.Errorf("expected error for invalid navigation.keys")
+	}
 }
 
 // Every rice in the gallery must load: a broken example is worse than none.
@@ -362,6 +373,9 @@ func TestExampleConfigsLoad(t *testing.T) {
 		if _, err := LoadFrom(path); err != nil {
 			t.Errorf("LoadFrom(%s): %v", path, err)
 		}
+	}
+	if _, err := LoadFrom(""); err != nil {
+		t.Errorf("LoadFrom(\"\") should fall back to default Load(): %v", err)
 	}
 	if _, err := LoadFrom(filepath.Join(t.TempDir(), "missing.toml")); err == nil {
 		t.Errorf("LoadFrom on missing file should have failed")

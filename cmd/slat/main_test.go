@@ -90,6 +90,13 @@ func TestExtractConfigFlag(t *testing.T) {
 		t.Errorf("-c= got (%q, %v, %v)", cfg2, rest2, err)
 	}
 
+	for _, emptyArgs := range [][]string{{"--config="}, {"-c="}, {"--config", ""}} {
+		c, _, err := extractConfigFlag(emptyArgs)
+		if err != nil || c != "" {
+			t.Errorf("%v: got (%q, %v), want empty configPath", emptyArgs, c, err)
+		}
+	}
+
 	if _, _, err := extractConfigFlag([]string{"--config"}); err == nil {
 		t.Errorf("expected error for missing --config argument")
 	}

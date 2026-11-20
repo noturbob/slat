@@ -119,3 +119,13 @@ func TestResolveSessionSocket(t *testing.T) {
 		t.Errorf("expected error for ambiguous session")
 	}
 }
+
+func TestParseCLIFocusDirection(t *testing.T) {
+	req, _, _, err := parseCLIWithSession([]string{"focus", "up"})
+	if err != nil || req.Cmd != "focus" || req.Direction != "up" {
+		t.Fatalf("focus up = (%+v, %v)", req, err)
+	}
+	if _, _, _, err := parseCLIWithSession([]string{"focus", "diagonal"}); err == nil {
+		t.Errorf("expected error for invalid focus direction")
+	}
+}
