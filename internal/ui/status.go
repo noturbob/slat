@@ -523,8 +523,9 @@ func parseStyleTag(inner string) (styleSpec, error) {
 			case "tab", "pane", "default":
 				ref = colorRef{set: true, dynamic: v}
 			default:
-				if _, ok := themeColor(v); ok {
-					ref = colorRef{set: true, dynamic: v}
+				norm := strings.TrimPrefix(v, "theme.")
+				if _, ok := themeColor(norm); ok {
+					ref = colorRef{set: true, dynamic: norm}
 				} else {
 					c, err := ParseColor(v)
 					if err != nil {
@@ -627,7 +628,9 @@ func compileFormat(format string) []compiledPart {
 // safe literal text rather than corrupting the bar.
 func compileDynamicFormat(raw string) []compiledPart {
 	clean := strings.TrimRight(raw, "\r\n")
-	clean = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ").Replace(clean)
+	if strings.ContainsAny(clean, "\r\n\t") {
+		clean = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ").Replace(clean)
+	}
 	parts := splitFormat(clean)
 	out := make([]compiledPart, len(parts))
 	for i, p := range parts {

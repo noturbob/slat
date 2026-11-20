@@ -88,7 +88,8 @@ type App struct {
 	statusTabActivePane   []int
 	statusTabActivePaneID []int
 	scriptOutputs         map[string]string
-	preset              *session.Preset
+	statusScripts         map[string]string
+	preset                *session.Preset
 }
 
 type prompt struct {
@@ -583,10 +584,15 @@ func (a *App) statusOfBar(now time.Time) ui.Status {
 		st.Message = a.message
 	}
 	if len(a.scriptOutputs) > 0 {
-		st.Scripts = make(map[string]string, len(a.scriptOutputs))
-		for k, v := range a.scriptOutputs {
-			st.Scripts[k] = v
+		if a.statusScripts == nil {
+			a.statusScripts = make(map[string]string, len(a.scriptOutputs))
+		} else {
+			clear(a.statusScripts)
 		}
+		for k, v := range a.scriptOutputs {
+			a.statusScripts[k] = v
+		}
+		st.Scripts = a.statusScripts
 	}
 	return st
 }

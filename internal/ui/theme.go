@@ -194,10 +194,8 @@ func isTransparent(s string) bool {
 
 var activeTheme = themes["default"]
 
-// themeColor resolves a [theme] colour name (or "theme.<name>") from the
-// currently applied theme.
-func themeColor(name string) (vt.Color, bool) {
-	key := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(name)), "theme.")
+// themeColor resolves a normalized [theme] colour key from the currently applied theme.
+func themeColor(key string) (vt.Color, bool) {
 	switch key {
 	case "bg":
 		return activeTheme.Bg, true
