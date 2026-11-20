@@ -82,6 +82,12 @@ var themes = map[string]Theme{
 		TabBg: vt.RGB(0x16, 0x16, 0x1e), TabFg: vt.RGB(0xa9, 0xb1, 0xd6),
 		TabActiveBg: vt.RGB(0x7a, 0xa2, 0xf7), TabActiveFg: vt.RGB(0x1a, 0x1b, 0x26),
 	},
+	"tokyonight-storm": {
+		Bg: vt.RGB(0x24, 0x28, 0x3b), Fg: vt.RGB(0xc0, 0xca, 0xf5), Dim: vt.RGB(0xa9, 0xb1, 0xd6),
+		Accent: vt.RGB(0x7a, 0xa2, 0xf7), Border: vt.RGB(0x3b, 0x42, 0x61),
+		TabBg: vt.RGB(0x1f, 0x23, 0x35), TabFg: vt.RGB(0xa9, 0xb1, 0xd6),
+		TabActiveBg: vt.RGB(0x7a, 0xa2, 0xf7), TabActiveFg: vt.RGB(0x1f, 0x23, 0x35),
+	},
 	"dracula": {
 		Bg: vt.RGB(0x44, 0x47, 0x5a), Fg: vt.RGB(0xf8, 0xf8, 0xf2), Dim: vt.RGB(0xa4, 0xac, 0xd4),
 		Accent: vt.RGB(0xbd, 0x93, 0xf9), Border: vt.RGB(0x62, 0x72, 0xa4),
@@ -100,6 +106,18 @@ var themes = map[string]Theme{
 		Accent: vt.Indexed(0), Border: vt.Indexed(8),
 		TabBg: vt.Indexed(7), TabFg: vt.Indexed(0),
 		TabActiveBg: vt.Indexed(0), TabActiveFg: vt.Indexed(15),
+	},
+	"cyberpunk": {
+		Bg: vt.RGB(0x0d, 0x0e, 0x1a), Fg: vt.RGB(0xe2, 0xf1, 0xff), Dim: vt.RGB(0x7c, 0x8a, 0xb8),
+		Accent: vt.RGB(0xfc, 0xee, 0x09), Border: vt.RGB(0x2d, 0x35, 0x61),
+		TabBg: vt.RGB(0x16, 0x18, 0x2c), TabFg: vt.RGB(0x00, 0xf0, 0xff),
+		TabActiveBg: vt.RGB(0xff, 0x2a, 0x6d), TabActiveFg: vt.RGB(0x0d, 0x0e, 0x1a),
+	},
+	"vice-city": {
+		Bg: vt.RGB(0x1a, 0x10, 0x2b), Fg: vt.RGB(0xf8, 0xe8, 0xff), Dim: vt.RGB(0xa6, 0x8c, 0xc8),
+		Accent: vt.RGB(0xff, 0x6e, 0xc7), Border: vt.RGB(0x4a, 0x2c, 0x6d),
+		TabBg: vt.RGB(0x24, 0x16, 0x3b), TabFg: vt.RGB(0xd8, 0xc4, 0xf0),
+		TabActiveBg: vt.RGB(0x36, 0xf9, 0xf6), TabActiveFg: vt.RGB(0x1a, 0x10, 0x2b),
 	},
 }
 
@@ -174,8 +192,49 @@ func isTransparent(s string) bool {
 	return false
 }
 
+var activeTheme = themes["default"]
+
+// themeColor resolves a [theme] colour name (or "theme.<name>") from the
+// currently applied theme.
+func themeColor(name string) (vt.Color, bool) {
+	key := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(name)), "theme.")
+	switch key {
+	case "bg":
+		return activeTheme.Bg, true
+	case "fg":
+		return activeTheme.Fg, true
+	case "dim":
+		return activeTheme.Dim, true
+	case "accent":
+		return activeTheme.Accent, true
+	case "border":
+		return activeTheme.Border, true
+	case "status_bg":
+		return styleBar.Bg, true
+	case "tab_bg":
+		return activeTheme.TabBg, true
+	case "tab_fg":
+		return activeTheme.TabFg, true
+	case "tab_active_bg":
+		return activeTheme.TabActiveBg, true
+	case "tab_active_fg":
+		return activeTheme.TabActiveFg, true
+	case "prefix_fg":
+		return stylePrefix.Fg, true
+	case "prefix_bg":
+		return stylePrefix.Bg, true
+	case "prefix_active_fg":
+		return stylePrefixActive.Fg, true
+	case "prefix_active_bg":
+		return stylePrefixActive.Bg, true
+	default:
+		return 0, false
+	}
+}
+
 // Apply makes t the theme everything drawn from now on uses.
 func (t Theme) Apply() {
+	activeTheme = t
 	barBg := t.Bg
 	if t.HasStatusBg {
 		barBg = t.StatusBg

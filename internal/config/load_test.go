@@ -341,3 +341,29 @@ func TestGalleryRicesLoad(t *testing.T) {
 		}
 	}
 }
+
+func TestExampleConfigsLoad(t *testing.T) {
+	paths, err := filepath.Glob("../../examples/configs/*.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) < 5 {
+		t.Fatalf("expected at least 5 example configs, got %d", len(paths))
+	}
+	paths = append(paths, "../../config.example.toml")
+	for _, path := range paths {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := load(t, string(body)); err != nil {
+			t.Errorf("%s: %v", path, err)
+		}
+		if _, err := LoadFrom(path); err != nil {
+			t.Errorf("LoadFrom(%s): %v", path, err)
+		}
+	}
+	if _, err := LoadFrom(filepath.Join(t.TempDir(), "missing.toml")); err == nil {
+		t.Errorf("LoadFrom on missing file should have failed")
+	}
+}

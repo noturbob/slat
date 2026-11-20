@@ -762,3 +762,41 @@ func TestCurrentPaneAndIDGlyphsAndPaneIDBadge(t *testing.T) {
 		t.Errorf("expected error for unknown placeholder in pane_id")
 	}
 }
+
+func TestStatusThemeColorTags(t *testing.T) {
+	cfg := DefaultStatusConfig()
+	cfg.Right = "{fg=accent,bg=tab_bg,bold}X{/}{fg=theme.dim}Y{/}"
+	f, err := ParseStatusConfig(cfg)
+	if err != nil {
+		t.Fatalf("ParseStatusConfig: %v", err)
+	}
+
+	themes["cyberpunk"].Apply()
+	fr := NewFrame(40, 1)
+	DrawStatusBar(fr, 0, Status{Workspace: "main", Tabs: []string{"sh"}}, f)
+	xCol, yCol := -1, -1
+	for i, c := range fr.Lines[0] {
+		switch c.R {
+		case 'X':
+			xCol = i
+		case 'Y':
+			yCol = i
+		}
+	}
+	if xCol < 0 || yCol < 0 {
+		t.Fatalf("missing X or Y in %q", row(fr, 0))
+	}
+	if fr.Lines[0][xCol].Style.Fg != themes["cyberpunk"].Accent || fr.Lines[0][xCol].Style.Bg != themes["cyberpunk"].TabBg {
+		t.Errorf("cyberpunk X style = %+v, want accent fg & tab_bg", fr.Lines[0][xCol].Style)
+	}
+	if fr.Lines[0][yCol].Style.Fg != themes["cyberpunk"].Dim {
+		t.Errorf("cyberpunk Y style = %+v, want dim fg", fr.Lines[0][yCol].Style)
+	}
+
+	themes["vice-city"].Apply()
+	fr2 := NewFrame(40, 1)
+	DrawStatusBar(fr2, 0, Status{Workspace: "main", Tabs: []string{"sh"}}, f)
+	if fr2.Lines[0][xCol].Style.Fg != themes["vice-city"].Accent {
+		t.Errorf("vice-city X style = %+v, want vice-city accent fg", fr2.Lines[0][xCol].Style)
+	}
+}

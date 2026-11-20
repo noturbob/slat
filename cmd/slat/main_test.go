@@ -72,3 +72,25 @@ func TestResolveSessionPreset(t *testing.T) {
 		t.Errorf("resolveSessionPreset(path) = %q, %v", directPath, err)
 	}
 }
+
+func TestExtractConfigFlag(t *testing.T) {
+	cfg, rest, err := extractConfigFlag([]string{"--config", "examples/configs/cyberpunk.toml", "session", "work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !filepath.IsAbs(cfg) || !strings.HasSuffix(cfg, filepath.Join("examples", "configs", "cyberpunk.toml")) {
+		t.Errorf("cfg = %q, want abs path ending in examples/configs/cyberpunk.toml", cfg)
+	}
+	if strings.Join(rest, " ") != "session work" {
+		t.Errorf("rest = %v, want [session work]", rest)
+	}
+
+	cfg2, rest2, err := extractConfigFlag([]string{"-c=/tmp/custom.toml", "attach"})
+	if err != nil || cfg2 != "/tmp/custom.toml" || strings.Join(rest2, " ") != "attach" {
+		t.Errorf("-c= got (%q, %v, %v)", cfg2, rest2, err)
+	}
+
+	if _, _, err := extractConfigFlag([]string{"--config"}); err == nil {
+		t.Errorf("expected error for missing --config argument")
+	}
+}

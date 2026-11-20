@@ -1,0 +1,45 @@
+# Tokyo Power — heavy borders, Unicode index & pane ID glyphs, live git status,
+# and direct Alt+1 scripting.
+# Copy to ~/.config/slat/config.toml to use.
+
+prefix      = "C-s"
+status_bar  = true
+auto_rename = true
+animations  = true
+
+[animation]
+split  = "90ms"
+move   = "110ms"
+easing = "out-cubic"
+
+[theme]
+name = "tokyo-night"
+
+[borders]
+style = "heavy"
+
+[status]
+left           = "{prefix}{fg=tab_active_fg,bg=tab_active_bg,bold} {session} {/} {fg=accent}{workspace}{/} │ {tabs}"
+right          = "{script:git} {badge}{workspaces} {fg=pane}{current_pane_id_glyph}{/} {pane}/{panes} {fg=dim}{time}{/} "
+tab            = " {tab_index_glyph} {name} {current_pane_glyph}{alert} "
+tab_sep        = "{fg=border}│{/}"
+alert          = "{fg=bright-red,bold} ●{/}"
+prefix         = "{fg=fg,bg=tab_bg} · {/}"
+prefix_active  = "{fg=bg,bg=accent,bold} ★ {/}"
+pane_id        = "{fg=fg,bg=tab_bg} id:{id} {/}"
+pane_id_active = "{fg=bg,bg=accent,bold} id:{id} {/}"
+pane_colors    = ["cyan", "magenta", "yellow", "green"]
+tab_index_glyphs            = ["0", "Ⅰ", "Ⅱ", "Ⅲ", "Ⅳ", "Ⅴ", "Ⅵ", "Ⅶ", "Ⅷ", "Ⅸ"]
+current_pane_glyphs         = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"]
+current_pane_zoom_glyphs    = ["𝟎", "𝟏", "𝟐", "𝟑", "𝟒", "𝟓", "𝟔", "𝟕", "𝟖", "𝟗"]
+current_pane_id_glyphs      = ["⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"]
+current_pane_id_zoom_glyphs = ["⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"]
+
+[status.scripts.git]
+command  = "git -C \"$SLAT_PANE_CWD\" branch --show-current 2>/dev/null | sed 's/.*/{fg=accent}[&]{\\/}/'"
+interval = "5s"
+timeout  = "2s"
+fallback = ""
+
+[shortcuts]
+"Alt+1" = "~/.config/slat/scripts/save-note.sh"

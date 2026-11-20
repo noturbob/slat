@@ -1,0 +1,57 @@
+# Tokyo Night Storm — slate storm background (#24283b), electric blue accent,
+# and Dingbat sans-serif circled / Roman / parenthesized glyph sets.
+# Copy to ~/.config/slat/config.toml to use.
+
+prefix      = "C-s"
+status_bar  = true
+auto_rename = true
+mouse       = true
+restore     = true
+animations  = true
+
+[animation]
+split  = "85ms"
+move   = "110ms"
+easing = "out-cubic"
+reveal = "curtain"
+glyph  = "░"
+
+[splash]
+enabled  = true
+duration = "600ms"
+subtitle = "tokyonight storm · {version}"
+hint     = "{prefix} ? keys · {prefix} i pane IDs"
+
+[theme]
+name = "tokyonight-storm"
+
+[borders]
+style = "rounded"
+
+[status]
+left           = "{prefix} {fg=bg,bg=accent,bold} {workspace} {/} {tabs}"
+right          = "{script:git} {badge}{workspaces} {fg=dim}{pane}/{panes}{/} {fg=accent}{time}{/} "
+tab            = " {tab_glyph} {tab_index_glyph} {name} {current_pane_glyph}{alert} "
+tab_active     = "{fg=tab_active_fg,bg=tab_active_bg,bold} {tab_glyph} {tab_index_glyph} {name} {current_pane_id_glyph}{alert} {/}"
+tab_sep        = " "
+alert          = "{fg=red,bold} ●{/}"
+prefix         = "{fg=dim,bg=tab_bg}  {/}"
+prefix_active  = "{fg=bg,bg=accent,bold} ⚡{/}"
+pane_id        = "{fg=tab_fg,bg=tab_bg} #{id} {/}"
+pane_id_active = "{fg=bg,bg=accent,bold} #{id} {/}"
+tab_glyphs                  = ["◈", "◇", "❖", "✦"]
+tab_zoom_glyph              = "◆"
+tab_index_glyphs            = ["0", "➀", "➁", "➂", "➃", "➄", "➅", "➆", "➇", "➈"]
+current_pane_glyphs         = ["⓿", "➊", "➋", "➌", "➍", "➎", "➏", "➐", "➑", "➒"]
+current_pane_zoom_glyphs    = ["𝟘", "𝟙", "𝟚", "𝟛", "𝟜", "𝟝", "𝟞", "𝟟", "𝟠", "𝟡"]
+current_pane_id_glyphs      = ["0", "⑴", "⑵", "⑶", "⑷", "⑸", "⑹", "⑺", "⑻", "⑼"]
+current_pane_id_zoom_glyphs = ["0", "ⅰ", "ⅱ", "ⅲ", "ⅳ", "ⅴ", "ⅵ", "ⅶ", "ⅷ", "ⅸ"]
+
+[status.scripts.git]
+command  = "git -C \"$SLAT_PANE_CWD\" branch --show-current 2>/dev/null | sed 's/.*/{fg=accent}git:&{\\/}/'"
+interval = "5s"
+timeout  = "2s"
+fallback = ""
+
+[shortcuts]
+"Alt+1" = "~/.config/slat/scripts/save-note.sh"

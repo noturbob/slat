@@ -431,7 +431,7 @@ Tune the detection under `[agent]` in the config; see
 
 ## Configuration
 
-slat reads `~/.config/slat/config.toml` (or `$XDG_CONFIG_HOME/slat/config.toml`).
+slat reads `~/.config/slat/config.toml` (or `$XDG_CONFIG_HOME/slat/config.toml`), or pass `-c` / `--config PATH` (for example, `slat --config examples/configs/cyberpunk.toml`).
 Every setting is optional:
 
 ```toml
@@ -497,9 +497,11 @@ alert = " ●"
 # prefix_active    = "{fg=#1e1e2e,bg=#f9e2af,bold}   {/}"
 # tab_glyphs       = ["■"]
 # tab_zoom_glyph   = "▣"
-# tab_index_glyphs = ["⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"]
-# pane_glyphs      = ["₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"]
-# pane_zoom_glyphs = ["⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"]
+# tab_index_glyphs         = ["⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"]
+# pane_glyphs              = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"]
+# pane_zoom_glyphs         = ["⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"]
+# current_pane_glyphs      = ["₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"]
+# current_pane_id_glyphs   = ["𝟘", "𝟙", "𝟚", "𝟛", "𝟜", "𝟝", "𝟞", "𝟟", "𝟠", "𝟡"]
 # tab_colors       = ["cyan", "magenta", "yellow", "green", "blue"]
 # pane_colors      = ["208", "44", "#a6e3a1"]
 
@@ -533,8 +535,8 @@ zoom             = ""     # "" unbinds a command
   in the top-right corner of each pane with `identify-panes`, default `prefix`
   + `i`) accept `{id}` `{index}` `{pane_glyph}` `{current_pane_id_glyph}`; and
   `tab_sep` (default `" "`, set to `""` to remove space between tabs) is drawn
-  between tabs. Inline style tags like `{fg=cyan,bg=236,bold}🐟{/}` colour any Unicode glyph or span (using a colour name, 0–255 index, `#rrggbb`
-  hex, or `tab`/`pane` to pick from `tab_colors`/`pane_colors` by index). When
+  between tabs. Inline style tags like `{fg=cyan,bg=236,bold}🐟{/}` or `{fg=accent,bg=tab_bg}●{/}` colour any Unicode glyph or span (using a colour name, 0–255 index, `#rrggbb`
+  hex, an active `[theme]` key such as `accent`, `bg`, `fg`, `dim`, `status_bg`, `tab_bg`, `tab_fg`, `tab_active_bg`, `tab_active_fg`, or `tab`/`pane` to pick from `tab_colors`/`pane_colors` by index). When
   `{prefix}` is used, `{badge}` omits `"PREFIX"`; when `{zoom}`,
   `tab_zoom_glyph`, or `pane_zoom_glyphs` is used, `{badge}` omits `"ZOOM"`.
 - `[status.scripts.<name>]` runs a shell command on an `interval` (default
@@ -557,8 +559,8 @@ zoom             = ""     # "" unbinds a command
 - **Fonts belong to your terminal, not to slat.** slat draws characters; which
   font paints them is Kitty's, Alacritty's or WezTerm's business. Point that at
   a Nerd Font and its glyphs work here like any other character.
-- Ready-made setups live in [`docs/rices/`](docs/rices/) — copy one and edit it,
-  or send yours in.
+- Ready-made setups live in [`docs/rices/`](docs/rices/) and [`examples/configs/`](examples/configs/) (`minimal`, `catppuccin-studio`, `tokyo-power`, `tokyonight-storm`, `cyberpunk`, `vice-city`, `nord`, `gruvbox-blocks`, `dracula-squares`) — copy one and edit it,
+  or send yours in. Example helper scripts for `slat send`, `[shortcuts]`, and `[status.scripts]` live in [`examples/scripts/`](examples/scripts/).
 - Keybinds you don't set keep their defaults.
 - Giving a default key to another command takes it away from the default
   command, so bindings never silently collide.

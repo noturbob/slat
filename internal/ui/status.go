@@ -523,11 +523,15 @@ func parseStyleTag(inner string) (styleSpec, error) {
 			case "tab", "pane", "default":
 				ref = colorRef{set: true, dynamic: v}
 			default:
-				c, err := ParseColor(v)
-				if err != nil {
-					return spec, fmt.Errorf("{%s}: %w", inner, err)
+				if _, ok := themeColor(v); ok {
+					ref = colorRef{set: true, dynamic: v}
+				} else {
+					c, err := ParseColor(v)
+					if err != nil {
+						return spec, fmt.Errorf("{%s}: %w", inner, err)
+					}
+					ref = colorRef{set: true, color: c}
 				}
-				ref = colorRef{set: true, color: c}
 			}
 			switch k {
 			case "fg":
@@ -589,6 +593,11 @@ func resolveColorRef(ref colorRef, ctx styleCtx) vt.Color {
 	case "default":
 		return vt.DefaultColor
 	default:
+		if ref.dynamic != "" {
+			if c, ok := themeColor(ref.dynamic); ok {
+				return c
+			}
+		}
 		return ref.color
 	}
 }

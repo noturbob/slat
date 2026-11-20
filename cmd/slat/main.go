@@ -22,12 +22,14 @@ import (
 const usage = `slat — a terminal multiplexer
 
 usage:
-  slat                   attach to this directory's session (starting it if needed)
-  slat attach [NAME|DIR] attach to a session by name or directory
-  slat session NAME|PATH start or attach to a preconfigured session TOML
-  slat sessions [--json] list running sessions
-  slat --version         print the version
-  slat --help            show this help and the command reference
+  slat [-c|--config PATH]             attach to this directory's session (starting it if needed)
+  slat [-c|--config PATH] attach [NAME|DIR]
+                                      attach to a session by name or directory
+  slat [-c|--config PATH] session NAME|PATH
+                                      start or attach to a preconfigured session TOML
+  slat sessions [--json]              list running sessions
+  slat --version                      print the version
+  slat --help                         show this help and the command reference
 
 Inside slat, press the prefix (Ctrl-S by default) then ? for keybindings.
 Config: %s
@@ -97,15 +99,21 @@ func main() {
 		app.Version = info.Main.Version
 	}
 	args := os.Args[1:]
-	switch {
-	case len(args) == 0:
-	case args[0] == "__daemon":
+	if len(args) > 0 && args[0] == "__daemon" {
 		// Hidden: slat re-execs itself with this to become the daemon.
 		if err := runDaemon(args[1:]); err != nil {
 			fmt.Fprintf(os.Stderr, "slat: %v\n", err)
 			os.Exit(1)
 		}
 		return
+	}
+	configPath, args, err := extractConfigFlag(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "slat: %v\n", err)
+		os.Exit(2)
+	}
+	switch {
+	case len(args) == 0:
 	case args[0] == "-v" || args[0] == "--version" || args[0] == "version":
 		fmt.Println("slat", app.Version)
 		return
@@ -121,7 +129,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "slat: %v\n", err)
 			os.Exit(1)
 		}
-		if err := runClientWithPreset(sock, dir, presetPath); err != nil {
+		if err := runClientWithConfig(sock, dir, presetPath, configPath); err != nil {
 			fmt.Fprintf(os.Stderr, "slat: %v\n", err)
 			os.Exit(1)
 		}
@@ -132,7 +140,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "slat: %v\n", err)
 			os.Exit(1)
 		}
-		if err := runClientAt(sock, dir); err != nil {
+		if err := runClientWithConfig(sock, dir, "", configPath); err != nil {
 			fmt.Fprintf(os.Stderr, "slat: %v\n", err)
 			os.Exit(1)
 		}
@@ -146,10 +154,47 @@ func main() {
 		os.Exit(2)
 	}
 
-	if err := runClient(); err != nil {
+	if err := runClientWithConfig(socketPath(), "", "", configPath); err != nil {
 		fmt.Fprintf(os.Stderr, "slat: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func extractConfigFlag(args []string) (configPath string, rest []string, err error) {
+	rest = make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			rest = append(rest, args[i:]...)
+			break
+		}
+		switch {
+		case a == "-c" || a == "--config":
+			if i+1 >= len(args) {
+				return "", nil, fmt.Errorf("%s needs a config file path", a)
+			}
+			i++
+			configPath = args[i]
+		case strings.HasPrefix(a, "--config="):
+			configPath = strings.TrimPrefix(a, "--config=")
+			if configPath == "" {
+				return "", nil, fmt.Errorf("--config= needs a config file path")
+			}
+		case strings.HasPrefix(a, "-c="):
+			configPath = strings.TrimPrefix(a, "-c=")
+			if configPath == "" {
+				return "", nil, fmt.Errorf("-c= needs a config file path")
+			}
+		default:
+			rest = append(rest, a)
+		}
+	}
+	if configPath != "" {
+		if abs, absErr := filepath.Abs(configPath); absErr == nil {
+			configPath = abs
+		}
+	}
+	return configPath, rest, nil
 }
 
 func resolveAttach(args []string) (sock, dir string, err error) {
@@ -196,11 +241,30 @@ func resolveSessionPreset(args []string) (sock, dir, presetPath string, err erro
 }
 
 func runDaemon(args []string) error {
-	var presetPath string
-	if len(args) >= 2 && args[0] == "--session" {
-		presetPath = args[1]
+	var presetPath, configPath string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--session":
+			if i+1 < len(args) {
+				i++
+				presetPath = args[i]
+			}
+		case "--config":
+			if i+1 < len(args) {
+				i++
+				configPath = args[i]
+			}
+		}
 	}
-	cfg, err := config.Load()
+	var (
+		cfg *config.Config
+		err error
+	)
+	if configPath != "" {
+		cfg, err = config.LoadFrom(configPath)
+	} else {
+		cfg, err = config.Load()
+	}
 	if err != nil {
 		return err
 	}
@@ -218,15 +282,7 @@ func runDaemon(args []string) error {
 	return srv.Run()
 }
 
-func runClient() error {
-	return runClientWithPreset(socketPath(), "", "")
-}
-
-func runClientAt(sock, dir string) error {
-	return runClientWithPreset(sock, dir, "")
-}
-
-func runClientWithPreset(sock, dir, presetPath string) error {
+func runClientWithConfig(sock, dir, presetPath, configPath string) error {
 	if os.Getenv("SLAT") != "" {
 		return fmt.Errorf("already inside a slat session (unset SLAT to force)")
 	}
@@ -237,10 +293,16 @@ func runClientWithPreset(sock, dir, presetPath string) error {
 			}
 			// The daemon has no terminal to report errors on, so catch a
 			// broken config here, where the user can see it.
-			if _, err := config.Load(); err != nil {
+			var err error
+			if configPath != "" {
+				_, err = config.LoadFrom(configPath)
+			} else {
+				_, err = config.Load()
+			}
+			if err != nil {
 				return err
 			}
-			if err := spawnDaemon(sock, dir, presetPath); err != nil {
+			if err := spawnDaemon(sock, dir, presetPath, configPath); err != nil {
 				return fmt.Errorf("failed to start daemon: %w", err)
 			}
 			if err := waitForSocket(sock, 3*time.Second); err != nil {
@@ -279,7 +341,7 @@ func daemonAlive(sock string) bool {
 	return true
 }
 
-func spawnDaemon(sock, dir, presetPath string) error {
+func spawnDaemon(sock, dir, presetPath, configPath string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -301,6 +363,9 @@ func spawnDaemon(sock, dir, presetPath string) error {
 			presetPath = abs
 		}
 		daemonArgs = append(daemonArgs, "--session", presetPath)
+	}
+	if configPath != "" {
+		daemonArgs = append(daemonArgs, "--config", configPath)
 	}
 	cmd := exec.Command(exe, daemonArgs...)
 	if dir != "" {

@@ -229,17 +229,29 @@ func Path() string {
 	return filepath.Join(dir, "slat", "config.toml")
 }
 
-// Load reads the config file, falling back to defaults for anything unset.
-// A config that can't be honored exactly is an error, not a silent guess.
+// Load reads the default config file, falling back to defaults if it does
+// not exist. A config that can't be honored exactly is an error.
 func Load() (*Config, error) {
+	return loadFile(Path(), true)
+}
+
+// LoadFrom reads the config file at path. Unlike Load, a missing file is an
+// error because the user explicitly pointed to it.
+func LoadFrom(path string) (*Config, error) {
+	if path == "" {
+		return nil, fmt.Errorf("config path must not be empty")
+	}
+	return loadFile(path, false)
+}
+
+func loadFile(path string, allowMissing bool) (*Config, error) {
 	cfg := DefaultConfig()
-	path := Path()
 	if path == "" {
 		return cfg, nil
 	}
 	user := &Config{StatusBar: true, Animations: true, AutoRename: true}
 	md, err := toml.DecodeFile(path, user)
-	if errors.Is(err, os.ErrNotExist) {
+	if allowMissing && errors.Is(err, os.ErrNotExist) {
 		return cfg, nil
 	}
 	if err != nil {

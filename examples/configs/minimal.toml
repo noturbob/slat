@@ -1,0 +1,27 @@
+# Minimal — fast, distraction-free setup.
+# Copy to ~/.config/slat/config.toml to use.
+
+prefix      = "C-s"
+status_bar  = true
+auto_rename = true
+animations  = false
+
+[splash]
+enabled = false
+
+[borders]
+style = "none"
+
+[theme]
+name = "default"
+
+[status]
+left           = " {tabs}"
+tab            = " {index}:{name}{current_pane_glyph}{alert} "
+tab_active     = "{fg=tab_active_fg,bg=tab_active_bg,bold} {index}:{name}{current_pane_glyph}{alert} {/}"
+right          = "{badge} {fg=dim}{pane}/{panes}{/} "
+alert          = "{fg=red,bold}!{/}"
+pane_id        = "{fg=fg,bg=tab_bg} {id} {/}"
+pane_id_active = "{fg=bg,bg=accent,bold} {id} {/}"
+current_pane_glyphs      = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"]
+current_pane_zoom_glyphs = ["𝟎", "𝟏", "𝟐", "𝟑", "𝟒", "𝟓", "𝟔", "𝟕", "𝟖", "𝟗"]
