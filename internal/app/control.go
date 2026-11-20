@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/noturbob/slat/internal/layout"
 	"github.com/noturbob/slat/internal/pane"
 	"github.com/noturbob/slat/internal/session"
 )
@@ -42,6 +43,24 @@ func (a *App) Panes() []PaneInfo {
 	return a.panes(true)
 }
 
+// PanesIn lists panes, optionally filtered by workspace and/or tab (by name or 1-based index).
+func (a *App) PanesIn(wsSpec, tabSpec string) ([]PaneInfo, error) {
+	if wsSpec == "" && tabSpec == "" {
+		return a.panes(true), nil
+	}
+	a.mu.Lock()
+	refs, err := a.scopedPanesLocked(wsSpec, tabSpec)
+	a.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]PaneInfo, 0, len(refs))
+	for _, r := range refs {
+		out = append(out, a.infoFor(r, true))
+	}
+	return out, nil
+}
+
 // panesStatus lists every pane without querying Cwd, for periodic polling.
 func (a *App) panesStatus() []PaneInfo {
 	return a.panes(false)
@@ -61,7 +80,12 @@ func (a *App) panes(includeCwd bool) []PaneInfo {
 
 // PaneInfo returns one pane's status. spec is a pane id or "active".
 func (a *App) PaneInfo(spec string) (PaneInfo, error) {
-	r, err := a.ref(spec)
+	return a.PaneInfoTarget(PaneTarget{Pane: spec})
+}
+
+// PaneInfoTarget returns one pane's status for a scoped target.
+func (a *App) PaneInfoTarget(t PaneTarget) (PaneInfo, error) {
+	r, err := a.refTarget(t)
 	if err != nil {
 		return PaneInfo{}, err
 	}
@@ -163,33 +187,171 @@ func trim(s string, n int) string {
 	return s[:n] + "…"
 }
 
+// PaneTarget identifies a pane, optionally scoped to a workspace and/or tab
+// (each by name or 1-based index).
+type PaneTarget struct {
+	Pane      string
+	Workspace string
+	Tab       string
+}
+
+func matchWorkspaceLocked(workspaces []*session.Workspace, spec string) (*session.Workspace, error) {
+	if idx, err := strconv.Atoi(spec); err == nil {
+		if idx >= 1 && idx <= len(workspaces) {
+			return workspaces[idx-1], nil
+		}
+	}
+	for _, ws := range workspaces {
+		if ws.Name == spec {
+			return ws, nil
+		}
+	}
+	return nil, fmt.Errorf("no workspace %q", spec)
+}
+
+func matchTabLocked(ws *session.Workspace, spec string) (int, *session.Tab, error) {
+	if idx, err := strconv.Atoi(spec); err == nil {
+		if idx >= 1 && idx <= len(ws.Tabs) {
+			return idx, ws.Tabs[idx-1], nil
+		}
+	}
+	for i, tab := range ws.Tabs {
+		if tab.Name == spec {
+			return i + 1, tab, nil
+		}
+	}
+	return 0, nil, fmt.Errorf("no tab %q in workspace %q", spec, ws.Name)
+}
+
+// scopedPanesLocked returns all PaneRefs matching wsSpec and tabSpec.
+// Caller must hold a.mu.
+func (a *App) scopedPanesLocked(wsSpec, tabSpec string) ([]session.PaneRef, error) {
+	var workspaces []*session.Workspace
+	if wsSpec != "" {
+		ws, err := matchWorkspaceLocked(a.manager.Workspaces, wsSpec)
+		if err != nil {
+			return nil, err
+		}
+		workspaces = []*session.Workspace{ws}
+	} else if tabSpec != "" {
+		ws := a.manager.ActiveWorkspace()
+		if ws == nil {
+			return nil, fmt.Errorf("no active workspace")
+		}
+		workspaces = []*session.Workspace{ws}
+	} else {
+		workspaces = a.manager.Workspaces
+	}
+
+	active := a.manager.ActivePane()
+	var out []session.PaneRef
+	for _, ws := range workspaces {
+		if tabSpec != "" {
+			ti, tab, err := matchTabLocked(ws, tabSpec)
+			if err != nil {
+				return nil, err
+			}
+			for _, p := range layout.CollectPanes(tab.Layout) {
+				out = append(out, session.PaneRef{
+					Pane: p, Workspace: ws.Name, TabIndex: ti,
+					TabName: tab.Name, Active: p == active,
+				})
+			}
+			continue
+		}
+		for ti, tab := range ws.Tabs {
+			for _, p := range layout.CollectPanes(tab.Layout) {
+				out = append(out, session.PaneRef{
+					Pane: p, Workspace: ws.Name, TabIndex: ti + 1,
+					TabName: tab.Name, Active: p == active,
+				})
+			}
+		}
+	}
+	return out, nil
+}
+
 // ref resolves "active" or a pane id.
 func (a *App) ref(spec string) (session.PaneRef, error) {
+	return a.refTarget(PaneTarget{Pane: spec})
+}
+
+func (a *App) refTarget(t PaneTarget) (session.PaneRef, error) {
+	spec := orActive(t.Pane)
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	active := a.manager.ActivePane()
-	for _, r := range a.manager.AllPanes() {
-		if spec == "active" && r.Pane == active || spec == fmt.Sprint(r.Pane.ID) {
+
+	if t.Workspace == "" && t.Tab == "" {
+		active := a.manager.ActivePane()
+		for _, r := range a.manager.AllPanes() {
+			if spec == "active" && r.Pane == active || spec == fmt.Sprint(r.Pane.ID) {
+				return r, nil
+			}
+		}
+		// Ids are never reused, so one below the high-water mark named a pane
+		// that has since closed — worth its own exit code for agents.
+		if id, err := strconv.Atoi(spec); err == nil && id > 0 && id <= a.manager.Issued() {
+			return session.PaneRef{}, errPaneGone{id}
+		}
+		return session.PaneRef{}, fmt.Errorf("no pane %q", spec)
+	}
+
+	refs, err := a.scopedPanesLocked(t.Workspace, t.Tab)
+	if err != nil {
+		return session.PaneRef{}, err
+	}
+	if spec == "active" {
+		var ws *session.Workspace
+		if t.Workspace != "" {
+			ws, _ = matchWorkspaceLocked(a.manager.Workspaces, t.Workspace)
+		} else {
+			ws = a.manager.ActiveWorkspace()
+		}
+		var targetPane *pane.Pane
+		if ws != nil {
+			if t.Tab != "" {
+				if _, tab, err := matchTabLocked(ws, t.Tab); err == nil {
+					targetPane = tab.ActivePane
+				}
+			} else if len(ws.Tabs) > 0 && ws.ActiveTabIdx >= 0 && ws.ActiveTabIdx < len(ws.Tabs) {
+				targetPane = ws.Tabs[ws.ActiveTabIdx].ActivePane
+			}
+		}
+		if targetPane != nil {
+			for _, r := range refs {
+				if r.Pane == targetPane {
+					return r, nil
+				}
+			}
+		}
+		return session.PaneRef{}, fmt.Errorf("no active pane in target")
+	}
+
+	for _, r := range refs {
+		if spec == fmt.Sprint(r.Pane.ID) {
 			return r, nil
 		}
 	}
-	// Ids are never reused, so one below the high-water mark named a pane
-	// that has since closed — worth its own exit code for agents.
 	if id, err := strconv.Atoi(spec); err == nil && id > 0 && id <= a.manager.Issued() {
+		if a.manager.PaneByID(id) != nil {
+			return session.PaneRef{}, fmt.Errorf("pane %d is not in the targeted workspace/tab", id)
+		}
 		return session.PaneRef{}, errPaneGone{id}
 	}
-	return session.PaneRef{}, fmt.Errorf("no pane %q", spec)
+	return session.PaneRef{}, fmt.Errorf("no pane %q in target", spec)
 }
 
 // ─── operations ─────────────────────────────────────────────────────────────
 
 // NewPaneOpts describes `slat pane new`.
 type NewPaneOpts struct {
-	Target string // pane to split, or "active"
-	Split  string // "v" (left/right) or "h" (top/bottom)
-	Cwd    string // directory for the new shell; "" inherits the split pane's
-	Cmd    string // command to run once it starts
-	Focus  bool   // leave the new pane focused (default: restore focus)
+	Target    string // pane to split, or "active"
+	Workspace string // optional workspace name or 1-based index
+	Tab       string // optional tab name or 1-based index
+	Split     string // "v" (left/right) or "h" (top/bottom)
+	Cwd       string // directory for the new shell; "" inherits the split pane's
+	Cmd       string // command to run once it starts
+	Focus     bool   // leave the new pane focused (default: restore focus)
 }
 
 // NewPane splits a pane and returns the new one.
@@ -202,7 +364,7 @@ func (a *App) NewPane(o NewPaneOpts) (PaneInfo, error) {
 	default:
 		return PaneInfo{}, fmt.Errorf("split must be v or h, not %q", o.Split)
 	}
-	target, err := a.ref(orActive(o.Target))
+	target, err := a.refTarget(PaneTarget{Pane: orActive(o.Target), Workspace: o.Workspace, Tab: o.Tab})
 	if err != nil {
 		return PaneInfo{}, err
 	}
@@ -230,7 +392,12 @@ func (a *App) NewPane(o NewPaneOpts) (PaneInfo, error) {
 
 // ClosePane closes a pane, as the close-pane key does.
 func (a *App) ClosePane(spec string) error {
-	r, err := a.ref(spec)
+	return a.ClosePaneTarget(PaneTarget{Pane: spec})
+}
+
+// ClosePaneTarget closes a scoped pane target.
+func (a *App) ClosePaneTarget(t PaneTarget) error {
+	r, err := a.refTarget(t)
 	if err != nil {
 		return err
 	}
@@ -241,7 +408,12 @@ func (a *App) ClosePane(spec string) error {
 
 // Send writes bytes to a pane's program, as if typed.
 func (a *App) Send(spec string, data []byte) error {
-	r, err := a.ref(spec)
+	return a.SendTarget(PaneTarget{Pane: spec}, data)
+}
+
+// SendTarget writes bytes to a scoped pane target.
+func (a *App) SendTarget(t PaneTarget, data []byte) error {
+	r, err := a.refTarget(t)
 	if err != nil {
 		return err
 	}
@@ -256,7 +428,12 @@ func (a *App) Send(spec string, data []byte) error {
 // Capture returns a pane's text: the visible screen, or the scrollback
 // too when history is set; n limits it to the last n lines.
 func (a *App) Capture(spec string, n int, history bool) ([]string, error) {
-	r, err := a.ref(spec)
+	return a.CaptureTarget(PaneTarget{Pane: spec}, n, history)
+}
+
+// CaptureTarget returns a scoped pane target's text.
+func (a *App) CaptureTarget(t PaneTarget, n int, history bool) ([]string, error) {
+	r, err := a.refTarget(t)
 	if err != nil {
 		return nil, err
 	}
@@ -324,18 +501,23 @@ const waitScan = 200
 // Wait blocks until the condition holds, the pane exits, or ctx ends. It
 // returns the pane's final state and whether the condition was met.
 func (a *App) Wait(ctx context.Context, spec string, cond WaitFor) (PaneInfo, bool, error) {
-	if _, err := a.ref(spec); err != nil {
+	return a.WaitTarget(ctx, PaneTarget{Pane: spec}, cond)
+}
+
+// WaitTarget blocks until the condition holds for a scoped pane target.
+func (a *App) WaitTarget(ctx context.Context, t PaneTarget, cond WaitFor) (PaneInfo, bool, error) {
+	if _, err := a.refTarget(t); err != nil {
 		return PaneInfo{}, false, err
 	}
 	tick := time.NewTicker(waitPoll)
 	defer tick.Stop()
 	for {
-		info, err := a.PaneInfo(spec)
+		info, err := a.PaneInfoTarget(t)
 		if err != nil {
 			// The pane was removed from the session: that is an exit.
 			return PaneInfo{}, cond.Exit, err
 		}
-		if met, done := cond.met(a, spec, info); met || done {
+		if met, done := cond.met(a, fmt.Sprint(info.Pane), info); met || done {
 			return info, met, nil
 		}
 		select {

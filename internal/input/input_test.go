@@ -121,6 +121,76 @@ func TestForwardLen(t *testing.T) {
 	}
 }
 
+func TestParseShortcut(t *testing.T) {
+	tests := []struct {
+		in      string
+		wantSeq []byte
+		name    string
+		wantErr string
+	}{
+		{in: "Alt+1", wantSeq: []byte("\x1b1"), name: "Alt+1"},
+		{in: "alt-a", wantSeq: []byte("\x1ba"), name: "Alt+a"},
+		{in: "M-s", wantSeq: []byte("\x1bs"), name: "Alt+s"},
+		{in: "F13", wantSeq: []byte("\x1b[25~"), name: "F13"},
+		{in: `\e[29~`, wantSeq: []byte("\x1b[29~"), name: `\e[29~`},
+		{in: "", wantErr: "empty shortcut"},
+		{in: "Alt+12", wantErr: "invalid Alt shortcut"},
+		{in: "1", wantErr: "invalid shortcut"},
+	}
+	for _, tc := range tests {
+		seqs, name, err := ParseShortcut(tc.in)
+		if tc.wantErr != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("ParseShortcut(%q) err = %v, want substring %q", tc.in, err, tc.wantErr)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("ParseShortcut(%q) unexpected err: %v", tc.in, err)
+			continue
+		}
+		if len(seqs) == 0 || !bytes.Equal(seqs[0], tc.wantSeq) {
+			t.Errorf("ParseShortcut(%q) seq[0] = %q, want %q", tc.in, seqs, tc.wantSeq)
+		}
+		if name != tc.name {
+			t.Errorf("ParseShortcut(%q) name = %q, want %q", tc.in, name, tc.name)
+		}
+	}
+}
+
+func TestHandlerShortcuts(t *testing.T) {
+	p, _ := ParsePrefix("C-s")
+	h := NewHandler(p, nil)
+	if err := h.SetShortcuts(map[string]string{
+		"Alt+1": "~/.config/slat/scripts/save.sh",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.SetShortcuts(map[string]string{
+		"Alt+1": "a.sh",
+		"M-1":   "b.sh",
+	}); err == nil || !strings.Contains(err.Error(), "conflicts") {
+		t.Fatalf("expected conflict error, got %v", err)
+	}
+
+	// Re-apply valid shortcuts.
+	if err := h.SetShortcuts(map[string]string{"Alt+1": "save.sh"}); err != nil {
+		t.Fatal(err)
+	}
+	if cmd, n := h.MatchShortcut([]byte("\x1b1rest")); cmd != "save.sh" || n != 2 {
+		t.Fatalf("MatchShortcut(\\x1b1) = (%q, %d), want (save.sh, 2)", cmd, n)
+	}
+	if cmd, n := h.MatchShortcut([]byte("\x1b[49;3urest")); cmd != "save.sh" || n != 7 {
+		t.Fatalf("MatchShortcut(CSI-u) = (%q, %d), want (save.sh, 7)", cmd, n)
+	}
+	if n := h.ForwardLen([]byte("abc\x1b1")); n != 3 {
+		t.Fatalf("ForwardLen(abc\\x1b1) = %d, want 3", n)
+	}
+	if n := h.ForwardLen([]byte("abc\x1b[Adef")); n != 9 {
+		t.Fatalf("ForwardLen(arrow) = %d, want 9", n)
+	}
+}
+
 func BenchmarkForwardLen(b *testing.B) {
 	p, _ := ParsePrefix("F13")
 	h := NewHandler(p, nil)

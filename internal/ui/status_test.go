@@ -613,3 +613,152 @@ func BenchmarkScreenRender(b *testing.B) {
 		}
 	}
 }
+
+func TestStatusScriptRenderingAndValidation(t *testing.T) {
+	themes["default"].Apply()
+	cfg := DefaultStatusConfig()
+	cfg.Right = "{bg=236}{script:git}{/} {pane}/{panes} "
+	fb := "{fg=red}err{/}"
+	badFb := "{fg=nope}x{/}"
+	cfg.Scripts = map[string]StatusScriptConfig{
+		"git": {
+			Command:  "echo main",
+			Interval: "5s",
+			Timeout:  "2s",
+			Fallback: &fb,
+		},
+	}
+	f, err := ParseStatusConfig(cfg)
+	if err != nil {
+		t.Fatalf("ParseStatusConfig: %v", err)
+	}
+
+	fr := NewFrame(80, 1)
+	st := Status{
+		Workspace: "main",
+		Tabs:      []string{"sh"},
+		PaneCount: 1,
+		Scripts: map[string]string{
+			"git": "{fg=red}VAL{/} {literal} {fg=nope}bad{/}\n",
+		},
+	}
+	DrawStatusBar(fr, 0, st, f)
+
+	line := row(fr, 0)
+	if !strings.Contains(line, "VAL {literal} {fg=nope}bad") {
+		t.Fatalf("rendered line = %q, want VAL with literal fallback for invalid tags", line)
+	}
+	valCol := strings.Index(line, "VAL")
+	if valCol < 0 {
+		t.Fatalf("VAL not found in %q", line)
+	}
+	cell := fr.Lines[0][valCol]
+	if cell.Style.Fg != vt.Indexed(1) || cell.Style.Bg != vt.Indexed(236) {
+		t.Errorf("VAL style = %+v, want fg=1 bg=236", cell.Style)
+	}
+
+	// Validation error cases.
+	for _, bad := range []StatusConfig{
+		func() StatusConfig {
+			c := DefaultStatusConfig()
+			c.Right = "{script:missing}"
+			return c
+		}(),
+		func() StatusConfig {
+			c := DefaultStatusConfig()
+			c.Scripts = map[string]StatusScriptConfig{"bad": {Command: ""}}
+			return c
+		}(),
+		func() StatusConfig {
+			c := DefaultStatusConfig()
+			c.Scripts = map[string]StatusScriptConfig{"bad": {Command: "echo hi", Interval: "-1s"}}
+			return c
+		}(),
+		func() StatusConfig {
+			c := DefaultStatusConfig()
+			c.Scripts = map[string]StatusScriptConfig{"bad": {Command: "echo hi", Timeout: "0s"}}
+			return c
+		}(),
+		func() StatusConfig {
+			c := DefaultStatusConfig()
+			c.Scripts = map[string]StatusScriptConfig{"bad": {Command: "echo hi", Fallback: &badFb}}
+			return c
+		}(),
+	} {
+		if _, err := ParseStatusConfig(bad); err == nil {
+			t.Errorf("ParseStatusConfig(%+v) should have failed", bad)
+		}
+	}
+}
+
+func TestCurrentPaneAndIDGlyphsAndPaneIDBadge(t *testing.T) {
+	themes["default"].Apply()
+	cfg := DefaultStatusConfig()
+	cfg.Tab = " {index}:{current_pane_glyph}:{current_pane_id_glyph} "
+	cfg.PaneID = "{fg=cyan,bg=236} #{id} {/}"
+	cfg.PaneIDActive = "{fg=#1e1e2e,bg=#f9e2af,bold} #{id} {/}"
+	cfg.CurrentPaneGlyphs = []string{"a", "b", "c"}
+	cfg.CurrentPaneZoomGlyphs = []string{"A", "B", "C"}
+	cfg.CurrentPaneIDGlyphs = []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
+	cfg.CurrentPaneIDZoomGlyphs = []string{"⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"}
+
+	f, err := ParseStatusConfig(cfg)
+	if err != nil {
+		t.Fatalf("ParseStatusConfig: %v", err)
+	}
+	if !f.HasZoomIndicator() {
+		t.Errorf("HasZoomIndicator = false, want true when current_pane_zoom_glyphs is set")
+	}
+
+	st := Status{
+		Workspace:       "main",
+		Tabs:            []string{"one", "two"},
+		TabPaneCount:    []int{2, 3},
+		TabActivePane:   []int{1, 0},
+		TabActivePaneID: []int{4, 12},
+		ActiveTab:       0,
+		PaneID:          4,
+		PaneIndex:       1,
+		PaneCount:       2,
+		Zoomed:          false,
+	}
+	fr := NewFrame(80, 3)
+	DrawStatusBar(fr, 2, st, f)
+	got := row(fr, 2)
+	if !strings.Contains(got, "1:b:4") || !strings.Contains(got, "2:a:12") {
+		t.Fatalf("unzoomed status bar = %q, want 1:b:4 and 2:a:12", got)
+	}
+
+	st.Zoomed = true
+	frZoom := NewFrame(80, 3)
+	DrawStatusBar(frZoom, 2, st, f)
+	gotZoom := row(frZoom, 2)
+	if !strings.Contains(gotZoom, "1:B:④") || !strings.Contains(gotZoom, "2:a:12") {
+		t.Fatalf("zoomed status bar = %q, want 1:B:④ and 2:a:12", gotZoom)
+	}
+
+	// Test DrawPaneIDBadge right-alignment and theming.
+	DrawPaneIDBadge(fr, 0, 0, 20, 4, 2, true, false, f)
+	DrawPaneIDBadge(fr, 0, 21, 20, 12, 1, false, false, f)
+	top := row(fr, 0)
+	if !strings.Contains(top[:20], " #4 ") {
+		t.Errorf("active pane badge = %q, want ' #4 '", top[:20])
+	}
+	if !strings.Contains(top[21:], " #12") {
+		t.Errorf("inactive pane badge = %q, want ' #12'", top[21:])
+	}
+	// Verify active badge sits at the right edge of cols [0..20): " #4 " is 4 cols -> starts at x=16.
+	if fr.Lines[0][16].R != ' ' || fr.Lines[0][17].R != '#' || fr.Lines[0][18].R != '4' {
+		t.Errorf("active badge not right-aligned at col 16: %q", top[15:20])
+	}
+	if fr.Lines[0][17].Style.Bg != vt.RGB(0xf9, 0xe2, 0xaf) {
+		t.Errorf("active badge style = %+v, want #f9e2af bg", fr.Lines[0][17].Style)
+	}
+
+	// Validation error on bad pane_id placeholder.
+	badCfg := DefaultStatusConfig()
+	badCfg.PaneID = "{unknown}"
+	if _, err := ParseStatusConfig(badCfg); err == nil {
+		t.Errorf("expected error for unknown placeholder in pane_id")
+	}
+}

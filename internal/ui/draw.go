@@ -160,15 +160,18 @@ type Status struct {
 	WorkspaceCount int
 	Tabs           []string
 	TabAlert       []bool // a pane in this tab is waiting for input
-	TabPaneCount   []int  // number of panes in each tab
-	TabActivePane  []int  // 0-based active pane index in each tab
-	ActiveTab      int
-	Badge          string // "PREFIX", "ZOOM", ... or ""
-	PrefixActive   bool
-	Zoomed         bool
-	PaneIndex      int    // 0-based
-	PaneCount      int
-	Message        string // shown instead of the tabs while set
+	TabPaneCount    []int  // number of panes in each tab
+	TabActivePane   []int  // 0-based active pane index in each tab
+	TabActivePaneID []int  // active pane ID in each tab
+	ActiveTab       int
+	Badge           string // "PREFIX", "ZOOM", ... or ""
+	PrefixActive    bool
+	Zoomed          bool
+	PaneID          int    // active pane ID
+	PaneIndex       int    // 0-based
+	PaneCount       int
+	Message         string            // shown instead of the tabs while set
+	Scripts         map[string]string // latest stdout/fallback per status script name
 }
 
 // DrawStatusBar draws the status bar on row y, laid out by f. The right

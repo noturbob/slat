@@ -393,7 +393,7 @@ $ slat capture 3 --lines 20             # read what it printed
 | `slat status [PANE]` | one pane's status |
 | `slat pane new [--split v\|h] [--cwd D] [--cmd C] [--target P] [--focus]` | split a pane |
 | `slat pane close PANE` | close a pane |
-| `slat send PANE TEXT [--enter] [--key KEY]` | type into a pane |
+| `slat send PANE TEXT [--enter] [--key KEY]` | type into a pane (supports `--session`, `--workspace`, `--tab`, or `[SESSION:][WORKSPACE/[TAB/]]PANE`, e.g. `work:dev/active`) |
 | `slat run PANE COMMAND...` | send a command and press Enter |
 | `slat capture PANE [--lines N] [--history]` | read a pane's text |
 | `slat wait PANE --for idle\|input\|exit\|text=REGEX [--timeout 60s]` | block until something happens |
@@ -518,19 +518,39 @@ zoom             = ""     # "" unbinds a command
   what slat draws is themed — pane contents keep whatever colours the programs
   in them use.
 - `[status]` takes `left`, `right`, `tab`, `tab_active`, `tab_sep`, `alert`,
-  `prefix`, `prefix_active`, `zoom`, `tab_zoom_glyph`, `tab_colors`,
-  `pane_colors`, `tab_glyphs`, `tab_index_glyphs`, `pane_glyphs` and
-  `pane_zoom_glyphs`. The sides accept `{prefix}` `{session}` `{workspace}`
-  `{workspace_index}` `{workspace_count}` `{workspaces}` `{tabs}` `{tab}`
-  `{tabs_count}` `{pane}` `{panes}` `{pane_glyph}` `{pane_glyph_current}`
+  `prefix`, `prefix_active`, `zoom`, `tab_zoom_glyph`, `pane_id`,
+  `pane_id_active`, `tab_colors`, `pane_colors`, `tab_glyphs`,
+  `tab_index_glyphs`, `pane_glyphs`, `pane_zoom_glyphs`,
+  `current_pane_glyphs`, `current_pane_zoom_glyphs`, `current_pane_id_glyphs`
+  and `current_pane_id_zoom_glyphs`. The sides accept `{prefix}` `{session}`
+  `{workspace}` `{workspace_index}` `{workspace_count}` `{workspaces}`
+  `{tabs}` `{tab}` `{tabs_count}` `{pane}` `{panes}` `{pane_glyph}`
+  `{pane_glyph_current}` `{current_pane_glyph}` `{current_pane_id_glyph}`
   `{zoom}` `{badge}` `{time}` `{seconds}` `{date}`; `tab` and `tab_active`
   accept `{index}` `{name}` `{alert}` `{tab_glyph}` `{tab_index_glyph}`
-  `{pane_glyph}` `{pane_glyph_current}` `{zoom}`, and `tab_sep` (default `" "`,
-  set to `""` to remove space between tabs) is drawn
+  `{pane_glyph}` `{pane_glyph_current}` `{current_pane_glyph}`
+  `{current_pane_id_glyph}` `{zoom}`; `pane_id` and `pane_id_active` (toggled
+  in the top-right corner of each pane with `identify-panes`, default `prefix`
+  + `i`) accept `{id}` `{index}` `{pane_glyph}` `{current_pane_id_glyph}`; and
+  `tab_sep` (default `" "`, set to `""` to remove space between tabs) is drawn
   between tabs. Inline style tags like `{fg=cyan,bg=236,bold}🐟{/}` colour any Unicode glyph or span (using a colour name, 0–255 index, `#rrggbb`
   hex, or `tab`/`pane` to pick from `tab_colors`/`pane_colors` by index). When
   `{prefix}` is used, `{badge}` omits `"PREFIX"`; when `{zoom}`,
   `tab_zoom_glyph`, or `pane_zoom_glyphs` is used, `{badge}` omits `"ZOOM"`.
+- `[status.scripts.<name>]` runs a shell command on an `interval` (default
+  `5s`, `0s` to run once) with a `timeout` (default `2s`), and renders its
+  `stdout` wherever `{script:<name>}` appears in `status.left` or
+  `status.right`. Script output supports `{fg=red}VAL{/}` inline style tags
+  (unrecognized `{...}` sequences in stdout are rendered literally) and shows
+  `fallback` (default `{fg=red}[err]{/}`, or `""` to hide) on error/timeout.
+- `[shortcuts]` binds direct (non-prefix) keys like `"Alt+1"`, `"M-s"`, or
+  `"F13"` to shell commands (e.g. `"Alt+1" = "~/.config/slat/scripts/save.sh"`).
+  Both shortcut scripts and status scripts receive `SLAT_SESSION`,
+  `SLAT_SESSION_DIR`, `SLAT_WORKSPACE`, `SLAT_WORKSPACE_INDEX`,
+  `SLAT_WORKSPACE_COUNT`, `SLAT_TAB`, `SLAT_TAB_INDEX`, `SLAT_TAB_COUNT`,
+  `SLAT_PANE`, `SLAT_PANE_INDEX`, `SLAT_PANE_COUNT`, `SLAT_PANE_CWD`,
+  `SLAT_PANE_FG`, `SLAT_PANE_PID`, `SLAT_PANE_ROWS`, `SLAT_PANE_COLS`,
+  `SLAT_PANE_ZOOMED`, and (for shortcuts) `SLAT_STATE_JSON`.
 - A mistake anywhere — an unknown colour, a glyph two columns wide, a
   placeholder that doesn't exist, an easing curve that doesn't either — is
   reported when you run `slat`, never quietly drawn.

@@ -282,10 +282,43 @@ pane_zoom_glyphs = ["⓿", "❶", "❷"]
 		"[status]\nmiddle = \"x\"\n",
 		"[status]\ntab_colors = [\"notacolor\"]\n",
 		"[status]\nleft = \"{fg=nope}x{/}\"\n",
+		"[status]\nright = \"{script:missing}\"\n",
+		"[shortcuts]\n\"bad\" = \"echo hi\"\n",
+		"[shortcuts]\n\"Alt+1\" = \"\"\n",
 	} {
 		if _, err := load(t, bad); err == nil {
 			t.Errorf("%q should have been refused", bad)
 		}
+	}
+
+	cfgScripts, err := load(t, `
+[shortcuts]
+"Alt+1" = "~/.config/slat/scripts/save.sh"
+
+[status]
+right = "{script:git} {pane}/{panes} "
+pane_id = "{fg=cyan} #{id} {/}"
+pane_id_active = "{fg=yellow,bold} #{id} {/}"
+tab = " {current_pane_glyph}:{current_pane_id_glyph} "
+current_pane_glyphs = ["a", "b"]
+current_pane_zoom_glyphs = ["A", "B"]
+current_pane_id_glyphs = ["0", "1", "2"]
+current_pane_id_zoom_glyphs = ["⓪", "①", "②"]
+
+[status.scripts.git]
+command = "git branch --show-current"
+interval = "5s"
+timeout = "2s"
+fallback = "{fg=red}err{/}"
+`)
+	if err != nil {
+		t.Fatalf("valid shortcuts + status scripts failed: %v", err)
+	}
+	if cfgScripts.Shortcuts["Alt+1"] != "~/.config/slat/scripts/save.sh" {
+		t.Errorf("Shortcuts[Alt+1] = %q", cfgScripts.Shortcuts["Alt+1"])
+	}
+	if cfgScripts.Status.Scripts["git"].Command != "git branch --show-current" {
+		t.Errorf("Status.Scripts[git] = %+v", cfgScripts.Status.Scripts["git"])
 	}
 }
 

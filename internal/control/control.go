@@ -36,11 +36,13 @@ type Request struct {
 	Focus   bool   `json:"focus,omitempty"`   // pane new: keep focus there
 	Lines   int    `json:"lines,omitempty"`   // capture
 	History bool   `json:"history,omitempty"` // capture
-	For       string `json:"for,omitempty"`     // wait
-	Timeout   string `json:"timeout,omitempty"` // wait
-	Workspace int    `json:"workspace,omitempty"`
-	Tab       int    `json:"tab,omitempty"`
-	PaneID    int    `json:"pane_id,omitempty"`
+	For             string `json:"for,omitempty"`              // wait
+	Timeout         string `json:"timeout,omitempty"`          // wait
+	TargetWorkspace string `json:"target_workspace,omitempty"` // workspace name or 1-based index
+	TargetTab       string `json:"target_tab,omitempty"`       // tab name or 1-based index
+	Workspace       int    `json:"workspace,omitempty"`
+	Tab             int    `json:"tab,omitempty"`
+	PaneID          int    `json:"pane_id,omitempty"`
 }
 
 // Response is the answer. Exactly one of Error, Panes, Pane or Lines is

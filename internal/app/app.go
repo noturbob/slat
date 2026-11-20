@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -63,6 +64,7 @@ type App struct {
 	zoomed      *pane.Pane
 	scroll      *scroll // scroll mode, or nil
 	showHelp    bool
+	showPaneIDs bool
 	prompt      *prompt
 	tree        *treeState
 	message     string
@@ -80,10 +82,12 @@ type App struct {
 	lastSavedSig    sessionSig            // skips idle 15s snapshots when nothing changed
 	restoredFrom    time.Time             // when the restored session was saved
 	restoredPanes   int
-	statusTabs          []string
-	statusAlert         []bool
-	statusPaneCount     []int
-	statusTabActivePane []int
+	statusTabs            []string
+	statusAlert           []bool
+	statusPaneCount       []int
+	statusTabActivePane   []int
+	statusTabActivePaneID []int
+	scriptOutputs         map[string]string
 	preset              *session.Preset
 }
 
@@ -143,6 +147,10 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 	sessionDir := session.CanonicalDir("")
+	handler := input.NewHandler(cfg.PrefixKey, cfg.Keybinds)
+	if err := handler.SetShortcuts(cfg.Shortcuts); err != nil {
+		return nil, err
+	}
 	a := &App{
 		cfg:        cfg,
 		status:     status,
@@ -151,7 +159,7 @@ func New(cfg *config.Config) (*App, error) {
 		quit:       make(chan struct{}),
 		detachCh:   make(chan struct{}, 1),
 		dirty:      make(chan struct{}, 1),
-		handler:    input.NewHandler(cfg.PrefixKey, cfg.Keybinds),
+		handler:    handler,
 		screen:     ui.NewScreen(io.Discard),
 		sessionDir: sessionDir,
 	}
@@ -207,6 +215,7 @@ func (a *App) Start(cols, rows int) error {
 	}
 	go a.renderLoop()
 	go a.watch()
+	go a.statusScriptLoop()
 	go a.saveLoop()
 	return nil
 }
@@ -477,6 +486,13 @@ func (a *App) render() {
 	if a.anim != nil && !a.drawAnim(frame, visible, now) {
 		a.anim = nil
 	}
+	if a.showPaneIDs {
+		for _, p := range visible {
+			pr, pc, _, pcols := p.Rect()
+			idx := slices.Index(allPanes, p)
+			ui.DrawPaneIDBadge(frame, pr, pc, pcols, p.ID, idx+1, p == active, a.zoomed != nil, a.status)
+		}
+	}
 
 	x, y, vis, style := active.Cursor()
 	cur := ui.Cursor{X: ac + x, Y: ar + y, Visible: vis, Style: style}
@@ -520,10 +536,16 @@ func (a *App) statusOfBar(now time.Time) ui.Status {
 	a.statusAlert = a.statusAlert[:0]
 	a.statusPaneCount = a.statusPaneCount[:0]
 	a.statusTabActivePane = a.statusTabActivePane[:0]
+	a.statusTabActivePaneID = a.statusTabActivePaneID[:0]
 	for _, t := range ws.Tabs {
 		a.statusTabs = append(a.statusTabs, t.Name)
 		a.statusPaneCount = append(a.statusPaneCount, layout.CountPanes(t.Layout))
 		a.statusTabActivePane = append(a.statusTabActivePane, max(layout.PaneIndex(t.Layout, t.ActivePane), 0))
+		activeID := 0
+		if t.ActivePane != nil {
+			activeID = t.ActivePane.ID
+		}
+		a.statusTabActivePaneID = append(a.statusTabActivePaneID, activeID)
 		alert := len(a.attention) > 0 && layout.AnyPane(t.Layout, func(p *pane.Pane) bool {
 			return a.attention[p.ID]
 		})
@@ -533,8 +555,13 @@ func (a *App) statusOfBar(now time.Time) ui.Status {
 	st.TabAlert = a.statusAlert
 	st.TabPaneCount = a.statusPaneCount
 	st.TabActivePane = a.statusTabActivePane
+	st.TabActivePaneID = a.statusTabActivePaneID
 	panes := a.manager.ActivePanes()
-	st.PaneIndex = slices.Index(panes, a.manager.ActivePane())
+	ap := a.manager.ActivePane()
+	if ap != nil {
+		st.PaneID = ap.ID
+	}
+	st.PaneIndex = slices.Index(panes, ap)
 	st.PaneCount = len(panes)
 	st.PrefixActive = a.handler.IsPrefixActive()
 	st.Zoomed = a.zoomed != nil
@@ -554,6 +581,12 @@ func (a *App) statusOfBar(now time.Time) ui.Status {
 	}
 	if now.Before(a.messageEnd) {
 		st.Message = a.message
+	}
+	if len(a.scriptOutputs) > 0 {
+		st.Scripts = make(map[string]string, len(a.scriptOutputs))
+		for k, v := range a.scriptOutputs {
+			st.Scripts[k] = v
+		}
 	}
 	return st
 }
@@ -653,6 +686,14 @@ func (a *App) FeedInput(buf []byte) {
 				}
 			}
 			return // some other escape sequence: swallow it whole
+		}
+
+		if !a.handler.IsPrefixActive() {
+			if cmd, n := a.handler.MatchShortcut(buf[i:]); n > 0 {
+				a.runShortcut(cmd)
+				i += n - 1
+				continue
+			}
 		}
 
 		action := a.handler.ProcessByte(b)
@@ -755,6 +796,8 @@ func (a *App) do(action input.Action) bool {
 		} else if len(a.manager.ActivePanes()) > 1 {
 			a.zoomed = a.manager.ActivePane()
 		}
+	case input.ActionIdentifyPanes:
+		a.showPaneIDs = !a.showPaneIDs
 	case input.ActionStackMode:
 		a.zoomed = nil
 		a.manager.ToggleStack()
@@ -947,6 +990,17 @@ func helpEntries(cfg *config.Config) []ui.HelpEntry {
 		}
 		if b.Name == "prev-tab" {
 			out = append(out, ui.HelpEntry{Key: "1-9", Desc: "Go to tab N"})
+		}
+	}
+	if len(cfg.Shortcuts) > 0 {
+		out = append(out, ui.HelpEntry{Desc: "Shortcuts"})
+		keys := make([]string, 0, len(cfg.Shortcuts))
+		for k := range cfg.Shortcuts {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			out = append(out, ui.HelpEntry{Key: k, Desc: cfg.Shortcuts[k]})
 		}
 	}
 	return out

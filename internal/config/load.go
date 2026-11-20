@@ -34,6 +34,7 @@ type Config struct {
 	Finder     ui.FinderTheme    `toml:"finder"`
 	Stack      ui.StackTheme     `toml:"stack"`
 	Keybinds   map[string]string `toml:"keybinds"`
+	Shortcuts  map[string]string `toml:"shortcuts"`
 	Theme      map[string]string `toml:"theme"`
 	Borders    map[string]string `toml:"borders"`
 	Status     ui.StatusConfig   `toml:"status"`
@@ -170,6 +171,7 @@ func defaultKeybinds() map[string]string {
 		"layout-picker":     "l",
 		"close-pane":        "x",
 		"zoom":              "z",
+		"identify-panes":    "i",
 		"stack-mode":        "t",
 		// Tabs
 		"new-tab":    "c",
@@ -360,6 +362,13 @@ func (cfg *Config) merge(user *Config, md toml.MetaData) error {
 			delete(cfg.Keybinds, name)
 		}
 	}
+	if len(user.Shortcuts) > 0 {
+		h := input.NewHandler(cfg.PrefixKey, nil)
+		if err := h.SetShortcuts(user.Shortcuts); err != nil {
+			return err
+		}
+		cfg.Shortcuts = user.Shortcuts
+	}
 	return nil
 }
 
@@ -394,6 +403,8 @@ func (cfg *Config) mergeStatus(user ui.StatusConfig, md toml.MetaData) error {
 		{"prefix_active", &cfg.Status.PrefixActive, user.PrefixActive},
 		{"zoom", &cfg.Status.Zoom, user.Zoom},
 		{"tab_zoom_glyph", &cfg.Status.TabZoomGlyph, user.TabZoomGlyph},
+		{"pane_id", &cfg.Status.PaneID, user.PaneID},
+		{"pane_id_active", &cfg.Status.PaneIDActive, user.PaneIDActive},
 	}
 	for _, f := range strings {
 		if md.IsDefined("status", f.key) {
@@ -411,11 +422,18 @@ func (cfg *Config) mergeStatus(user ui.StatusConfig, md toml.MetaData) error {
 		{"tab_index_glyphs", &cfg.Status.TabIndexGlyphs, user.TabIndexGlyphs},
 		{"pane_glyphs", &cfg.Status.PaneGlyphs, user.PaneGlyphs},
 		{"pane_zoom_glyphs", &cfg.Status.PaneZoomGlyphs, user.PaneZoomGlyphs},
+		{"current_pane_glyphs", &cfg.Status.CurrentPaneGlyphs, user.CurrentPaneGlyphs},
+		{"current_pane_zoom_glyphs", &cfg.Status.CurrentPaneZoomGlyphs, user.CurrentPaneZoomGlyphs},
+		{"current_pane_id_glyphs", &cfg.Status.CurrentPaneIDGlyphs, user.CurrentPaneIDGlyphs},
+		{"current_pane_id_zoom_glyphs", &cfg.Status.CurrentPaneIDZoomGlyphs, user.CurrentPaneIDZoomGlyphs},
 	}
 	for _, f := range lists {
 		if md.IsDefined("status", f.key) {
 			*f.dst = f.src
 		}
+	}
+	if md.IsDefined("status", "scripts") {
+		cfg.Status.Scripts = user.Scripts
 	}
 	_, err := ui.ParseStatusConfig(cfg.Status)
 	return err

@@ -149,15 +149,17 @@ right = "{badge}{workspaces} pane {pane}/{panes} "
 tab   = " {index}:{name}{alert} "
 # tab_active     = " {index}:{name}{alert} " # optional format for the active tab
 # tab_sep        = ""      # set to "" to remove the space between tabs
-alert = " ?"               # marks a tab whose pane is waiting for input
 # prefix         = "  "    # shown by {prefix} when the prefix key is idle
 # prefix_active  = "   "   # shown by {prefix} when the prefix key is pressed
 # zoom           = " ▣"    # shown by {zoom} when a pane is zoomed
 # tab_zoom_glyph = "▣"     # replaces {tab_glyph} on the active tab when zoomed
 # tab_colors  = ["cyan", "magenta", "yellow", "green"]
-# pane_colors = ["208", "44", "#a6e3a1"]
 # tab_glyphs  = ["■"]      # or e.g. ["🐟", "🦀", "🐙"] — cycles by tab index
-# pane_glyphs = ["①", "②", "③", "④"]
+# current_pane_glyphs      = ["₁", "₂", "₃"] # for {current_pane_glyph} (falls back to pane_glyphs)
+# current_pane_zoom_glyphs = ["❶", "❷", "❸"] # zoomed variant for {current_pane_glyph}
+# current_pane_id_glyphs      = ["⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"] # for {current_pane_id_glyph}
+# current_pane_id_zoom_glyphs = ["⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"] # zoomed variant
+
 
 # Example: 3-glyph tab format (icon, 1-based window index, 1-based pane
 # count with a second set for zoomed tabs), plus custom left-side {prefix}.
@@ -167,16 +169,27 @@ alert = " ?"               # marks a tab whose pane is waiting for input
 # left             = "{prefix} {workspace} │ {tabs}"
 # right            = "{badge}{workspaces} {pane}/{panes} "
 # tab              = " {tab_glyph} {tab_index_glyph} {pane_glyph} {name}{alert} "
+# alert = " ●"               # marks a tab whose pane is waiting for input
 # alert            = "{fg=bright-red,bold} ●{/}"
 # prefix           = "{fg=cyan,bg=236}  {/}"
 # prefix_active    = "{fg=#1e1e2e,bg=#f9e2af,bold}   {/}"
-# tab_glyphs       = ["■"]
 # tab_zoom_glyph   = "▣"
-# tab_index_glyphs = ["⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"]
-# pane_glyphs      = ["₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"]
-# pane_zoom_glyphs = ["⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"]
+# tab_index_glyphs = ["󰎡", "󰎤", "󰎧", "󰎪", "󰎭", "󰎱", "󰎳", "󰎶", "󰎹", "󰎼"]
+# pane_glyphs = ["󰎣", "󰎦", "󰎩", "󰎬", "󰎮", "󰎰", "󰎵", "󰎸", "󰎻", "󰎾"]
+# pane_zoom_glyphs = ["󰎢", "󰎥", "󰎨", "󰎫", "󰎲", "󰎯", "󰎴", "󰎷", "󰎺", "󰎽"]
 # tab_colors       = ["cyan", "magenta", "yellow", "green", "blue"]
 # pane_colors      = ["208", "44", "#a6e3a1"]
+# pane_id        = " {id} "# top-right badge shown by `identify-panes` (prefix + i)
+# pane_id_active = "{fg=#1e1e2e,bg=#f9e2af,bold} {id} {/}" # optional active-pane badge
+
+# Status-line scripts: run commands on an interval and render their stdout
+# via {script:<name>} in status.left or status.right. Stdout supports inline
+# style tags such as {fg=red}VAL{/}.
+[status.scripts.save_target]
+command  = "~/.config/slat/scripts/slat.save.target.sh"
+interval = "5s"            # how often to re-run (default 5s; 0s = run once)
+timeout  = "2s"            # max run time before killing (default 2s)
+fallback = "{fg=red}[err]{/}" # shown on error/timeout ("" hides on error)
 
 # How `slat status`, `slat ls` and `slat wait` read a pane, for scripts and
 # AI agents. See the README's "Scripting and agents" section.
@@ -222,6 +235,7 @@ resize-shrink    = "-"    # Shrink the active pane
 equalize         = "="    # Reset all pane sizes to equal
 close-pane       = "x"    # Close the active pane
 zoom             = "z"    # Toggle zoom (fullscreen) for active pane
+identify-panes   = "i"    # Toggle minimal pane ID badges in top-right corners
 stack-mode       = "t"    # Toggle stacked pane mode for active tab
 scroll-mode      = "["    # Scroll back through output (q to leave)
 
@@ -248,3 +262,13 @@ global-tree      = "g"    # Fuzzy filter across all sessions, tabs & panes
 toggle-status-bar= "b"    # Show or hide the bottom status bar
 quit             = "q"    # Quit slat
 detach           = "d"    # Detach: disconnect, keep the session running
+
+# Direct shortcuts (triggered WITHOUT pressing the prefix key first).
+# Accepts Alt+<key> / M-<key>, F13-F24, or \e... escape sequences.
+# Scripts receive SLAT_SESSION, SLAT_SESSION_DIR, SLAT_WORKSPACE,
+# SLAT_WORKSPACE_INDEX, SLAT_WORKSPACE_COUNT, SLAT_TAB, SLAT_TAB_INDEX,
+# SLAT_TAB_COUNT, SLAT_PANE, SLAT_PANE_INDEX, SLAT_PANE_COUNT, SLAT_PANE_CWD,
+# SLAT_PANE_FG, SLAT_PANE_PID, SLAT_PANE_ROWS, SLAT_PANE_COLS, SLAT_PANE_ZOOMED,
+# and SLAT_STATE_JSON (full workspace/tab/pane tree).
+[shortcuts]
+"Alt+1" = "~/.config/slat/scripts/save.sh"

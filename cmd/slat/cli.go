@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -26,7 +27,9 @@ const cliUsage = `slat commands (for scripts and agents):
   slat capture PANE [--lines N] [--history]
   slat wait PANE --for idle|input|exit|text=REGEX [--timeout 60s]
 
-PANE is a pane id from 'slat ls', or 'active' (the default).
+PANE is a pane id from 'slat ls', 'active' (the default), or a scoped
+target: [SESSION:][WORKSPACE/[TAB/]]PANE (e.g. work:2, dev/editor/active).
+Flags --session, --workspace, and --tab may also be used.
 --json prints one JSON object; exit codes: 0 ok, 1 error, 2 timeout,
 3 the pane's program has exited.
 
@@ -46,10 +49,18 @@ func runCLI(sock string, args []string) (handled bool, code int) {
 		return false, 0
 	}
 
-	req, asJSON, err := parseCLI(args)
+	req, targetSess, asJSON, err := parseCLIWithSession(args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "slat: %v\n", err)
 		return true, control.CodeError
+	}
+	if targetSess != "" {
+		resolved, err := resolveSessionSocket(sock, targetSess, listSessions())
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "slat: %v\n", err)
+			return true, control.CodeError
+		}
+		sock = resolved
 	}
 
 	// `wait` blocks by design; the rest should answer at once.
@@ -67,19 +78,24 @@ func runCLI(sock string, args []string) (handled bool, code int) {
 }
 
 func parseCLI(args []string) (control.Request, bool, error) {
+	req, _, asJSON, err := parseCLIWithSession(args)
+	return req, asJSON, err
+}
+
+func parseCLIWithSession(args []string) (control.Request, string, bool, error) {
 	cmd, rest := args[0], args[1:]
 	req := control.Request{Cmd: cmd}
 
 	// `slat pane new|close` is two words.
 	if cmd == "pane" {
 		if len(rest) == 0 {
-			return req, false, fmt.Errorf("pane needs new or close (slat --help)")
+			return req, "", false, fmt.Errorf("pane needs new or close (slat --help)")
 		}
 		switch rest[0] {
 		case "new", "close":
 			req.Cmd, rest = "pane-"+rest[0], rest[1:]
 		default:
-			return req, false, fmt.Errorf("pane %q: expected new or close", rest[0])
+			return req, "", false, fmt.Errorf("pane %q: expected new or close", rest[0])
 		}
 	}
 
@@ -88,6 +104,9 @@ func parseCLI(args []string) (control.Request, bool, error) {
 	asJSON := fs.Bool("json", false, "print one JSON object")
 	enter := fs.Bool("enter", false, "send: press Enter after the text")
 	key := fs.String("key", "", "send: a named key (enter, escape, ctrl-c, up, …)")
+	flagSession := fs.String("session", "", "target session name, dir, or socket")
+	flagWS := fs.String("workspace", "", "target workspace name or 1-based index")
+	flagTab := fs.String("tab", "", "target tab name or 1-based index")
 	fs.StringVar(&req.Split, "split", "", "pane new: v (left/right) or h (top/bottom)")
 	fs.StringVar(&req.Cwd, "cwd", "", "pane new: directory for the new shell")
 	fs.StringVar(&req.Command, "cmd", "", "pane new: run this command in it")
@@ -99,7 +118,7 @@ func parseCLI(args []string) (control.Request, bool, error) {
 	fs.StringVar(&req.Timeout, "timeout", "", "wait: give up after this long (default 60s)")
 	flags, words := permute(rest)
 	if err := fs.Parse(flags); err != nil {
-		return req, false, err
+		return req, "", false, err
 	}
 
 	// The first bare word is the pane for every command that takes one.
@@ -108,13 +127,21 @@ func parseCLI(args []string) (control.Request, bool, error) {
 		req.Pane, words = words[0], words[1:]
 	}
 
+	sess, ws, tab, paneSpec, err := parseTarget(req.Pane, *flagSession, *flagWS, *flagTab)
+	if err != nil {
+		return req, "", false, err
+	}
+	req.Pane = paneSpec
+	req.TargetWorkspace = ws
+	req.TargetTab = tab
+
 	switch req.Cmd {
 	case "send":
 		text := strings.Join(words, " ")
 		if *key != "" {
 			seq, err := keySequence(*key)
 			if err != nil {
-				return req, false, err
+				return req, "", false, err
 			}
 			text += seq
 		}
@@ -122,26 +149,101 @@ func parseCLI(args []string) (control.Request, bool, error) {
 			text += "\r"
 		}
 		if text == "" {
-			return req, false, fmt.Errorf("send needs text, --key or --enter")
+			return req, "", false, fmt.Errorf("send needs text, --key or --enter")
 		}
 		req.Data = text
 	case "run":
 		if len(words) == 0 {
-			return req, false, fmt.Errorf("run needs a command")
+			return req, "", false, fmt.Errorf("run needs a command")
 		}
 		req.Cmd, req.Data = "send", strings.Join(words, " ")+"\r"
 	case "wait":
 		if req.For == "" {
-			return req, false, fmt.Errorf("wait needs --for idle|input|exit|text=REGEX")
+			return req, "", false, fmt.Errorf("wait needs --for idle|input|exit|text=REGEX")
 		}
 		if _, err := app.ParseWaitFor(req.For); err != nil {
-			return req, false, err
+			return req, "", false, err
 		}
 	}
 	if len(words) > 0 && req.Cmd != "send" {
-		return req, false, fmt.Errorf("unexpected argument %q", words[0])
+		return req, "", false, fmt.Errorf("unexpected argument %q", words[0])
 	}
-	return req, *asJSON, nil
+	return req, sess, *asJSON, nil
+}
+
+func parseTarget(raw, flagSession, flagWS, flagTab string) (sess, ws, tab, pane string, err error) {
+	var inlineSess, inlineWS, inlineTab string
+	rest := raw
+	if colon := strings.IndexByte(rest, ':'); colon >= 0 {
+		inlineSess = rest[:colon]
+		rest = rest[colon+1:]
+		if inlineSess == "" {
+			return "", "", "", "", fmt.Errorf("empty session in target %q", raw)
+		}
+	}
+	if rest != "" {
+		parts := strings.Split(rest, "/")
+		switch len(parts) {
+		case 1:
+			pane = parts[0]
+		case 2:
+			if parts[0] == "" {
+				return "", "", "", "", fmt.Errorf("empty workspace in target %q", raw)
+			}
+			inlineWS, pane = parts[0], parts[1]
+		case 3:
+			if parts[0] == "" || parts[1] == "" {
+				return "", "", "", "", fmt.Errorf("empty workspace or tab in target %q", raw)
+			}
+			inlineWS, inlineTab, pane = parts[0], parts[1], parts[2]
+		default:
+			return "", "", "", "", fmt.Errorf("invalid target %q", raw)
+		}
+	}
+
+	if sess, err = mergeTargetField("session", inlineSess, flagSession); err != nil {
+		return "", "", "", "", err
+	}
+	if ws, err = mergeTargetField("workspace", inlineWS, flagWS); err != nil {
+		return "", "", "", "", err
+	}
+	if tab, err = mergeTargetField("tab", inlineTab, flagTab); err != nil {
+		return "", "", "", "", err
+	}
+	return sess, ws, tab, pane, nil
+}
+
+func mergeTargetField(kind, inline, flagVal string) (string, error) {
+	if inline != "" && flagVal != "" && inline != flagVal {
+		return "", fmt.Errorf("conflicting %s: %q vs %q", kind, inline, flagVal)
+	}
+	if flagVal != "" {
+		return flagVal, nil
+	}
+	return inline, nil
+}
+
+func resolveSessionSocket(defaultSock, spec string, sessions []app.SessionSummary) (string, error) {
+	if spec == "" {
+		return defaultSock, nil
+	}
+	if fi, err := os.Stat(spec); err == nil && fi.Mode()&os.ModeSocket != 0 {
+		return spec, nil
+	}
+	var matches []app.SessionSummary
+	for _, s := range sessions {
+		if s.Name == spec || filepath.Base(s.Socket) == spec || s.Dir == spec {
+			matches = append(matches, s)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("no session %q", spec)
+	case 1:
+		return matches[0].Socket, nil
+	default:
+		return "", fmt.Errorf("ambiguous session %q (%d matches); use socket path", spec, len(matches))
+	}
 }
 
 // valueFlags take a following argument, so permute knows that argument
@@ -149,6 +251,7 @@ func parseCLI(args []string) (control.Request, bool, error) {
 var valueFlags = map[string]bool{
 	"split": true, "cwd": true, "cmd": true, "target": true,
 	"lines": true, "for": true, "timeout": true, "key": true,
+	"session": true, "workspace": true, "tab": true,
 }
 
 // permute separates flags from bare words anywhere in args. Go's flag

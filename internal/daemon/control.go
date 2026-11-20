@@ -50,13 +50,21 @@ func (s *Server) run(req control.Request) control.Response {
 		return control.Response{Schema: control.Schema}
 
 	case "ls":
-		return control.Response{Schema: control.Schema, Panes: a.Panes()}
+		panes, err := a.PanesIn(req.TargetWorkspace, req.TargetTab)
+		if err != nil {
+			return control.Errorf(control.CodeError, "%v", err)
+		}
+		return control.Response{Schema: control.Schema, Panes: panes}
 
 	case "status":
 		if req.Pane == "" {
-			return control.Response{Schema: control.Schema, Panes: a.Panes()}
+			panes, err := a.PanesIn(req.TargetWorkspace, req.TargetTab)
+			if err != nil {
+				return control.Errorf(control.CodeError, "%v", err)
+			}
+			return control.Response{Schema: control.Schema, Panes: panes}
 		}
-		info, err := a.PaneInfo(pane)
+		info, err := a.PaneInfoTarget(app.PaneTarget{Pane: pane, Workspace: req.TargetWorkspace, Tab: req.TargetTab})
 		if err != nil {
 			return paneErr(err)
 		}
@@ -64,8 +72,8 @@ func (s *Server) run(req control.Request) control.Response {
 
 	case "pane-new":
 		info, err := a.NewPane(app.NewPaneOpts{
-			Target: req.Pane, Split: req.Split, Cwd: req.Cwd,
-			Cmd: req.Command, Focus: req.Focus,
+			Target: req.Pane, Workspace: req.TargetWorkspace, Tab: req.TargetTab,
+			Split: req.Split, Cwd: req.Cwd, Cmd: req.Command, Focus: req.Focus,
 		})
 		if err != nil {
 			return control.Errorf(control.CodeError, "%v", err)
@@ -73,19 +81,19 @@ func (s *Server) run(req control.Request) control.Response {
 		return control.Response{Schema: control.Schema, Pane: &info}
 
 	case "pane-close":
-		if err := a.ClosePane(pane); err != nil {
+		if err := a.ClosePaneTarget(app.PaneTarget{Pane: pane, Workspace: req.TargetWorkspace, Tab: req.TargetTab}); err != nil {
 			return paneErr(err)
 		}
 		return control.Response{Schema: control.Schema}
 
 	case "send":
-		if err := a.Send(pane, []byte(req.Data)); err != nil {
+		if err := a.SendTarget(app.PaneTarget{Pane: pane, Workspace: req.TargetWorkspace, Tab: req.TargetTab}, []byte(req.Data)); err != nil {
 			return paneErr(err)
 		}
 		return control.Response{Schema: control.Schema}
 
 	case "capture":
-		lines, err := a.Capture(pane, req.Lines, req.History)
+		lines, err := a.CaptureTarget(app.PaneTarget{Pane: pane, Workspace: req.TargetWorkspace, Tab: req.TargetTab}, req.Lines, req.History)
 		if err != nil {
 			return paneErr(err)
 		}
@@ -116,7 +124,9 @@ func (s *Server) wait(req control.Request, pane string) control.Response {
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	info, met, err := s.app.Wait(ctx, pane, cond)
+	info, met, err := s.app.WaitTarget(ctx, app.PaneTarget{
+		Pane: pane, Workspace: req.TargetWorkspace, Tab: req.TargetTab,
+	}, cond)
 	if err != nil {
 		if cond.Exit {
 			// The pane left the session: that is the exit we waited for.

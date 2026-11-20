@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/noturbob/slat/internal/app"
+)
 
 func TestParseCLI(t *testing.T) {
 	cases := []struct {
@@ -55,5 +59,63 @@ func TestRunCLIIgnoresOtherArgs(t *testing.T) {
 		if handled, _ := runCLI("/nonexistent.sock", args); handled {
 			t.Errorf("%v was treated as a CLI command", args)
 		}
+	}
+}
+
+func TestParseCLIWithTargeting(t *testing.T) {
+	cases := []struct {
+		args     []string
+		wantSess string
+		wantWS   string
+		wantTab  string
+		wantPane string
+		wantErr  bool
+	}{
+		{args: []string{"send", "work:2", "hi"}, wantSess: "work", wantPane: "2"},
+		{args: []string{"send", "work:dev/active", "hi"}, wantSess: "work", wantWS: "dev", wantPane: "active"},
+		{args: []string{"send", "work:dev/editor/5", "hi"}, wantSess: "work", wantWS: "dev", wantTab: "editor", wantPane: "5"},
+		{args: []string{"send", "--session", "work", "--workspace", "dev", "--tab", "2", "active", "hi"}, wantSess: "work", wantWS: "dev", wantTab: "2", wantPane: "active"},
+		{args: []string{"send", "--session", "a", "b:2", "hi"}, wantErr: true},
+		{args: []string{"send", ":2", "hi"}, wantErr: true},
+		{args: []string{"send", "a/b/c/d", "hi"}, wantErr: true},
+	}
+	for _, tc := range cases {
+		req, sess, _, err := parseCLIWithSession(tc.args)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("%v: expected error, got %+v", tc.args, req)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%v: unexpected err: %v", tc.args, err)
+			continue
+		}
+		if sess != tc.wantSess || req.TargetWorkspace != tc.wantWS || req.TargetTab != tc.wantTab || req.Pane != tc.wantPane {
+			t.Errorf("%v: got (%q, %q, %q, %q), want (%q, %q, %q, %q)",
+				tc.args, sess, req.TargetWorkspace, req.TargetTab, req.Pane,
+				tc.wantSess, tc.wantWS, tc.wantTab, tc.wantPane)
+		}
+	}
+}
+
+func TestResolveSessionSocket(t *testing.T) {
+	sessions := []app.SessionSummary{
+		{Name: "alpha", Dir: "/tmp/a", Socket: "/tmp/slat-a.sock"},
+		{Name: "beta", Dir: "/tmp/b", Socket: "/tmp/slat-b.sock"},
+		{Name: "dup", Dir: "/tmp/d1", Socket: "/tmp/slat-d1.sock"},
+		{Name: "dup", Dir: "/tmp/d2", Socket: "/tmp/slat-d2.sock"},
+	}
+	if got, err := resolveSessionSocket("/default.sock", "", sessions); err != nil || got != "/default.sock" {
+		t.Errorf("empty spec = (%q, %v)", got, err)
+	}
+	if got, err := resolveSessionSocket("/default.sock", "beta", sessions); err != nil || got != "/tmp/slat-b.sock" {
+		t.Errorf("by name = (%q, %v)", got, err)
+	}
+	if _, err := resolveSessionSocket("/default.sock", "missing", sessions); err == nil {
+		t.Errorf("expected error for missing session")
+	}
+	if _, err := resolveSessionSocket("/default.sock", "dup", sessions); err == nil {
+		t.Errorf("expected error for ambiguous session")
 	}
 }

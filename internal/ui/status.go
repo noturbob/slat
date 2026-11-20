@@ -11,24 +11,47 @@ import (
 	"github.com/noturbob/slat/internal/vt"
 )
 
+// StatusScriptConfig configures a runnable script whose stdout is shown in the status bar.
+type StatusScriptConfig struct {
+	Command  string  `toml:"command"`
+	Interval string  `toml:"interval"`
+	Timeout  string  `toml:"timeout"`
+	Fallback *string `toml:"fallback"`
+}
+
+// StatusScriptSpec is a validated status script configuration.
+type StatusScriptSpec struct {
+	Command  string
+	Interval time.Duration
+	Timeout  time.Duration
+	Fallback string
+}
+
 // StatusConfig is the [status] table as read from TOML.
 type StatusConfig struct {
-	Left         string   `toml:"left"`
-	Right        string   `toml:"right"`
-	Tab          string   `toml:"tab"`
-	TabActive    string   `toml:"tab_active"`
-	TabSep       string   `toml:"tab_sep"`
-	Alert        string   `toml:"alert"`
-	Prefix       string   `toml:"prefix"`
-	PrefixActive string   `toml:"prefix_active"`
-	Zoom         string   `toml:"zoom"`
-	TabZoomGlyph string   `toml:"tab_zoom_glyph"`
-	TabColors      []string `toml:"tab_colors"`
-	PaneColors     []string `toml:"pane_colors"`
-	TabGlyphs      []string `toml:"tab_glyphs"`
-	TabIndexGlyphs []string `toml:"tab_index_glyphs"`
-	PaneGlyphs     []string `toml:"pane_glyphs"`
-	PaneZoomGlyphs []string `toml:"pane_zoom_glyphs"`
+	Left           string                        `toml:"left"`
+	Right          string                        `toml:"right"`
+	Tab            string                        `toml:"tab"`
+	TabActive      string                        `toml:"tab_active"`
+	TabSep         string                        `toml:"tab_sep"`
+	Alert          string                        `toml:"alert"`
+	Prefix         string                        `toml:"prefix"`
+	PrefixActive   string                        `toml:"prefix_active"`
+	Zoom                   string                        `toml:"zoom"`
+	TabZoomGlyph           string                        `toml:"tab_zoom_glyph"`
+	PaneID                 string                        `toml:"pane_id"`
+	PaneIDActive           string                        `toml:"pane_id_active"`
+	TabColors              []string                      `toml:"tab_colors"`
+	PaneColors             []string                      `toml:"pane_colors"`
+	TabGlyphs              []string                      `toml:"tab_glyphs"`
+	TabIndexGlyphs         []string                      `toml:"tab_index_glyphs"`
+	PaneGlyphs             []string                      `toml:"pane_glyphs"`
+	PaneZoomGlyphs         []string                      `toml:"pane_zoom_glyphs"`
+	CurrentPaneGlyphs      []string                      `toml:"current_pane_glyphs"`
+	CurrentPaneZoomGlyphs  []string                      `toml:"current_pane_zoom_glyphs"`
+	CurrentPaneIDGlyphs    []string                      `toml:"current_pane_id_glyphs"`
+	CurrentPaneIDZoomGlyphs []string                     `toml:"current_pane_id_zoom_glyphs"`
+	Scripts                map[string]StatusScriptConfig `toml:"scripts"`
 }
 
 // StatusFormat is the validated status bar layout and palettes. Each part is
@@ -43,25 +66,34 @@ type StatusFormat struct {
 	Alert        string // appended to a tab holding a pane that wants input
 	Prefix       string // shown by {prefix} when the prefix key is idle
 	PrefixActive string // shown by {prefix} when the prefix key is pressed
-	Zoom         string // shown by {zoom} when a pane is zoomed
-	TabZoomGlyph string // replaces {tab_glyph} on the active tab when zoomed
-	TabColors      []vt.Color
-	PaneColors     []vt.Color
-	TabGlyphs      []string
-	TabIndexGlyphs []string
-	PaneGlyphs     []string
-	PaneZoomGlyphs []string
-	compiled       map[string][]compiledPart
-	leftParts      []compiledPart
-	rightParts     []compiledPart
-	tabParts       []compiledPart
-	tabActiveParts []compiledPart
-	tabSepParts    []compiledPart
-	alertParts     []compiledPart
-	prefixParts    []compiledPart
-	prefixActParts []compiledPart
-	zoomParts      []compiledPart
-	tabZoomParts   []compiledPart
+	Zoom                    string // shown by {zoom} when a pane is zoomed
+	TabZoomGlyph            string // replaces {tab_glyph} on the active tab when zoomed
+	PaneID                  string // top-right pane ID badge format
+	PaneIDActive            string // optional top-right pane ID badge override for active pane
+	TabColors               []vt.Color
+	PaneColors              []vt.Color
+	TabGlyphs               []string
+	TabIndexGlyphs          []string
+	PaneGlyphs              []string
+	PaneZoomGlyphs          []string
+	CurrentPaneGlyphs       []string
+	CurrentPaneZoomGlyphs   []string
+	CurrentPaneIDGlyphs     []string
+	CurrentPaneIDZoomGlyphs []string
+	Scripts                 map[string]StatusScriptSpec
+	compiled                map[string][]compiledPart
+	leftParts               []compiledPart
+	rightParts              []compiledPart
+	tabParts                []compiledPart
+	tabActiveParts          []compiledPart
+	tabSepParts             []compiledPart
+	alertParts              []compiledPart
+	prefixParts             []compiledPart
+	prefixActParts          []compiledPart
+	zoomParts               []compiledPart
+	tabZoomParts            []compiledPart
+	paneIDParts             []compiledPart
+	paneIDActParts          []compiledPart
 }
 
 // DefaultStatusFormat is the bar slat has always drawn.
@@ -74,6 +106,7 @@ var DefaultStatusFormat = StatusFormat{
 	Prefix:       "  ",
 	PrefixActive: "   ",
 	Zoom:         " ▣",
+	PaneID:       " {id} ",
 }
 
 // DefaultStatusConfig returns the default [status] configuration.
@@ -87,6 +120,7 @@ func DefaultStatusConfig() StatusConfig {
 		Prefix:       DefaultStatusFormat.Prefix,
 		PrefixActive: DefaultStatusFormat.PrefixActive,
 		Zoom:         DefaultStatusFormat.Zoom,
+		PaneID:       DefaultStatusFormat.PaneID,
 	}
 }
 
@@ -105,12 +139,14 @@ var statusFields = map[string]func(Status) string{
 	"date":            func(s Status) string { return time.Now().Format("2006-01-02") },
 	"seconds":         func(s Status) string { return time.Now().Format("15:04:05") },
 	// Handled while drawing, because they bring their own styles:
-	"tabs":               nil,
-	"badge":              nil,
-	"prefix":             nil,
-	"zoom":               nil,
-	"pane_glyph":         nil,
-	"pane_glyph_current": nil,
+	"tabs":                  nil,
+	"badge":                 nil,
+	"prefix":                nil,
+	"zoom":                  nil,
+	"pane_glyph":            nil,
+	"pane_glyph_current":    nil,
+	"current_pane_glyph":    nil,
+	"current_pane_id_glyph": nil,
 	// Only when more than one workspace exists, so a single-workspace
 	// session isn't cluttered by a counter that never changes.
 	"workspaces": nil,
@@ -141,6 +177,8 @@ func ParseStatusFormat(settings map[string]string) (StatusFormat, error) {
 		"prefix_active":  &cfg.PrefixActive,
 		"zoom":           &cfg.Zoom,
 		"tab_zoom_glyph": &cfg.TabZoomGlyph,
+		"pane_id":        &cfg.PaneID,
+		"pane_id_active": &cfg.PaneIDActive,
 	}
 	for key, value := range settings {
 		dst, ok := fields[key]
@@ -164,16 +202,39 @@ func ParseStatusConfig(cfg StatusConfig) (StatusFormat, error) {
 		Alert:          cfg.Alert,
 		Prefix:         cfg.Prefix,
 		PrefixActive:   cfg.PrefixActive,
-		Zoom:           cfg.Zoom,
-		TabZoomGlyph:   cfg.TabZoomGlyph,
-		TabGlyphs:      slices.Clone(cfg.TabGlyphs),
-		TabIndexGlyphs: slices.Clone(cfg.TabIndexGlyphs),
-		PaneGlyphs:     slices.Clone(cfg.PaneGlyphs),
-		PaneZoomGlyphs: slices.Clone(cfg.PaneZoomGlyphs),
-		compiled:       make(map[string][]compiledPart, 16),
+		Zoom:                    cfg.Zoom,
+		TabZoomGlyph:            cfg.TabZoomGlyph,
+		PaneID:                  cfg.PaneID,
+		PaneIDActive:            cfg.PaneIDActive,
+		TabGlyphs:               slices.Clone(cfg.TabGlyphs),
+		TabIndexGlyphs:          slices.Clone(cfg.TabIndexGlyphs),
+		PaneGlyphs:              slices.Clone(cfg.PaneGlyphs),
+		PaneZoomGlyphs:          slices.Clone(cfg.PaneZoomGlyphs),
+		CurrentPaneGlyphs:       slices.Clone(cfg.CurrentPaneGlyphs),
+		CurrentPaneZoomGlyphs:   slices.Clone(cfg.CurrentPaneZoomGlyphs),
+		CurrentPaneIDGlyphs:     slices.Clone(cfg.CurrentPaneIDGlyphs),
+		CurrentPaneIDZoomGlyphs: slices.Clone(cfg.CurrentPaneIDZoomGlyphs),
+		compiled:                make(map[string][]compiledPart, 16),
+	}
+	if len(cfg.Scripts) > 0 {
+		f.Scripts = make(map[string]StatusScriptSpec, len(cfg.Scripts))
+		for name, sc := range cfg.Scripts {
+			spec, err := parseStatusScript(name, sc)
+			if err != nil {
+				return f, err
+			}
+			f.Scripts[name] = spec
+		}
 	}
 	sides := StatusFieldNames()
-	tabFields := []string{"alert", "index", "name", "tab_glyph", "tab_index_glyph", "pane_glyph", "pane_glyph_current", "zoom"}
+	for name := range f.Scripts {
+		sides = append(sides, "script:"+name)
+	}
+	tabFields := []string{
+		"alert", "index", "name", "tab_glyph", "tab_index_glyph",
+		"pane_glyph", "pane_glyph_current", "current_pane_glyph", "current_pane_id_glyph", "zoom",
+	}
+	paneIDFields := []string{"id", "index", "pane_glyph", "current_pane_id_glyph"}
 	checks := []struct {
 		name    string
 		value   string
@@ -190,9 +251,14 @@ func ParseStatusConfig(cfg StatusConfig) (StatusFormat, error) {
 		{"prefix_active", f.PrefixActive, nil, &f.prefixActParts},
 		{"zoom", f.Zoom, nil, &f.zoomParts},
 		{"tab_zoom_glyph", f.TabZoomGlyph, nil, &f.tabZoomParts},
+		{"pane_id", f.PaneID, paneIDFields, &f.paneIDParts},
+		{"pane_id_active", f.PaneIDActive, paneIDFields, &f.paneIDActParts},
 	}
 	for _, c := range checks {
 		if err := checkFormat(c.value, c.allowed); err != nil {
+			if strings.Contains(err.Error(), "unknown placeholder {script:") {
+				return f, fmt.Errorf("status.%s: %w (define it under [status.scripts.<name>])", c.name, err)
+			}
 			return f, fmt.Errorf("status.%s: %w", c.name, err)
 		}
 		cp := compileFormat(c.value)
@@ -207,6 +273,10 @@ func ParseStatusConfig(cfg StatusConfig) (StatusFormat, error) {
 		{"tab_index_glyphs", f.TabIndexGlyphs},
 		{"pane_glyphs", f.PaneGlyphs},
 		{"pane_zoom_glyphs", f.PaneZoomGlyphs},
+		{"current_pane_glyphs", f.CurrentPaneGlyphs},
+		{"current_pane_zoom_glyphs", f.CurrentPaneZoomGlyphs},
+		{"current_pane_id_glyphs", f.CurrentPaneIDGlyphs},
+		{"current_pane_id_zoom_glyphs", f.CurrentPaneIDZoomGlyphs},
 	} {
 		for i, g := range list.vals {
 			if err := checkFormat(g, nil); err != nil {
@@ -223,6 +293,59 @@ func ParseStatusConfig(cfg StatusConfig) (StatusFormat, error) {
 		return f, err
 	}
 	return f, nil
+}
+
+const (
+	defaultScriptInterval = 5 * time.Second
+	defaultScriptTimeout  = 2 * time.Second
+)
+
+func parseStatusScript(name string, sc StatusScriptConfig) (StatusScriptSpec, error) {
+	var spec StatusScriptSpec
+	if name == "" || strings.ContainsAny(name, " \t\r\n{}:") {
+		return spec, fmt.Errorf("status.scripts.%q: invalid script name", name)
+	}
+	cmd := strings.TrimSpace(sc.Command)
+	if cmd == "" {
+		return spec, fmt.Errorf("status.scripts.%s: command must not be empty", name)
+	}
+	interval := defaultScriptInterval
+	if s := strings.TrimSpace(sc.Interval); s != "" {
+		d, err := time.ParseDuration(s)
+		if err != nil {
+			return spec, fmt.Errorf("status.scripts.%s.interval: %w", name, err)
+		}
+		if d < 0 {
+			return spec, fmt.Errorf("status.scripts.%s.interval: must not be negative", name)
+		}
+		interval = d
+	}
+	timeout := defaultScriptTimeout
+	if s := strings.TrimSpace(sc.Timeout); s != "" {
+		d, err := time.ParseDuration(s)
+		if err != nil {
+			return spec, fmt.Errorf("status.scripts.%s.timeout: %w", name, err)
+		}
+		if d <= 0 {
+			return spec, fmt.Errorf("status.scripts.%s.timeout: must be positive", name)
+		}
+		timeout = d
+	}
+	fallback := "{fg=red}[err]{/}"
+	if sc.Fallback != nil {
+		if *sc.Fallback != "" {
+			if err := checkFormat(*sc.Fallback, nil); err != nil {
+				return spec, fmt.Errorf("status.scripts.%s.fallback: %w", name, err)
+			}
+		}
+		fallback = *sc.Fallback
+	}
+	return StatusScriptSpec{
+		Command:  cmd,
+		Interval: interval,
+		Timeout:  timeout,
+		Fallback: fallback,
+	}, nil
 }
 
 func parseColorList(field string, raw []string) ([]vt.Color, error) {
@@ -248,12 +371,21 @@ func (f StatusFormat) HasPrefixPlaceholder() bool {
 // HasZoomIndicator reports whether a dedicated zoom indicator is configured in
 // the bar or tab format, so {badge} does not duplicate "ZOOM".
 func (f StatusFormat) HasZoomIndicator() bool {
+	hasPaneZoom := len(f.PaneZoomGlyphs) > 0 && (hasField(f.Tab, "pane_glyph") || hasField(f.TabActive, "pane_glyph") ||
+		hasField(f.Left, "pane_glyph_current") || hasField(f.Right, "pane_glyph_current") ||
+		hasField(f.Tab, "pane_glyph_current") || hasField(f.TabActive, "pane_glyph_current") ||
+		hasField(f.Left, "current_pane_glyph") || hasField(f.Right, "current_pane_glyph") ||
+		hasField(f.Tab, "current_pane_glyph") || hasField(f.TabActive, "current_pane_glyph") ||
+		hasField(f.Left, "current_pane_id_glyph") || hasField(f.Right, "current_pane_id_glyph") ||
+		hasField(f.Tab, "current_pane_id_glyph") || hasField(f.TabActive, "current_pane_id_glyph"))
+	hasCurPaneZoom := len(f.CurrentPaneZoomGlyphs) > 0 && (hasField(f.Left, "current_pane_glyph") || hasField(f.Right, "current_pane_glyph") ||
+		hasField(f.Tab, "current_pane_glyph") || hasField(f.TabActive, "current_pane_glyph"))
+	hasCurIDZoom := len(f.CurrentPaneIDZoomGlyphs) > 0 && (hasField(f.Left, "current_pane_id_glyph") || hasField(f.Right, "current_pane_id_glyph") ||
+		hasField(f.Tab, "current_pane_id_glyph") || hasField(f.TabActive, "current_pane_id_glyph"))
 	return hasField(f.Left, "zoom") || hasField(f.Right, "zoom") ||
 		hasField(f.Tab, "zoom") || hasField(f.TabActive, "zoom") ||
 		(f.TabZoomGlyph != "" && (hasField(f.Tab, "tab_glyph") || hasField(f.TabActive, "tab_glyph"))) ||
-		(len(f.PaneZoomGlyphs) > 0 && (hasField(f.Tab, "pane_glyph") || hasField(f.TabActive, "pane_glyph") ||
-			hasField(f.Left, "pane_glyph_current") || hasField(f.Right, "pane_glyph_current") ||
-			hasField(f.Tab, "pane_glyph_current") || hasField(f.TabActive, "pane_glyph_current")))
+		hasPaneZoom || hasCurPaneZoom || hasCurIDZoom
 }
 
 func hasField(format, name string) bool {
@@ -481,6 +613,31 @@ func compileFormat(format string) []compiledPart {
 	return out
 }
 
+// compileDynamicFormat parses dynamic script stdout so valid {fg=...} style tags
+// are applied while invalid tags, unknown {placeholders}, and newlines become
+// safe literal text rather than corrupting the bar.
+func compileDynamicFormat(raw string) []compiledPart {
+	clean := strings.TrimRight(raw, "\r\n")
+	clean = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ").Replace(clean)
+	parts := splitFormat(clean)
+	out := make([]compiledPart, len(parts))
+	for i, p := range parts {
+		switch p.kind {
+		case partStylePush:
+			if spec, err := parseStyleTag(p.text); err == nil {
+				out[i] = compiledPart{kind: partStylePush, text: p.text, spec: spec}
+			} else {
+				out[i] = compiledPart{kind: partLiteral, text: "{" + p.text + "}"}
+			}
+		case partField:
+			out[i] = compiledPart{kind: partLiteral, text: "{" + p.text + "}"}
+		default:
+			out[i] = compiledPart{kind: p.kind, text: p.text}
+		}
+	}
+	return out
+}
+
 func (f StatusFormat) parts(format string) []compiledPart {
 	if p, ok := f.compiled[format]; ok {
 		return p
@@ -627,27 +784,26 @@ func emitStatus(b *barSink, format string, st Status, f StatusFormat) {
 				if len(f.PaneGlyphs) == 0 || st.PaneIndex < 0 {
 					continue
 				}
-				s := cur
-				if c := f.paneColor(st.PaneIndex); c != 0 && cur == styleBar {
-					s.Fg = c
-				}
-				emitNumberGlyphs(b, f, f.PaneGlyphs, st.PaneIndex+1, s, ctx)
+				emitPaneNumberGlyph(b, f, f.PaneGlyphs, st.PaneIndex+1, st.PaneIndex, cur, styleBar, ctx)
 			case "pane_glyph_current":
 				if st.PaneIndex < 0 {
 					continue
 				}
-				glyphs := f.PaneGlyphs
-				if st.Zoomed && len(f.PaneZoomGlyphs) > 0 {
-					glyphs = f.PaneZoomGlyphs
-				}
-				if len(glyphs) == 0 {
+				glyphs := pickGlyphSet(nil, nil, f.PaneGlyphs, f.PaneZoomGlyphs, st.Zoomed)
+				emitPaneNumberGlyph(b, f, glyphs, st.PaneIndex+1, st.PaneIndex, cur, styleBar, ctx)
+			case "current_pane_glyph":
+				if st.PaneIndex < 0 {
 					continue
 				}
-				s := cur
-				if c := f.paneColor(st.PaneIndex); c != 0 && cur == styleBar {
-					s.Fg = c
+				glyphs := pickGlyphSet(f.CurrentPaneGlyphs, f.CurrentPaneZoomGlyphs, f.PaneGlyphs, f.PaneZoomGlyphs, st.Zoomed)
+				emitPaneNumberGlyph(b, f, glyphs, st.PaneIndex+1, st.PaneIndex, cur, styleBar, ctx)
+			case "current_pane_id_glyph":
+				if st.PaneID <= 0 {
+					continue
 				}
-				emitNumberGlyphs(b, f, glyphs, st.PaneIndex+1, s, ctx)
+				glyphs := pickGlyphSet(f.CurrentPaneIDGlyphs, f.CurrentPaneIDZoomGlyphs, f.PaneGlyphs, f.PaneZoomGlyphs, st.Zoomed)
+				colorIdx := max(st.PaneIndex, 0)
+				emitPaneNumberGlyph(b, f, glyphs, st.PaneID, colorIdx, cur, styleBar, ctx)
 			case "workspaces":
 				if st.WorkspaceCount <= 1 {
 					continue
@@ -674,6 +830,13 @@ func emitStatus(b *barSink, format string, st Status, f StatusFormat) {
 				}
 				b.emit(st.Workspace, s)
 			default:
+				if strings.HasPrefix(part.text, "script:") {
+					name := strings.TrimPrefix(part.text, "script:")
+					if val := st.Scripts[name]; val != "" {
+						emitPlainParts(b, compileDynamicFormat(val), cur, ctx)
+					}
+					continue
+				}
 				if expand := statusFields[part.text]; expand != nil {
 					s := styleDim
 					if cur != styleBar {
@@ -754,35 +917,36 @@ func emitTabs(b *barSink, st Status, f StatusFormat, ctx styleCtx) {
 						emitNumberGlyphs(b, f, f.TabIndexGlyphs, i+1, s, tabCtx)
 					}
 				case "pane_glyph":
-					glyphs := f.PaneGlyphs
-					if i == st.ActiveTab && st.Zoomed && len(f.PaneZoomGlyphs) > 0 {
-						glyphs = f.PaneZoomGlyphs
-					}
-					if len(glyphs) > 0 {
-						s := cur
-						if c := f.paneColor(paneCount - 1); c != 0 && cur == tabBase {
-							s.Fg = c
-						}
-						pCtx := styleCtx{tabColor: f.tabColor(i), paneColor: f.paneColor(paneCount - 1)}
-						emitNumberGlyphs(b, f, glyphs, paneCount, s, pCtx)
-					}
+					glyphs := pickGlyphSet(nil, nil, f.PaneGlyphs, f.PaneZoomGlyphs, i == st.ActiveTab && st.Zoomed)
+					pCtx := styleCtx{tabColor: f.tabColor(i), paneColor: f.paneColor(paneCount - 1)}
+					emitPaneNumberGlyph(b, f, glyphs, paneCount, paneCount-1, cur, tabBase, pCtx)
 				case "pane_glyph_current":
 					activeIdx := 0
 					if i < len(st.TabActivePane) && st.TabActivePane[i] >= 0 {
 						activeIdx = st.TabActivePane[i]
 					}
-					glyphs := f.PaneGlyphs
-					if i == st.ActiveTab && st.Zoomed && len(f.PaneZoomGlyphs) > 0 {
-						glyphs = f.PaneZoomGlyphs
+					glyphs := pickGlyphSet(nil, nil, f.PaneGlyphs, f.PaneZoomGlyphs, i == st.ActiveTab && st.Zoomed)
+					pCtx := styleCtx{tabColor: f.tabColor(i), paneColor: f.paneColor(activeIdx)}
+					emitPaneNumberGlyph(b, f, glyphs, activeIdx+1, activeIdx, cur, tabBase, pCtx)
+				case "current_pane_glyph":
+					activeIdx := 0
+					if i < len(st.TabActivePane) && st.TabActivePane[i] >= 0 {
+						activeIdx = st.TabActivePane[i]
 					}
-					if len(glyphs) > 0 {
-						s := cur
-						if c := f.paneColor(activeIdx); c != 0 && cur == tabBase {
-							s.Fg = c
-						}
-						pCtx := styleCtx{tabColor: f.tabColor(i), paneColor: f.paneColor(activeIdx)}
-						emitNumberGlyphs(b, f, glyphs, activeIdx+1, s, pCtx)
+					glyphs := pickGlyphSet(f.CurrentPaneGlyphs, f.CurrentPaneZoomGlyphs, f.PaneGlyphs, f.PaneZoomGlyphs, i == st.ActiveTab && st.Zoomed)
+					pCtx := styleCtx{tabColor: f.tabColor(i), paneColor: f.paneColor(activeIdx)}
+					emitPaneNumberGlyph(b, f, glyphs, activeIdx+1, activeIdx, cur, tabBase, pCtx)
+				case "current_pane_id_glyph":
+					if i >= len(st.TabActivePaneID) || st.TabActivePaneID[i] <= 0 {
+						continue
 					}
+					activeIdx := 0
+					if i < len(st.TabActivePane) && st.TabActivePane[i] >= 0 {
+						activeIdx = st.TabActivePane[i]
+					}
+					glyphs := pickGlyphSet(f.CurrentPaneIDGlyphs, f.CurrentPaneIDZoomGlyphs, f.PaneGlyphs, f.PaneZoomGlyphs, i == st.ActiveTab && st.Zoomed)
+					pCtx := styleCtx{tabColor: f.tabColor(i), paneColor: f.paneColor(activeIdx)}
+					emitPaneNumberGlyph(b, f, glyphs, st.TabActivePaneID[i], activeIdx, cur, tabBase, pCtx)
 				case "zoom":
 					if i == st.ActiveTab && st.Zoomed {
 						emitPlain(b, f, f.Zoom, cur, tabCtx)
@@ -798,4 +962,97 @@ func emitTabs(b *barSink, st Status, f StatusFormat, ctx styleCtx) {
 			emitPlain(b, f, f.TabSep, styleBar, ctx)
 		}
 	}
+}
+
+func pickGlyphSet(primary, primaryZoom, fallback, fallbackZoom []string, zoomed bool) []string {
+	if len(primary) > 0 || len(primaryZoom) > 0 {
+		if zoomed && len(primaryZoom) > 0 {
+			return primaryZoom
+		}
+		return primary
+	}
+	if zoomed && len(fallbackZoom) > 0 {
+		return fallbackZoom
+	}
+	return fallback
+}
+
+func emitPaneNumberGlyph(b *barSink, f StatusFormat, glyphs []string, num, colorIdx int, cur, base vt.Style, ctx styleCtx) {
+	if len(glyphs) == 0 || num <= 0 {
+		return
+	}
+	s := cur
+	if c := f.paneColor(colorIdx); c != 0 && cur == base {
+		s.Fg = c
+	}
+	emitNumberGlyphs(b, f, glyphs, num, s, ctx)
+}
+
+// DrawPaneIDBadge draws a minimal, one-line pane ID badge in the top-right
+// corner of a pane, themed via status.pane_id / status.pane_id_active.
+func DrawPaneIDBadge(f *Frame, row, col, cols, paneID, paneIndex int, active, zoomed bool, format StatusFormat) {
+	if f == nil || cols < 1 || row < 0 || row >= f.H {
+		return
+	}
+	fmtStr := format.PaneID
+	parts := format.paneIDParts
+	base := styleTab
+	if active {
+		base = styleBadge
+		if format.PaneIDActive != "" {
+			fmtStr = format.PaneIDActive
+			parts = format.paneIDActParts
+		}
+	}
+	if fmtStr == "" {
+		return
+	}
+	if parts == nil {
+		parts = format.parts(fmtStr)
+	}
+	ctx := styleCtx{paneColor: format.paneColor(max(paneIndex-1, 0))}
+
+	emit := func(b *barSink) {
+		var stackBuf [8]vt.Style
+		stackBuf[0] = base
+		stack := stackBuf[:1]
+		for _, part := range parts {
+			if b.frame != nil && b.x >= b.budget {
+				return
+			}
+			cur := stack[len(stack)-1]
+			switch part.kind {
+			case partLiteral:
+				b.emit(part.text, cur)
+			case partStylePush:
+				stack = append(stack, resolveStyle(cur, part.spec, ctx))
+			case partStylePop:
+				if len(stack) > 1 {
+					stack = stack[:len(stack)-1]
+				}
+			case partField:
+				switch part.text {
+				case "id":
+					b.emit(smallInt(paneID), cur)
+				case "index":
+					b.emit(smallInt(paneIndex), cur)
+				case "pane_glyph":
+					glyphs := pickGlyphSet(nil, nil, format.PaneGlyphs, format.PaneZoomGlyphs, zoomed)
+					emitPaneNumberGlyph(b, format, glyphs, paneIndex, max(paneIndex-1, 0), cur, base, ctx)
+				case "current_pane_id_glyph":
+					glyphs := pickGlyphSet(format.CurrentPaneIDGlyphs, format.CurrentPaneIDZoomGlyphs, format.PaneGlyphs, format.PaneZoomGlyphs, zoomed)
+					emitPaneNumberGlyph(b, format, glyphs, paneID, max(paneIndex-1, 0), cur, base, ctx)
+				}
+			}
+		}
+	}
+
+	measure := barSink{}
+	emit(&measure)
+	if measure.x <= 0 {
+		return
+	}
+	startX := max(col, col+cols-measure.x)
+	draw := barSink{frame: f, x: startX, y: row, budget: col + cols}
+	emit(&draw)
 }

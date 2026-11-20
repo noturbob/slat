@@ -3,6 +3,7 @@ package input
 import (
 	"bytes"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -145,6 +146,7 @@ const (
 	ActionPrevPane
 	ActionClosePane
 	ActionZoom
+	ActionIdentifyPanes
 	ActionStackMode
 	ActionSelectPaneUp
 	ActionSelectPaneDown
@@ -226,6 +228,7 @@ var Bindings = []Binding{
 	{"equalize", "Panes", "Equalize sizes", ActionEqualizeLayout},
 	{"layout-picker", "Panes", "Choose layout (fuzzy)", ActionLayoutPicker},
 	{"zoom", "Panes", "Toggle zoom", ActionZoom},
+	{"identify-panes", "Panes", "Toggle pane ID badges", ActionIdentifyPanes},
 	{"stack-mode", "Panes", "Toggle stacked mode", ActionStackMode},
 	{"close-pane", "Panes", "Close pane", ActionClosePane},
 	{"scroll-mode", "Panes", "Scroll back (q exits)", ActionScrollMode},
@@ -250,14 +253,70 @@ var Bindings = []Binding{
 	{"quit", "Session", "Quit (ends session)", ActionQuit},
 }
 
-// Handler maps input bytes to actions via a prefix key.
+// Shortcut represents a parsed direct shortcut (triggered without the prefix key).
+type Shortcut struct {
+	Name    string
+	Seqs    [][]byte
+	Command string
+}
+
+// ParseShortcut converts a shortcut spec like "Alt+1", "M-1", "F13", or
+// `\e[25~` into its recognized terminal byte sequences and display name.
+func ParseShortcut(spec string) ([][]byte, string, error) {
+	s := strings.TrimSpace(spec)
+	if s == "" {
+		return nil, "", fmt.Errorf("empty shortcut")
+	}
+	lower := strings.ToLower(s)
+	var rest string
+	switch {
+	case strings.HasPrefix(lower, "alt+"):
+		rest = s[4:]
+	case strings.HasPrefix(lower, "alt-"):
+		rest = s[4:]
+	case strings.HasPrefix(lower, "m-"):
+		rest = s[2:]
+	}
+	if rest != "" {
+		if len(rest) != 1 || rest[0] < 0x20 || rest[0] >= 0x7f {
+			return nil, "", fmt.Errorf("invalid Alt shortcut %q (use e.g. \"Alt+1\" or \"M-s\")", spec)
+		}
+		ch := rest[0]
+		seqs := [][]byte{
+			{0x1b, ch},
+			fmt.Appendf(nil, "\x1b[%d;3u", ch),
+		}
+		return seqs, "Alt+" + string(ch), nil
+	}
+	if fk, ok := functionKeys[strings.ToUpper(s)]; ok {
+		seqs := make([][]byte, 0, 1+len(fk.Aliases))
+		seqs = append(seqs, fk.Bytes)
+		seqs = append(seqs, fk.Aliases...)
+		return seqs, fk.Name, nil
+	}
+	if strings.HasPrefix(s, `\`) || strings.HasPrefix(s, "\x1b") {
+		seq, err := unescapePrefix(s)
+		if err != nil {
+			return nil, "", fmt.Errorf("invalid shortcut %q: %w", spec, err)
+		}
+		if len(seq) < 2 || seq[0] != 0x1b {
+			return nil, "", fmt.Errorf("shortcut %q must be a multi-byte escape sequence", spec)
+		}
+		return [][]byte{seq}, formatSequenceName(seq), nil
+	}
+	return nil, "", fmt.Errorf("invalid shortcut %q (use e.g. \"Alt+1\", \"M-1\", \"F13\", or `\\e[25~`)", spec)
+}
+
+// Handler maps input bytes to actions via a prefix key, plus optional direct shortcuts.
 // It is not safe for concurrent use.
 type Handler struct {
-	prefix     Prefix
-	keys       map[byte]Action
-	prefixMode bool
-	singleLead bool
-	leadByte   byte
+	prefix        Prefix
+	keys          map[byte]Action
+	prefixMode    bool
+	singleLead    bool
+	leadByte      byte
+	shortcuts     []Shortcut
+	shortcutLeads [256]bool
 }
 
 // NewHandler creates an input handler. keybinds maps binding names to
@@ -284,6 +343,59 @@ func NewHandler(prefix Prefix, keybinds map[string]string) *Handler {
 		}
 	}
 	return h
+}
+
+// SetShortcuts parses and registers direct (non-prefix) shortcuts.
+func (h *Handler) SetShortcuts(shortcuts map[string]string) error {
+	h.shortcuts = nil
+	h.shortcutLeads = [256]bool{}
+	if len(shortcuts) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(shortcuts))
+	for k := range shortcuts {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	seen := make(map[string]string)
+	parsed := make([]Shortcut, 0, len(keys))
+	for _, k := range keys {
+		cmd := strings.TrimSpace(shortcuts[k])
+		if cmd == "" {
+			return fmt.Errorf("shortcut %q: command must not be empty", k)
+		}
+		seqs, name, err := ParseShortcut(k)
+		if err != nil {
+			return err
+		}
+		for _, seq := range seqs {
+			key := string(seq)
+			if prev, ok := seen[key]; ok {
+				return fmt.Errorf("shortcut %q conflicts with %q", k, prev)
+			}
+			seen[key] = k
+			h.shortcutLeads[seq[0]] = true
+		}
+		parsed = append(parsed, Shortcut{Name: name, Seqs: seqs, Command: cmd})
+	}
+	h.shortcuts = parsed
+	return nil
+}
+
+// MatchShortcut returns the command and byte length if buf begins with a
+// registered direct shortcut sequence.
+func (h *Handler) MatchShortcut(buf []byte) (string, int) {
+	if len(buf) == 0 || !h.shortcutLeads[buf[0]] {
+		return "", 0
+	}
+	for _, sc := range h.shortcuts {
+		for _, seq := range sc.Seqs {
+			if bytes.HasPrefix(buf, seq) {
+				return sc.Command, len(seq)
+			}
+		}
+	}
+	return "", 0
 }
 
 // IsPrefixActive reports whether the next key will be read as a command.
@@ -313,12 +425,12 @@ func (h *Handler) MatchPrefix(buf []byte) int {
 }
 
 // ForwardLen returns how many leading bytes of buf can be forwarded
-// verbatim before the next prefix sequence (at least 1 when len(buf) > 0).
+// verbatim before the next prefix or shortcut sequence (at least 1 when len(buf) > 0).
 func (h *Handler) ForwardLen(buf []byte) int {
 	if len(buf) <= 1 {
 		return len(buf)
 	}
-	if h.singleLead {
+	if len(h.shortcuts) == 0 && h.singleLead {
 		for off := 1; off < len(buf); {
 			idx := bytes.IndexByte(buf[off:], h.leadByte)
 			if idx < 0 {
@@ -333,7 +445,10 @@ func (h *Handler) ForwardLen(buf []byte) int {
 		return len(buf)
 	}
 	for j := 1; j < len(buf); j++ {
-		if h.MatchPrefix(buf[j:]) > 0 {
+		if (!h.singleLead || buf[j] == h.leadByte) && h.MatchPrefix(buf[j:]) > 0 {
+			return j
+		}
+		if _, n := h.MatchShortcut(buf[j:]); n > 0 {
 			return j
 		}
 	}

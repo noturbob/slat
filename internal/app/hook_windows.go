@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"strings"
@@ -13,6 +14,15 @@ func hookShell(line string) *exec.Cmd {
 		sh = "cmd.exe"
 	}
 	return exec.Command(sh, "/c", line)
+}
+
+// hookShellContext runs a configured command through the console shell bound to ctx.
+func hookShellContext(ctx context.Context, line string) *exec.Cmd {
+	sh := os.Getenv("COMSPEC")
+	if sh == "" {
+		sh = "cmd.exe"
+	}
+	return exec.CommandContext(ctx, sh, "/c", line)
 }
 
 // quote makes s one cmd.exe argument. cmd.exe has no quoting that is safe
