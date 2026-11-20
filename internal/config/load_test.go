@@ -24,8 +24,8 @@ func TestUserBindingTakesKeyFromDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.PrefixByte != 0x01 {
-		t.Errorf("prefix byte = %#x, want 0x01", cfg.PrefixByte)
+	if len(cfg.PrefixKey.Bytes) != 1 || cfg.PrefixKey.Bytes[0] != 0x01 {
+		t.Errorf("prefix bytes = %x, want 01", cfg.PrefixKey.Bytes)
 	}
 	if cfg.Keybinds["split-horizontal"] != "s" {
 		t.Errorf("split-horizontal = %q", cfg.Keybinds["split-horizontal"])
@@ -33,8 +33,63 @@ func TestUserBindingTakesKeyFromDefault(t *testing.T) {
 	if k, ok := cfg.Keybinds["swap-pane"]; ok {
 		t.Errorf("swap-pane still bound to %q", k)
 	}
-	if !cfg.StatusBar || cfg.Keybinds["new-tab"] != "c" {
+	if !cfg.StatusBar || !cfg.AutoRename || cfg.Keybinds["new-tab"] != "c" {
 		t.Error("unset options lost their defaults")
+	}
+	cfg2, err := load(t, "auto_rename = false\nrandom_session_name = true\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg2.AutoRename || !cfg2.RandomSessionName {
+		t.Errorf("auto_rename=%v random_session_name=%v", cfg2.AutoRename, cfg2.RandomSessionName)
+	}
+	spCfg, err := load(t, `
+[splash]
+enabled  = false
+duration = "1200ms"
+art      = ["  hi  ", " there"]
+subtitle = ""
+hint     = "custom {prefix}"
+fg       = "cyan"
+sub_fg   = "248"
+bg       = "transparent"
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spCfg.Splash.Enabled || spCfg.Splash.Duration.D() != 1200*time.Millisecond ||
+		!spCfg.Splash.HasSubtitle || spCfg.Splash.Subtitle != "" ||
+		!spCfg.Splash.HasHint || len(spCfg.Splash.Art) != 2 {
+		t.Errorf("unexpected splash config: %+v", spCfg.Splash)
+	}
+	if _, err := load(t, "[splash]\nduration = \"-1s\"\n"); err == nil {
+		t.Error("negative splash.duration should fail")
+	}
+	if _, err := load(t, "[splash]\nfg = \"nope\"\n"); err == nil {
+		t.Error("invalid splash.fg should fail")
+	}
+	dlgCfg, err := load(t, "[dialog]\nfg = \"white\"\nsub_fg = \"248\"\nhead_fg = \"cyan\"\nborder_fg = \"blue\"\nbg = \"#1e1e2e\"\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dlgCfg.Dialog.Fg != "white" || dlgCfg.Dialog.Bg != "#1e1e2e" {
+		t.Errorf("unexpected dialog config: %+v", dlgCfg.Dialog)
+	}
+	if _, err := load(t, "[dialog]\nbg = \"nope\"\n"); err == nil {
+		t.Error("invalid dialog.bg should fail")
+	}
+	fsCfg, err := load(t, "[finder]\nsel_bg = \"cyan\"\n[stack]\nactive_fg = \"yellow\"\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fsCfg.Finder.SelBg != "cyan" || fsCfg.Stack.ActiveFg != "yellow" {
+		t.Errorf("unexpected finder/stack config: %+v %+v", fsCfg.Finder, fsCfg.Stack)
+	}
+	if _, err := load(t, "[finder]\nsel_fg = \"nope\"\n"); err == nil {
+		t.Error("invalid finder.sel_fg should fail")
+	}
+	if _, err := load(t, "[stack]\nactive_bg = \"nope\"\n"); err == nil {
+		t.Error("invalid stack.active_bg should fail")
 	}
 }
 
@@ -57,8 +112,26 @@ func TestInvalidConfigsAreRejected(t *testing.T) {
 func TestMissingFileUsesDefaults(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	cfg, err := Load()
-	if err != nil || cfg.PrefixByte != 0x13 || len(cfg.Keybinds) != len(defaultKeybinds()) {
+	if err != nil || len(cfg.PrefixKey.Bytes) != 1 || cfg.PrefixKey.Bytes[0] != 0x13 || len(cfg.Keybinds) != len(defaultKeybinds()) {
 		t.Fatalf("got %+v, %v", cfg, err)
+	}
+}
+
+func TestFunctionKeyAndCustomPrefix(t *testing.T) {
+	cfg, err := load(t, "prefix = \"F13\"\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PrefixKey.Name != "F13" || string(cfg.PrefixKey.Bytes) != "\x1b[25~" {
+		t.Errorf("F13 prefix = %+v", cfg.PrefixKey)
+	}
+
+	cfg, err = load(t, "prefix = '\\e[25~'\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PrefixKey.Name != `\e[25~` || string(cfg.PrefixKey.Bytes) != "\x1b[25~" {
+		t.Errorf("custom prefix = %+v", cfg.PrefixKey)
 	}
 }
 
@@ -168,15 +241,36 @@ style = "rounded"
 vertical = "┇"
 
 [status]
-left  = " {workspace} {tabs}"
+left  = "{prefix} {workspace} {tabs}"
 right = "{time} "
-tab   = "[{index}]"
+tab   = "[{tab_glyph}{index}]"
+tab_active = "<{tab_glyph}{index}>"
+tab_sep = ""
+prefix = "{fg=cyan}  {/}"
+prefix_active = "{fg=yellow,bold}   {/}"
+zoom = "{fg=yellow} ▣{/}"
+tab_zoom_glyph = "▣"
+tab_colors = ["cyan", "#ff8800", "44"]
+pane_colors = ["red", "208"]
+tab_glyphs = ["🐟", "🦀"]
+tab_index_glyphs = ["⓪", "①", "②"]
+pane_glyphs = ["₀", "₁", "₂"]
+pane_zoom_glyphs = ["⓿", "❶", "❷"]
 `)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Borders["style"] != "rounded" || cfg.Status["tab"] != "[{index}]" {
-		t.Errorf("tables not kept: %v %v", cfg.Borders, cfg.Status)
+	if cfg.Borders["style"] != "rounded" || cfg.Status.Tab != "[{tab_glyph}{index}]" ||
+		cfg.Status.TabActive != "<{tab_glyph}{index}>" || cfg.Status.TabSep != "" {
+		t.Errorf("tables not kept: %v %+v", cfg.Borders, cfg.Status)
+	}
+	if len(cfg.Status.TabColors) != 3 || len(cfg.Status.PaneGlyphs) != 3 ||
+		len(cfg.Status.TabIndexGlyphs) != 3 || len(cfg.Status.PaneZoomGlyphs) != 3 {
+		t.Errorf("status arrays not kept: %+v", cfg.Status)
+	}
+	// Unset status fields keep their defaults.
+	if cfg.Status.Alert != " ?" {
+		t.Errorf("status.Alert = %q, want default %q", cfg.Status.Alert, " ?")
 	}
 
 	// Mistakes are refused when slat starts, not drawn oddly later.
@@ -186,6 +280,8 @@ tab   = "[{index}]"
 		"[borders]\ncorner = \"+\"\n",
 		"[status]\nleft = \"{workspaec}\"\n",
 		"[status]\nmiddle = \"x\"\n",
+		"[status]\ntab_colors = [\"notacolor\"]\n",
+		"[status]\nleft = \"{fg=nope}x{/}\"\n",
 	} {
 		if _, err := load(t, bad); err == nil {
 			t.Errorf("%q should have been refused", bad)

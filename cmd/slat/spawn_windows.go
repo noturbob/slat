@@ -23,3 +23,5 @@ func socketName() string {
 	}
 	return "slat-" + name + ".sock"
 }
+
+func execAttach(exe, sock string) error { return nil }

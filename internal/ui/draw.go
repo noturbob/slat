@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -9,33 +10,50 @@ import (
 )
 
 var (
-	styleBar       = vt.Style{Fg: vt.Indexed(252), Bg: vt.Indexed(235)}
-	styleWorkspace = vt.Style{Fg: vt.Indexed(114), Bg: vt.Indexed(235), Attrs: vt.Bold}
-	styleTab       = vt.Style{Fg: vt.Indexed(250), Bg: vt.Indexed(236)}
-	styleTabActive = vt.Style{Fg: vt.Indexed(231), Bg: vt.Indexed(25), Attrs: vt.Bold}
-	styleBadge     = vt.Style{Fg: vt.Indexed(16), Bg: vt.Indexed(114), Attrs: vt.Bold}
-	styleDim       = vt.Style{Fg: vt.Indexed(248), Bg: vt.Indexed(235)} // ≥4.5:1 on 235
-	styleBorder    = vt.Style{Fg: vt.Indexed(240)}
+	styleBar          = vt.Style{Fg: vt.Indexed(252), Bg: vt.Indexed(235)}
+	styleWorkspace    = vt.Style{Fg: vt.Indexed(114), Bg: vt.Indexed(235), Attrs: vt.Bold}
+	styleTab          = vt.Style{Fg: vt.Indexed(250), Bg: vt.Indexed(236)}
+	styleTabActive    = vt.Style{Fg: vt.Indexed(231), Bg: vt.Indexed(25), Attrs: vt.Bold}
+	styleBadge        = vt.Style{Fg: vt.Indexed(16), Bg: vt.Indexed(114), Attrs: vt.Bold}
+	styleDim          = vt.Style{Fg: vt.Indexed(248), Bg: vt.Indexed(235)} // ≥4.5:1 on 235
+	styleAccent       = vt.Indexed(44)
+	stylePrefix       = vt.Style{Fg: vt.Indexed(252), Bg: vt.Indexed(235)}
+	stylePrefixActive = vt.Style{Fg: vt.Indexed(16), Bg: vt.Indexed(114), Attrs: vt.Bold}
+	styleBorder       = vt.Style{Fg: vt.Indexed(240)}
 	styleBorderOn  = vt.Style{Fg: vt.Indexed(44), Attrs: vt.Bold}
 	styleBox       = vt.Style{Fg: vt.Indexed(44), Bg: vt.Indexed(235)}
 	styleBoxKey    = vt.Style{Fg: vt.Indexed(231), Bg: vt.Indexed(235), Attrs: vt.Bold}
 	styleBoxText   = vt.Style{Fg: vt.Indexed(252), Bg: vt.Indexed(235)}
-	styleBoxHead   = vt.Style{Fg: vt.Indexed(44), Bg: vt.Indexed(235), Attrs: vt.Bold}
-	styleBanner    = vt.Style{Fg: vt.Indexed(44), Attrs: vt.Bold}
+	styleBoxHead     = vt.Style{Fg: vt.Indexed(44), Bg: vt.Indexed(235), Attrs: vt.Bold}
+	styleFinder      = styleBox
+	styleFinderKey   = styleBoxKey
+	styleFinderText  = styleBoxText
+	styleFinderHead  = styleBoxHead
+	styleFinderSel   = styleTabActive
+	styleStack       = styleTab
+	styleStackActive = styleTabActive
+	styleBanner      = vt.Style{Fg: vt.Indexed(44), Attrs: vt.Bold}
 	styleBannerSub = vt.Style{Fg: vt.Indexed(244)}
 )
 
 // Text draws s at (x, y), clipped to the frame, and returns the column
 // after it.
 func Text(f *Frame, x, y int, s string, st vt.Style) int {
+	prevX := -1
 	for _, r := range s {
 		switch vt.RuneWidth(r) {
+		case 0:
+			if prevX >= 0 && prevX < f.W && y >= 0 && y < f.H && r >= 0x20 {
+				f.Lines[y][prevX].Comb += string(r)
+			}
 		case 1:
 			f.Set(x, y, vt.Cell{R: r, Style: st})
+			prevX = x
 			x++
 		case 2:
 			f.Set(x, y, vt.Cell{R: r, Wide: vt.WideHead, Style: st})
 			f.Set(x+1, y, vt.Cell{Wide: vt.WideTail, Style: st})
+			prevX = x
 			x += 2
 		}
 	}
@@ -69,6 +87,32 @@ const (
 	left
 	right
 )
+
+// StackHeader describes one row in the stacked-mode header list.
+type StackHeader struct {
+	Index  int
+	Title  string
+	Active bool
+}
+
+// DrawStackHeaders draws 1 row per stacked pane at the top of area.
+func DrawStackHeaders(f *Frame, area layout.Rect, headers []StackHeader) {
+	for i, h := range headers {
+		if i >= area.Rows {
+			break
+		}
+		y := area.Row + i
+		st := styleStack
+		prefix := "   "
+		if h.Active {
+			st = styleStackActive
+			prefix = " ▸ "
+		}
+		Fill(f, area.Col, y, area.Cols, st)
+		line := fmt.Sprintf("%s%d: %s", prefix, h.Index, h.Title)
+		Text(f, area.Col, y, Truncate(line, area.Cols), st)
+	}
+}
 
 // DrawBorders draws the separators between panes, joining where they meet,
 // and highlights the ones around the active pane.
@@ -110,13 +154,18 @@ func DrawBorders(f *Frame, borders []layout.Rect, active layout.Rect) {
 
 // Status is what the status bar shows.
 type Status struct {
+	Session        string
 	Workspace      string
 	WorkspaceIndex int // 0-based
 	WorkspaceCount int
 	Tabs           []string
 	TabAlert       []bool // a pane in this tab is waiting for input
+	TabPaneCount   []int  // number of panes in each tab
+	TabActivePane  []int  // 0-based active pane index in each tab
 	ActiveTab      int
 	Badge          string // "PREFIX", "ZOOM", ... or ""
+	PrefixActive   bool
+	Zoomed         bool
 	PaneIndex      int    // 0-based
 	PaneCount      int
 	Message        string // shown instead of the tabs while set
@@ -126,35 +175,33 @@ type Status struct {
 // side wins when the two sides don't fit: a bar that hides which pane you
 // are in is worse than one with a truncated tab list.
 func DrawStatusBar(f *Frame, y int, st Status, format StatusFormat) {
+	if st.Badge == "PREFIX" && format.HasPrefixPlaceholder() {
+		st.Badge = ""
+	}
+	if st.Badge == "ZOOM" && format.HasZoomIndicator() {
+		st.Badge = ""
+	}
 	w := f.W
 	Fill(f, 0, y, w, styleBar)
 
-	right := renderStatus(format.Right, st, format)
-	rightW := width(right)
+	rightSink := barSink{}
+	emitStatus(&rightSink, format.Right, st, format)
+	rightW := rightSink.x
 	if rightW > w {
-		right, rightW = nil, 0
+		rightW = 0
 	}
-	left := renderStatus(format.Left, st, format)
+
+	leftSink := barSink{frame: f, x: 0, y: y, budget: w - rightW}
 	if st.Message != "" {
-		left = []segment{{text: " " + st.Message, style: styleBar}}
+		leftSink.emit(" ", styleBar)
+		leftSink.emit(st.Message, styleBar)
+	} else {
+		emitStatus(&leftSink, format.Left, st, format)
 	}
 
-	x := 0
-	budget := w - rightW
-	for _, seg := range left {
-		if x >= budget {
-			break
-		}
-		text := seg.text
-		if x+vt.StringWidth(text) > budget {
-			text = Truncate(text, budget-x)
-		}
-		x = Text(f, x, y, text, seg.style)
-	}
-
-	x = w - rightW
-	for _, seg := range right {
-		x = Text(f, x, y, seg.text, seg.style)
+	if rightW > 0 {
+		rightDraw := barSink{frame: f, x: w - rightW, y: y, budget: w}
+		emitStatus(&rightDraw, format.Right, st, format)
 	}
 }
 
@@ -171,6 +218,125 @@ func DrawPrompt(f *Frame, y int, label, text string) int {
 	}
 	x := Text(f, 0, y, head, styleBadge)
 	return Text(f, x, y, text, styleBadge)
+}
+
+// DrawDialog draws a centered modal input box for renaming sessions, tabs, or
+// workspaces, returning the cursor position (x, y). Falls back to DrawPrompt
+// on tiny terminals.
+func DrawDialog(f *Frame, title, text string) (int, int) {
+	if f.W < 24 || f.H < 7 {
+		return DrawPrompt(f, f.H-1, title, text), f.H - 1
+	}
+	boxW := min(max(vt.StringWidth(title)+8, 42), f.W)
+	const boxH = 5
+	x0, y0 := (f.W-boxW)/2, (f.H-boxH)/2
+
+	for y := 0; y < boxH; y++ {
+		Fill(f, x0, y0+y, boxW, styleBox)
+	}
+	Text(f, x0, y0, "╭"+strings.Repeat("─", boxW-2)+"╮", styleBox)
+	for y := 1; y < boxH-1; y++ {
+		Text(f, x0, y0+y, "│", styleBox)
+		Text(f, x0+boxW-1, y0+y, "│", styleBox)
+	}
+	Text(f, x0, y0+boxH-1, "╰"+strings.Repeat("─", boxW-2)+"╯", styleBox)
+
+	head := " " + title + " "
+	Text(f, x0+(boxW-vt.StringWidth(head))/2, y0, head, styleBoxHead)
+
+	// Input row with a subtle prompt marker and visible tail of text.
+	const promptMark = "> "
+	innerW := boxW - 4 - len(promptMark) - 1
+	for innerW > 0 && vt.StringWidth(text) > innerW {
+		_, size := utf8.DecodeRuneInString(text)
+		text = text[size:]
+	}
+	ix := Text(f, x0+2, y0+2, promptMark, styleBoxHead)
+	curX := Text(f, ix, y0+2, text, styleBoxKey)
+
+	foot := " Enter save · Esc cancel "
+	if vt.StringWidth(foot) <= boxW-2 {
+		Text(f, x0+(boxW-vt.StringWidth(foot))/2, y0+boxH-1, foot, styleBoxText)
+	}
+	return curX, y0 + 2
+}
+
+// TreeRow is one visible entry in DrawTreePicker.
+type TreeRow struct {
+	Label    string
+	Selected bool
+	Active   bool
+}
+
+// DrawTreePicker draws a centered fuzzy tree picker modal, returning the
+// cursor position (x, y) at the end of the filter query.
+func DrawTreePicker(f *Frame, title, query string, rows []TreeRow, offset, total int) (int, int) {
+	boxW := min(max(f.W-4, 28), 76)
+	if boxW > f.W {
+		boxW = f.W
+	}
+	boxH := min(max(f.H-4, 8), 20)
+	if boxH > f.H {
+		boxH = f.H
+	}
+	x0, y0 := (f.W-boxW)/2, (f.H-boxH)/2
+
+	for y := 0; y < boxH; y++ {
+		Fill(f, x0, y0+y, boxW, styleFinder)
+	}
+	Text(f, x0, y0, "╭"+strings.Repeat("─", max(boxW-2, 0))+"╮", styleFinder)
+	for y := 1; y < boxH-1; y++ {
+		Text(f, x0, y0+y, "│", styleFinder)
+		Text(f, x0+boxW-1, y0+y, "│", styleFinder)
+	}
+	Text(f, x0, y0+boxH-1, "╰"+strings.Repeat("─", max(boxW-2, 0))+"╯", styleFinder)
+
+	head := fmt.Sprintf(" %s (%d/%d) ", title, len(rows), total)
+	if vt.StringWidth(head) <= boxW-2 {
+		Text(f, x0+(boxW-vt.StringWidth(head))/2, y0, head, styleFinderHead)
+	}
+
+	// Input row.
+	const promptMark = "> "
+	innerW := boxW - 4 - len(promptMark) - 1
+	q := query
+	for innerW > 0 && vt.StringWidth(q) > innerW {
+		_, size := utf8.DecodeRuneInString(q)
+		q = q[size:]
+	}
+	ix := Text(f, x0+2, y0+1, promptMark, styleFinderHead)
+	curX := Text(f, ix, y0+1, q, styleFinderKey)
+
+	if boxH > 4 {
+		Text(f, x0, y0+2, "├"+strings.Repeat("─", max(boxW-2, 0))+"┤", styleFinder)
+	}
+
+	listY := y0 + 3
+	listH := max(boxH-4, 0)
+	for i := 0; i < listH; i++ {
+		idx := offset + i
+		if idx >= len(rows) {
+			break
+		}
+		r := rows[idx]
+		st := styleFinderText
+		mark := "  "
+		if r.Selected {
+			st = styleFinderSel
+			mark = "▸ "
+		} else if r.Active {
+			st = styleFinderHead
+		}
+		Fill(f, x0+1, listY+i, boxW-2, st)
+		line := Truncate(mark+r.Label, boxW-4)
+		Text(f, x0+2, listY+i, line, st)
+	}
+
+	foot := " ↑↓/C-n/C-p move · Enter jump · Esc cancel "
+	if vt.StringWidth(foot) <= boxW-2 {
+		Text(f, x0+(boxW-vt.StringWidth(foot))/2, y0+boxH-1, foot, styleFinderText)
+	}
+	return curX, y0 + 1
 }
 
 // ─── Help overlay ───────────────────────────────────────────────────────────
@@ -248,18 +414,110 @@ var bannerArt = []string{
 	`  /____/_____/ /_/  |_/_/     `,
 }
 
-// DrawBanner clears the screen and draws the startup banner.
+// Splash describes a customized startup splash screen.
+type Splash struct {
+	Art      []string
+	Subtitle string
+	Hint     string
+	Style    vt.Style
+	SubStyle vt.Style
+	Bg       vt.Color
+}
+
+// ParseSplash builds and validates a Splash from config strings. Empty fg/subFg
+// keep the active theme's banner colours; bg accepts ""/"transparent" for default.
+func ParseSplash(art []string, subtitle, hint, fg, subFg, bg string) (Splash, error) {
+	sp := Splash{
+		Art:      art,
+		Subtitle: subtitle,
+		Hint:     hint,
+		Style:    styleBanner,
+		SubStyle: styleBannerSub,
+	}
+	if len(sp.Art) == 0 && art == nil {
+		sp.Art = bannerArt
+	}
+	if fg != "" {
+		c, err := ParseColor(fg)
+		if err != nil {
+			return sp, fmt.Errorf("splash.fg: %w", err)
+		}
+		sp.Style.Fg = c
+	}
+	if subFg != "" {
+		c, err := ParseColor(subFg)
+		if err != nil {
+			return sp, fmt.Errorf("splash.sub_fg: %w", err)
+		}
+		sp.SubStyle.Fg = c
+	}
+	if bg != "" && !isTransparent(bg) {
+		c, err := ParseColor(bg)
+		if err != nil {
+			return sp, fmt.Errorf("splash.bg: %w", err)
+		}
+		sp.Bg = c
+		sp.Style.Bg = c
+		sp.SubStyle.Bg = c
+	}
+	return sp, nil
+}
+
+// DrawBanner clears the screen and draws the default startup banner.
 func DrawBanner(f *Frame, version, hint string) {
-	clear(f.cells)
+	DrawSplash(f, Splash{
+		Art:      bannerArt,
+		Subtitle: "terminal multiplexer " + version,
+		Hint:     hint,
+		Style:    styleBanner,
+		SubStyle: styleBannerSub,
+	})
+}
+
+// DrawSplash clears the screen and draws sp centered in f.
+func DrawSplash(f *Frame, sp Splash) {
+	if sp.Bg != 0 {
+		bgStyle := vt.Style{Bg: sp.Bg}
+		for y := 0; y < f.H; y++ {
+			Fill(f, 0, y, f.W, bgStyle)
+		}
+	} else {
+		clear(f.cells)
+	}
 	w, h := f.W, f.H
-	y := max((h-len(bannerArt)-3)/2, 0)
-	for _, l := range bannerArt {
-		Text(f, max((w-len(bannerArt[0]))/2, 0), y, l, styleBanner)
+	lines := 0
+	if sp.Subtitle != "" {
+		lines++
+	}
+	if sp.Hint != "" {
+		lines++
+	}
+	totalH := len(sp.Art)
+	if lines > 0 && len(sp.Art) > 0 {
+		totalH += 1 + lines
+	} else {
+		totalH += lines
+	}
+	y := max((h-totalH)/2, 0)
+	maxArtW := 0
+	for _, l := range sp.Art {
+		if lw := vt.StringWidth(l); lw > maxArtW {
+			maxArtW = lw
+		}
+	}
+	xArt := max((w-maxArtW)/2, 0)
+	for _, l := range sp.Art {
+		Text(f, xArt, y, l, sp.Style)
 		y++
 	}
-	y++
-	for _, s := range []string{"terminal multiplexer " + version, hint} {
-		Text(f, max((w-vt.StringWidth(s))/2, 0), y, s, styleBannerSub)
+	if len(sp.Art) > 0 && lines > 0 {
+		y++
+	}
+	for _, s := range []string{sp.Subtitle, sp.Hint} {
+		if s == "" {
+			continue
+		}
+		Text(f, max((w-vt.StringWidth(s))/2, 0), y, s, sp.SubStyle)
 		y++
 	}
 }

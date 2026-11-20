@@ -100,6 +100,16 @@ func (a *App) mouseKey(buf []byte, i int) int {
 	if !ok {
 		return i
 	}
+	if tab := a.manager.ActiveTab(); a.zoomed == nil && a.scroll == nil && tab != nil && tab.Stacked {
+		panes := a.manager.ActivePanes()
+		if len(panes) > 1 {
+			headerRows := min(len(panes), max(a.paneArea().Rows-1, 0))
+			if ev.press && ev.button == 0 && !ev.motion && ev.y >= 1 && ev.y <= headerRows {
+				a.manager.FocusPane(panes[ev.y-1])
+				return i + n - 1
+			}
+		}
+	}
 	target := a.paneAt(ev.x, ev.y)
 
 	// A border being dragged owns the mouse until the button comes up, so

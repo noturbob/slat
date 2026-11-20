@@ -39,13 +39,22 @@ type PaneInfo struct {
 
 // Panes lists every pane in the session with its current status.
 func (a *App) Panes() []PaneInfo {
+	return a.panes(true)
+}
+
+// panesStatus lists every pane without querying Cwd, for periodic polling.
+func (a *App) panesStatus() []PaneInfo {
+	return a.panes(false)
+}
+
+func (a *App) panes(includeCwd bool) []PaneInfo {
 	a.mu.Lock()
 	refs := a.manager.AllPanes()
 	a.mu.Unlock()
 
 	out := make([]PaneInfo, 0, len(refs))
 	for _, r := range refs {
-		out = append(out, a.infoFor(r))
+		out = append(out, a.infoFor(r, includeCwd))
 	}
 	return out
 }
@@ -56,21 +65,24 @@ func (a *App) PaneInfo(spec string) (PaneInfo, error) {
 	if err != nil {
 		return PaneInfo{}, err
 	}
-	return a.infoFor(r), nil
+	return a.infoFor(r, true), nil
 }
 
 // infoFor reads a pane's live state. It takes no lock of its own: the
 // pane has its own, and reading the session tree happened in Panes/ref.
-func (a *App) infoFor(r session.PaneRef) PaneInfo {
+func (a *App) infoFor(r session.PaneRef, includeCwd bool) PaneInfo {
 	p := r.Pane
 	_, _, rows, cols := p.Rect()
 	info := PaneInfo{
 		Pane: p.ID, Workspace: r.Workspace, Tab: r.TabIndex, TabName: r.TabName,
-		Active: r.Active, Rows: rows, Cols: cols, Cwd: p.Cwd(),
+		Active: r.Active, Rows: rows, Cols: cols,
+	}
+	if includeCwd {
+		info.Cwd = p.Cwd()
 	}
 	_, fg, isShell := p.Foreground()
 	info.Foreground = fg
-	info.Last = lastLine(p.Capture(0, false))
+	info.Last = p.LastLine()
 	info.Status, info.Reason = a.statusOf(p, fg, isShell, info.Last)
 	return info
 }
@@ -288,7 +300,11 @@ func ParseWaitFor(s string) (WaitFor, error) {
 	case s == "exit":
 		return WaitFor{Exit: true}, nil
 	case strings.HasPrefix(s, "text="):
-		re, err := regexp.Compile(strings.TrimPrefix(s, "text="))
+		pat := strings.TrimPrefix(s, "text=")
+		if len(pat) > 4096 {
+			return WaitFor{}, fmt.Errorf("--for text=: pattern too long (max 4096 bytes)")
+		}
+		re, err := regexp.Compile(pat)
 		if err != nil {
 			return WaitFor{}, fmt.Errorf("--for text=: %w", err)
 		}

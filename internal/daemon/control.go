@@ -34,6 +34,21 @@ func (s *Server) run(req control.Request) control.Response {
 	}
 
 	switch req.Cmd {
+	case "session":
+		info := a.SessionInfo()
+		info.Socket = s.sockPath
+		return control.Response{Schema: control.Schema, Session: &info}
+
+	case "pop-switch":
+		return control.Response{Schema: control.Schema, SwitchTo: a.PopSwitchTarget()}
+
+	case "tree":
+		return control.Response{Schema: control.Schema, Tree: a.ExportTree()}
+
+	case "focus":
+		a.FocusTarget(req.Workspace, req.Tab, req.PaneID)
+		return control.Response{Schema: control.Schema}
+
 	case "ls":
 		return control.Response{Schema: control.Schema, Panes: a.Panes()}
 

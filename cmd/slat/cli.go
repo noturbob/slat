@@ -14,6 +14,8 @@ import (
 
 const cliUsage = `slat commands (for scripts and agents):
 
+  slat sessions [--json]                 list running sessions
+  slat attach [NAME|DIR]                 attach to a session by name or directory
   slat ls [--json]                       list panes and what each is doing
   slat status [PANE] [--json]            one pane's status
   slat pane new [--split v|h] [--cwd D] [--cmd C] [--target P] [--focus]
@@ -233,4 +235,31 @@ func keySequence(name string) (string, error) {
 		return "\x1b" + after, nil
 	}
 	return "", fmt.Errorf("unknown key %q", name)
+}
+
+func runSessions(args []string) int {
+	fs := flag.NewFlagSet("slat sessions", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	asJSON := fs.Bool("json", false, "print one JSON object")
+	if err := fs.Parse(args); err != nil {
+		return control.CodeError
+	}
+	sessions := listSessions()
+	if *asJSON {
+		b, _ := json.Marshal(control.Response{Schema: control.Schema, Sessions: sessions})
+		fmt.Println(string(b))
+		return control.CodeOK
+	}
+	if len(sessions) == 0 {
+		fmt.Println("no active sessions")
+		return control.CodeOK
+	}
+	for _, s := range sessions {
+		state := "detached"
+		if s.Attached {
+			state = "attached"
+		}
+		fmt.Printf("%-14s  %d tabs  %d panes  %-8s  %s\n", s.Name, s.Tabs, s.Panes, state, s.Dir)
+	}
+	return control.CodeOK
 }

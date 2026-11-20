@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/noturbob/slat/internal/config"
+	"github.com/noturbob/slat/internal/input"
 	"github.com/noturbob/slat/internal/pane"
 	"github.com/noturbob/slat/internal/vt"
 )
@@ -184,13 +185,21 @@ func TestOverlaysSwallowEscapeSequences(t *testing.T) {
 	waitGone(t, term, "Split left / right")
 
 	a.FeedInput([]byte{prefix, ','})
-	waitFor(t, term, "rename tab:", 1)
+	waitFor(t, term, "rename tab", 1)
 	a.FeedInput([]byte("\x1b[B")) // down arrow cancels the prompt
-	waitGone(t, term, "rename tab:")
+	waitGone(t, term, "rename tab")
 
 	a.FeedInput([]byte{prefix, ','})
 	a.FeedInput([]byte("\x15logs\r")) // Ctrl-U, type, Enter
 	waitFor(t, term, "1:logs", 1)
+
+	a.FeedInput([]byte{prefix, 'S'})
+	waitFor(t, term, "rename session", 1)
+	a.FeedInput([]byte("\x15my-proj\r"))
+	waitGone(t, term, "rename session")
+	if got := a.manager.SessionName; got != "my-proj" {
+		t.Errorf("SessionName = %q, want my-proj", got)
+	}
 
 	a.FeedInput([]byte("echo ok\r"))
 	waitFor(t, term, "slat$ echo ok", 1) // no stray "[A"/"[B" before it
@@ -261,4 +270,91 @@ func scrollState(a *App) (open bool, top int) {
 		return false, 0
 	}
 	return true, a.scroll.top
+}
+
+func TestStackedMode(t *testing.T) {
+	a, term := start(t)
+	a.FeedInput([]byte{prefix, 'v'})
+	a.FeedInput([]byte{prefix, 'v'})
+	waitFor(t, term, "pane 3/3", 1)
+
+	// Toggle stacked mode on (<prefix> t).
+	a.FeedInput([]byte{prefix, 't'})
+	waitFor(t, term, "STACK", 1)
+	waitFor(t, term, "▸ 3:", 1)
+
+	// Jump across stack elements with j/k and o/O without leaving stacked mode.
+	a.FeedInput([]byte{prefix, 'j'})
+	waitFor(t, term, "pane 1/3", 1)
+	waitFor(t, term, "▸ 1:", 1)
+
+	a.FeedInput([]byte{prefix, 'k'})
+	waitFor(t, term, "pane 3/3", 1)
+
+	// Click stack header row 2 (y=2, 1-based) to jump directly to pane 2.
+	a.FeedInput([]byte("\x1b[<0;5;2M"))
+	waitFor(t, term, "pane 2/3", 1)
+
+	// Toggle stacked mode off (<prefix> t).
+	a.FeedInput([]byte{prefix, 't'})
+	waitGone(t, term, "STACK")
+}
+
+func TestMultiBytePrefixF13(t *testing.T) {
+	pk, err := input.ParsePrefix("F13")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, term := start(t, func(cfg *config.Config) {
+		cfg.Prefix = "F13"
+		cfg.PrefixKey = pk
+	})
+
+	// Unrelated escape sequence followed by F13 + 'v' in one chunk.
+	a.FeedInput([]byte("\x1b[A\x1b[25~v"))
+	waitFor(t, term, "pane 2/2", 1)
+	waitFor(t, term, "slat$", 2)
+
+	// F13 + F13 in pane 2/2 (clean shell) sends the F13 sequence to the shell.
+	a.FeedInput([]byte("cat -v\r"))
+	waitFor(t, term, "cat -v", 1)
+	a.FeedInput([]byte("\x1b[25~\x1b[25~\r"))
+	waitFor(t, term, "^[[25~", 1)
+	a.FeedInput([]byte{0x04}) // Ctrl-D to exit cat
+
+	// F13 + '?' shows "F13" in help title.
+	a.FeedInput([]byte("\x1b[25~?"))
+	waitFor(t, term, "slat · keys after F13", 1)
+	a.FeedInput([]byte{'q'}) // close help
+	waitGone(t, term, "slat · keys after F13")
+
+	// F13 + arrow left selects pane 1/2.
+	a.FeedInput([]byte("\x1b[25~\x1b[D"))
+	waitFor(t, term, "pane 1/2", 1)
+
+	// F13 in scroll mode exits scroll mode and activates prefix.
+	a.FeedInput([]byte("\x1b[25~["))
+	waitFor(t, term, "SCROLL", 1)
+	a.FeedInput([]byte("\x1b[25~"))
+	waitGone(t, term, "SCROLL")
+	waitFor(t, term, "PREFIX", 1)
+}
+
+func TestToggleStatusBar(t *testing.T) {
+	a, term := start(t)
+	waitFor(t, term, "pane 1/1", 1)
+
+	// Toggle status bar off (<prefix> b).
+	a.FeedInput([]byte{prefix, 'b'})
+	waitGone(t, term, "pane 1/1")
+	if area := a.paneArea(); area.Rows != 30 {
+		t.Fatalf("paneArea.Rows = %d, want 30 when status bar hidden", area.Rows)
+	}
+
+	// Toggle status bar back on (<prefix> b).
+	a.FeedInput([]byte{prefix, 'b'})
+	waitFor(t, term, "pane 1/1", 1)
+	if area := a.paneArea(); area.Rows != 29 {
+		t.Fatalf("paneArea.Rows = %d, want 29 when status bar shown", area.Rows)
+	}
 }

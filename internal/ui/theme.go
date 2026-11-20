@@ -13,15 +13,26 @@ import (
 // pane borders and the overlays. Pane contents are never restyled — that's
 // the program's business.
 type Theme struct {
-	Bg          vt.Color // status bar and overlay background
-	Fg          vt.Color // status bar text
-	Dim         vt.Color // secondary text: pane count, workspace count
-	Accent      vt.Color // workspace name, focused border, badges, banner
-	Border      vt.Color // borders between unfocused panes
-	TabBg       vt.Color
-	TabFg       vt.Color
-	TabActiveBg vt.Color
-	TabActiveFg vt.Color
+	Bg             vt.Color // overlay background (and status bar default)
+	Fg             vt.Color // status bar text
+	Dim            vt.Color // secondary text: pane count, workspace count
+	Accent         vt.Color // workspace name, focused border, badges, banner
+	Border         vt.Color // borders between unfocused panes
+	StatusBg       vt.Color // optional status bar background override (0 = transparent when HasStatusBg)
+	TabBg          vt.Color
+	TabFg          vt.Color
+	TabActiveBg    vt.Color
+	TabActiveFg    vt.Color
+	PrefixFg       vt.Color // status {prefix} text when idle
+	PrefixBg       vt.Color // status {prefix} background when idle
+	PrefixActiveFg vt.Color // status {prefix} text when prefix key is pressed
+	PrefixActiveBg vt.Color // status {prefix} background when prefix key is pressed
+
+	HasStatusBg       bool
+	HasTabBg          bool
+	HasTabActiveBg    bool
+	HasPrefixBg       bool
+	HasPrefixActiveBg bool
 }
 
 // themes are the built-in palettes. "default" is what slat has always
@@ -118,8 +129,18 @@ func ParseTheme(settings map[string]string) (Theme, error) {
 	}
 	fields := map[string]*vt.Color{
 		"bg": &t.Bg, "fg": &t.Fg, "dim": &t.Dim, "accent": &t.Accent,
-		"border": &t.Border, "tab_bg": &t.TabBg, "tab_fg": &t.TabFg,
+		"border": &t.Border, "status_bg": &t.StatusBg,
+		"tab_bg": &t.TabBg, "tab_fg": &t.TabFg,
 		"tab_active_bg": &t.TabActiveBg, "tab_active_fg": &t.TabActiveFg,
+		"prefix_fg": &t.PrefixFg, "prefix_bg": &t.PrefixBg,
+		"prefix_active_fg": &t.PrefixActiveFg, "prefix_active_bg": &t.PrefixActiveBg,
+	}
+	bgFlags := map[string]*bool{
+		"status_bg":        &t.HasStatusBg,
+		"tab_bg":           &t.HasTabBg,
+		"tab_active_bg":    &t.HasTabActiveBg,
+		"prefix_bg":        &t.HasPrefixBg,
+		"prefix_active_bg": &t.HasPrefixActiveBg,
 	}
 	for key, value := range settings {
 		if key == "name" {
@@ -128,6 +149,13 @@ func ParseTheme(settings map[string]string) (Theme, error) {
 		field, ok := fields[key]
 		if !ok {
 			return t, fmt.Errorf("unknown setting %q in [theme]", key)
+		}
+		if flag, allowTransparent := bgFlags[key]; allowTransparent {
+			*flag = true
+			if isTransparent(value) {
+				*field = vt.DefaultColor
+				continue
+			}
 		}
 		c, err := ParseColor(value)
 		if err != nil {
@@ -138,22 +166,278 @@ func ParseTheme(settings map[string]string) (Theme, error) {
 	return t, nil
 }
 
+func isTransparent(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "transparent", "none", "default":
+		return true
+	}
+	return false
+}
+
 // Apply makes t the theme everything drawn from now on uses.
 func (t Theme) Apply() {
-	styleBar = vt.Style{Fg: t.Fg, Bg: t.Bg}
-	styleWorkspace = vt.Style{Fg: t.Accent, Bg: t.Bg, Attrs: vt.Bold}
+	barBg := t.Bg
+	if t.HasStatusBg {
+		barBg = t.StatusBg
+	}
+	prefixBg := fallbackColor(t.PrefixBg, barBg)
+	if t.HasPrefixBg {
+		prefixBg = t.PrefixBg
+	}
+	prefixActiveBg := fallbackColor(t.PrefixActiveBg, t.Accent)
+	if t.HasPrefixActiveBg {
+		prefixActiveBg = t.PrefixActiveBg
+	}
+	styleBar = vt.Style{Fg: t.Fg, Bg: barBg}
+	styleWorkspace = vt.Style{Fg: t.Accent, Bg: barBg, Attrs: vt.Bold}
 	styleTab = vt.Style{Fg: t.TabFg, Bg: t.TabBg}
 	styleTabActive = vt.Style{Fg: t.TabActiveFg, Bg: t.TabActiveBg, Attrs: vt.Bold}
 	styleBadge = vt.Style{Fg: t.Bg, Bg: t.Accent, Attrs: vt.Bold}
-	styleDim = vt.Style{Fg: t.Dim, Bg: t.Bg}
+	styleDim = vt.Style{Fg: t.Dim, Bg: barBg}
+	styleAccent = t.Accent
+	stylePrefix = vt.Style{
+		Fg: fallbackColor(t.PrefixFg, t.Fg),
+		Bg: prefixBg,
+	}
+	stylePrefixActive = vt.Style{
+		Fg:    fallbackColor(t.PrefixActiveFg, t.Bg),
+		Bg:    prefixActiveBg,
+		Attrs: vt.Bold,
+	}
 	styleBorder = vt.Style{Fg: t.Border}
 	styleBorderOn = vt.Style{Fg: t.Accent, Attrs: vt.Bold}
 	styleBox = vt.Style{Fg: t.Accent, Bg: t.Bg}
 	styleBoxKey = vt.Style{Fg: t.Fg, Bg: t.Bg, Attrs: vt.Bold}
 	styleBoxText = vt.Style{Fg: t.Fg, Bg: t.Bg}
 	styleBoxHead = vt.Style{Fg: t.Accent, Bg: t.Bg, Attrs: vt.Bold}
+	styleFinder = styleBox
+	styleFinderKey = styleBoxKey
+	styleFinderText = styleBoxText
+	styleFinderHead = styleBoxHead
+	styleFinderSel = styleTabActive
+	styleStack = styleTab
+	styleStackActive = styleTabActive
 	styleBanner = vt.Style{Fg: t.Accent, Attrs: vt.Bold}
 	styleBannerSub = vt.Style{Fg: t.Dim}
+}
+
+func fallbackColor(c, def vt.Color) vt.Color {
+	if c != 0 {
+		return c
+	}
+	return def
+}
+
+// DialogTheme holds optional colour overrides for modal dialogs and overlays.
+type DialogTheme struct {
+	Fg       string `toml:"fg"`
+	SubFg    string `toml:"sub_fg"`
+	HeadFg   string `toml:"head_fg"`
+	BorderFg string `toml:"border_fg"`
+	Bg       string `toml:"bg"`
+}
+
+// DialogStyle is a validated set of dialog colour overrides.
+type DialogStyle struct {
+	Fg, SubFg, HeadFg, BorderFg, Bg          vt.Color
+	HasFg, HasSubFg, HasHeadFg, HasBorderFg, HasBg bool
+}
+
+// ParseDialogTheme validates a [dialog] colour table.
+func ParseDialogTheme(d DialogTheme) (DialogStyle, error) {
+	var s DialogStyle
+	for _, item := range []struct {
+		name             string
+		val              string
+		dst              *vt.Color
+		has              *bool
+		allowTransparent bool
+	}{
+		{"fg", d.Fg, &s.Fg, &s.HasFg, false},
+		{"sub_fg", d.SubFg, &s.SubFg, &s.HasSubFg, false},
+		{"head_fg", d.HeadFg, &s.HeadFg, &s.HasHeadFg, false},
+		{"border_fg", d.BorderFg, &s.BorderFg, &s.HasBorderFg, false},
+		{"bg", d.Bg, &s.Bg, &s.HasBg, true},
+	} {
+		if item.val == "" {
+			continue
+		}
+		*item.has = true
+		if item.allowTransparent && isTransparent(item.val) {
+			*item.dst = vt.DefaultColor
+			continue
+		}
+		c, err := ParseColor(item.val)
+		if err != nil {
+			return s, fmt.Errorf("dialog.%s: %w", item.name, err)
+		}
+		*item.dst = c
+	}
+	return s, nil
+}
+
+// Apply overrides the active theme's dialog/overlay styles with any set fields.
+func (s DialogStyle) Apply() {
+	if s.HasBorderFg {
+		styleBox.Fg = s.BorderFg
+	}
+	if s.HasHeadFg {
+		styleBoxHead.Fg = s.HeadFg
+	}
+	if s.HasFg {
+		styleBoxKey.Fg = s.Fg
+	}
+	if s.HasSubFg {
+		styleBoxText.Fg = s.SubFg
+	}
+	if s.HasBg {
+		styleBox.Bg = s.Bg
+		styleBoxHead.Bg = s.Bg
+		styleBoxKey.Bg = s.Bg
+		styleBoxText.Bg = s.Bg
+	}
+}
+
+// FinderTheme holds optional colour overrides for the fuzzy tree picker.
+type FinderTheme struct {
+	Fg       string `toml:"fg"`
+	SubFg    string `toml:"sub_fg"`
+	HeadFg   string `toml:"head_fg"`
+	BorderFg string `toml:"border_fg"`
+	Bg       string `toml:"bg"`
+	SelFg    string `toml:"sel_fg"`
+	SelBg    string `toml:"sel_bg"`
+}
+
+// FinderStyle is a validated set of finder colour overrides.
+type FinderStyle struct {
+	Fg, SubFg, HeadFg, BorderFg, Bg, SelFg, SelBg          vt.Color
+	HasFg, HasSubFg, HasHeadFg, HasBorderFg, HasBg, HasSelFg, HasSelBg bool
+}
+
+// ParseFinderTheme validates a [finder] colour table.
+func ParseFinderTheme(d FinderTheme) (FinderStyle, error) {
+	var s FinderStyle
+	for _, item := range []struct {
+		name             string
+		val              string
+		dst              *vt.Color
+		has              *bool
+		allowTransparent bool
+	}{
+		{"fg", d.Fg, &s.Fg, &s.HasFg, false},
+		{"sub_fg", d.SubFg, &s.SubFg, &s.HasSubFg, false},
+		{"head_fg", d.HeadFg, &s.HeadFg, &s.HasHeadFg, false},
+		{"border_fg", d.BorderFg, &s.BorderFg, &s.HasBorderFg, false},
+		{"bg", d.Bg, &s.Bg, &s.HasBg, true},
+		{"sel_fg", d.SelFg, &s.SelFg, &s.HasSelFg, false},
+		{"sel_bg", d.SelBg, &s.SelBg, &s.HasSelBg, true},
+	} {
+		if item.val == "" {
+			continue
+		}
+		*item.has = true
+		if item.allowTransparent && isTransparent(item.val) {
+			*item.dst = vt.DefaultColor
+			continue
+		}
+		c, err := ParseColor(item.val)
+		if err != nil {
+			return s, fmt.Errorf("finder.%s: %w", item.name, err)
+		}
+		*item.dst = c
+	}
+	return s, nil
+}
+
+// Apply overrides the finder's styles with any set fields.
+func (s FinderStyle) Apply() {
+	if s.HasBorderFg {
+		styleFinder.Fg = s.BorderFg
+	}
+	if s.HasHeadFg {
+		styleFinderHead.Fg = s.HeadFg
+	}
+	if s.HasFg {
+		styleFinderKey.Fg = s.Fg
+	}
+	if s.HasSubFg {
+		styleFinderText.Fg = s.SubFg
+	}
+	if s.HasBg {
+		styleFinder.Bg = s.Bg
+		styleFinderHead.Bg = s.Bg
+		styleFinderKey.Bg = s.Bg
+		styleFinderText.Bg = s.Bg
+	}
+	if s.HasSelFg {
+		styleFinderSel.Fg = s.SelFg
+	}
+	if s.HasSelBg {
+		styleFinderSel.Bg = s.SelBg
+	}
+}
+
+// StackTheme holds optional colour overrides for stacked pane headers.
+type StackTheme struct {
+	Fg       string `toml:"fg"`
+	Bg       string `toml:"bg"`
+	ActiveFg string `toml:"active_fg"`
+	ActiveBg string `toml:"active_bg"`
+}
+
+// StackStyle is a validated set of stacked header colour overrides.
+type StackStyle struct {
+	Fg, Bg, ActiveFg, ActiveBg          vt.Color
+	HasFg, HasBg, HasActiveFg, HasActiveBg bool
+}
+
+// ParseStackTheme validates a [stack] colour table.
+func ParseStackTheme(d StackTheme) (StackStyle, error) {
+	var s StackStyle
+	for _, item := range []struct {
+		name             string
+		val              string
+		dst              *vt.Color
+		has              *bool
+		allowTransparent bool
+	}{
+		{"fg", d.Fg, &s.Fg, &s.HasFg, false},
+		{"bg", d.Bg, &s.Bg, &s.HasBg, true},
+		{"active_fg", d.ActiveFg, &s.ActiveFg, &s.HasActiveFg, false},
+		{"active_bg", d.ActiveBg, &s.ActiveBg, &s.HasActiveBg, true},
+	} {
+		if item.val == "" {
+			continue
+		}
+		*item.has = true
+		if item.allowTransparent && isTransparent(item.val) {
+			*item.dst = vt.DefaultColor
+			continue
+		}
+		c, err := ParseColor(item.val)
+		if err != nil {
+			return s, fmt.Errorf("stack.%s: %w", item.name, err)
+		}
+		*item.dst = c
+	}
+	return s, nil
+}
+
+// Apply overrides stacked header styles with any set fields.
+func (s StackStyle) Apply() {
+	if s.HasFg {
+		styleStack.Fg = s.Fg
+	}
+	if s.HasBg {
+		styleStack.Bg = s.Bg
+	}
+	if s.HasActiveFg {
+		styleStackActive.Fg = s.ActiveFg
+	}
+	if s.HasActiveBg {
+		styleStackActive.Bg = s.ActiveBg
+	}
 }
 
 // named are the colour names every terminal agrees on.

@@ -3,8 +3,20 @@ package app
 import (
 	"time"
 
+	"github.com/noturbob/slat/internal/layout"
 	"github.com/noturbob/slat/internal/session"
 )
+
+type sessionSig struct {
+	sessionName     string
+	workspaces      int
+	tabs            int
+	panes           int
+	activeWS        int
+	activeTab       int
+	activePane      int
+	maxActivityUnix int64
+}
 
 // saveEvery is how often a changed session is written out. It is the worst
 // case for how much output a power cut can cost, traded against writing the
@@ -59,18 +71,51 @@ func (a *App) saveLoop() {
 	}
 }
 
-// saveSession writes the session out now. Errors are deliberately quiet:
-// a session that cannot be saved is a smaller problem than a multiplexer
-// that interrupts the user to say so, and the log records it.
+// saveSession writes the session out now if anything changed since the last
+// save. Errors are deliberately quiet: a session that cannot be saved is a
+// smaller problem than a multiplexer that interrupts the user to say so, and
+// the log records it.
 func (a *App) saveSession() {
 	if !a.cfg.Restore || a.statePath == "" {
 		return
 	}
 	a.mu.Lock()
+	sig := a.currentSessionSig()
+	if sig == a.lastSavedSig {
+		a.mu.Unlock()
+		return
+	}
 	lines := min(a.cfg.Scrollback, maxSavedLines)
 	st := a.manager.Snapshot(lines)
+	a.lastSavedSig = sig
 	a.mu.Unlock()
 	session.SaveState(a.statePath, st)
+}
+
+func (a *App) currentSessionSig() sessionSig {
+	sig := sessionSig{
+		sessionName: a.manager.SessionName,
+		workspaces:  len(a.manager.Workspaces),
+		activeWS:    a.manager.ActiveWorkspaceIdx,
+	}
+	if ws := a.manager.ActiveWorkspace(); ws != nil {
+		sig.activeTab = ws.ActiveTabIdx
+		if ap := a.manager.ActivePane(); ap != nil {
+			sig.activePane = ap.ID
+		}
+	}
+	for _, ws := range a.manager.Workspaces {
+		sig.tabs += len(ws.Tabs)
+		for _, t := range ws.Tabs {
+			for _, p := range layout.CollectPanes(t.Layout) {
+				sig.panes++
+				if act := p.Activity().UnixNano(); act > sig.maxActivityUnix {
+					sig.maxActivityUnix = act
+				}
+			}
+		}
+	}
+	return sig
 }
 
 // forgetSession removes the saved session. Quitting is a decision, and a

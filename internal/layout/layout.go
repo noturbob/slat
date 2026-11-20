@@ -184,12 +184,76 @@ func CollectPanes(n *Node) []*pane.Pane {
 	return append(CollectPanes(n.Children[0]), CollectPanes(n.Children[1])...)
 }
 
-// Equalize recursively resets all split ratios to 0.5.
+// CountPanes returns the number of panes in the tree without allocating.
+func CountPanes(n *Node) int {
+	if n == nil {
+		return 0
+	}
+	if n.Pane != nil {
+		return 1
+	}
+	return CountPanes(n.Children[0]) + CountPanes(n.Children[1])
+}
+
+// AnyPane reports whether pred returns true for any pane in the tree.
+func AnyPane(n *Node, pred func(*pane.Pane) bool) bool {
+	if n == nil {
+		return false
+	}
+	if n.Pane != nil {
+		return pred(n.Pane)
+	}
+	return AnyPane(n.Children[0], pred) || AnyPane(n.Children[1], pred)
+}
+
+// PaneIndex returns the 0-based index of target in left-to-right, top-to-bottom
+// order, or -1 if target is not in n.
+func PaneIndex(n *Node, target *pane.Pane) int {
+	idx, _ := paneIndex(n, target, 0)
+	return idx
+}
+
+func paneIndex(n *Node, target *pane.Pane, cur int) (found, next int) {
+	if n == nil {
+		return -1, cur
+	}
+	if n.Pane != nil {
+		if n.Pane == target {
+			return cur, cur + 1
+		}
+		return -1, cur + 1
+	}
+	if f, n0 := paneIndex(n.Children[0], target, cur); f >= 0 {
+		return f, n0
+	} else {
+		return paneIndex(n.Children[1], target, n0)
+	}
+}
+
+// Equalize balances split ratios so sibling panes along the same split
+// direction receive equal space (e.g. 3 sequential vertical splits become
+// 1/3 each instead of 1/2, 1/4, 1/4).
 func Equalize(n *Node) {
 	if n == nil || n.Pane != nil {
 		return
 	}
-	n.Ratio = 0.5
+	left := spanCount(n.Children[0], n.Split)
+	right := spanCount(n.Children[1], n.Split)
+	if total := left + right; total > 0 {
+		n.Ratio = float64(left) / float64(total)
+	} else {
+		n.Ratio = 0.5
+	}
 	Equalize(n.Children[0])
 	Equalize(n.Children[1])
+}
+
+func spanCount(n *Node, dir pane.SplitDirection) int {
+	if n == nil {
+		return 0
+	}
+	if n.Pane != nil || n.Split != dir {
+		return 1
+	}
+	return spanCount(n.Children[0], dir) + spanCount(n.Children[1], dir)
 }

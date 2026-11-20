@@ -6,6 +6,7 @@ package session
 
 import (
 	"fmt"
+	"math/rand/v2"
 	"slices"
 
 	"github.com/noturbob/slat/internal/layout"
@@ -15,6 +16,8 @@ import (
 // Tab holds a layout tree and an active pane pointer.
 type Tab struct {
 	Name       string
+	CustomName bool
+	Stacked    bool
 	Layout     *layout.Node
 	ActivePane *pane.Pane
 }
@@ -28,6 +31,7 @@ type Workspace struct {
 
 // Manager manages all workspaces, tabs, and panes.
 type Manager struct {
+	SessionName        string
 	Workspaces         []*Workspace
 	ActiveWorkspaceIdx int
 
@@ -41,7 +45,7 @@ type Manager struct {
 // NewManager creates a session manager whose panes run shell and keep
 // scrollback lines of history; onChange is passed through to pane.New.
 func NewManager(shell string, scrollback int, onChange func()) *Manager {
-	return &Manager{shell: shell, scrollback: scrollback, onChange: onChange}
+	return &Manager{SessionName: "slat", shell: shell, scrollback: scrollback, onChange: onChange}
 }
 
 func (m *Manager) newPane(rows, cols int, dir string) (*pane.Pane, error) {
@@ -150,10 +154,73 @@ func (m *Manager) GoToTab(idx int) {
 	}
 }
 
+// RenameSession renames the session.
+func (m *Manager) RenameSession(name string) {
+	m.SessionName = name
+}
+
+var (
+	sessionPrefixes = []string{
+		"chaotic", "distilled", "arcane", "ethereal", "cursed", "blessed", "crimson", "hollow",
+		"astral", "void", "feral", "gilded", "primal", "shattered", "runic", "spectral",
+		"molten", "frozen", "ancient", "wicked", "radiant", "twilight", "phantom", "iron",
+		"obsidian", "velvet", "fervent", "stormy", "silent", "wild", "vivid", "lucid",
+		"umbra", "eldritch", "savage", "amber", "cobalt", "brittle", "mystic", "grim",
+	}
+	sessionSuffixes = []string{
+		"essence", "monkey", "shard", "blade", "echo", "ember", "raven", "anvil",
+		"orb", "whisper", "lantern", "spire", "prism", "sigil", "relic", "falcon",
+		"viper", "tome", "chalice", "beacon", "cinder", "crown", "compass", "spark",
+		"fox", "lynx", "wolf", "stag", "crane", "moth", "mantis", "serpent",
+		"griffin", "phoenix", "drake", "golem", "wraith", "warden", "nomad", "herald",
+	}
+)
+
+// SessionDictionaries returns the prefix and suffix word lists used for
+// random session names.
+func SessionDictionaries() (prefixes, suffixes []string) {
+	return sessionPrefixes, sessionSuffixes
+}
+
+// RandomSessionName generates a <prefix>-<suffix> name, re-rolling if the
+// candidate is already present in inUse.
+func RandomSessionName(inUse map[string]bool) string {
+	for attempt := 0; attempt < 64; attempt++ {
+		p := sessionPrefixes[rand.IntN(len(sessionPrefixes))]
+		s := sessionSuffixes[rand.IntN(len(sessionSuffixes))]
+		name := p + "-" + s
+		if !inUse[name] {
+			return name
+		}
+	}
+	base := sessionPrefixes[rand.IntN(len(sessionPrefixes))] + "-" + sessionSuffixes[rand.IntN(len(sessionSuffixes))]
+	for n := 2; ; n++ {
+		candidate := fmt.Sprintf("%s-%d", base, n)
+		if !inUse[candidate] {
+			return candidate
+		}
+	}
+}
+
 // RenameTab renames the active tab.
 func (m *Manager) RenameTab(name string) {
 	if tab := m.ActiveTab(); tab != nil {
 		tab.Name = name
+		tab.CustomName = true
+	}
+}
+
+// ToggleStack toggles stacked pane mode on the active tab.
+func (m *Manager) ToggleStack() {
+	if tab := m.ActiveTab(); tab != nil {
+		tab.Stacked = !tab.Stacked
+	}
+}
+
+// FocusPane sets the active pane in the active tab to p.
+func (m *Manager) FocusPane(p *pane.Pane) {
+	if tab := m.ActiveTab(); tab != nil && p != nil {
+		tab.ActivePane = p
 	}
 }
 

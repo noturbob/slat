@@ -20,21 +20,27 @@ import (
 type Config struct {
 	Prefix     string            `toml:"prefix"`
 	Shell      string            `toml:"shell"`
-	StatusBar  bool              `toml:"status_bar"`
-	Scrollback int               `toml:"scrollback"` // lines of history per pane
+	StatusBar         bool              `toml:"status_bar"`
+	AutoRename        bool              `toml:"auto_rename"`         // rename tabs after the active pane's program
+	RandomSessionName bool              `toml:"random_session_name"` // Diablo-style random session names
+	Scrollback        int               `toml:"scrollback"`          // lines of history per pane
 	Animate    Duration          `toml:"animate"`    // shorthand: one duration for every animation
 	Animations bool              `toml:"animations"` // false turns them all off
 	Mouse      bool              `toml:"mouse"`      // false hands the mouse back to the terminal
 	Restore    bool              `toml:"restore"`    // bring the session back after a reboot
 	Animation  Animation         `toml:"animation"`
+	Splash     Splash            `toml:"splash"`
+	Dialog     ui.DialogTheme    `toml:"dialog"`
+	Finder     ui.FinderTheme    `toml:"finder"`
+	Stack      ui.StackTheme     `toml:"stack"`
 	Keybinds   map[string]string `toml:"keybinds"`
 	Theme      map[string]string `toml:"theme"`
 	Borders    map[string]string `toml:"borders"`
-	Status     map[string]string `toml:"status"`
+	Status     ui.StatusConfig   `toml:"status"`
 	Copy       Copy              `toml:"copy"`
 	Agent      Agent             `toml:"agent"`
 
-	PrefixByte byte `toml:"-"` // parsed Prefix
+	PrefixKey input.Prefix `toml:"-"` // parsed Prefix
 }
 
 // Agent tunes how slat reports what a pane is doing, for `slat status`,
@@ -55,6 +61,27 @@ type Agent struct {
 	OnIdle  string `toml:"on_idle"`
 
 	Patterns []*regexp.Regexp `toml:"-"` // compiled InputPatterns
+}
+
+// Splash customizes the startup banner shown when the first client attaches.
+type Splash struct {
+	Enabled     bool     `toml:"enabled"`
+	Duration    Duration `toml:"duration"`
+	Art         []string `toml:"art"`
+	Subtitle    string   `toml:"subtitle"`
+	Hint        string   `toml:"hint"`
+	Fg          string   `toml:"fg"`
+	SubFg       string   `toml:"sub_fg"`
+	Bg          string   `toml:"bg"`
+	HasSubtitle bool     `toml:"-"`
+	HasHint     bool     `toml:"-"`
+}
+
+func defaultSplash() Splash {
+	return Splash{
+		Enabled:  true,
+		Duration: Duration(700 * time.Millisecond),
+	}
 }
 
 // Copy is how yanked text leaves slat.
@@ -86,15 +113,18 @@ func (d Duration) D() time.Duration { return time.Duration(d) }
 // DefaultConfig returns sensible defaults.
 func DefaultConfig() *Config {
 	cfg := &Config{
-		Prefix:     "C-s",
-		PrefixByte: 0x13,
+		Prefix:    "C-s",
+		PrefixKey: input.Prefix{Name: "Ctrl-S", Bytes: []byte{0x13}},
 		Shell:      defaultShell(),
 		StatusBar:  true,
+		AutoRename: true,
 		Scrollback: 2000,
 		Animations: true,
 		Mouse:      true,
 		Restore:    true,
 		Animation:  defaultAnimation(),
+		Splash:     defaultSplash(),
+		Status:     ui.DefaultStatusConfig(),
 		Copy:       Copy{OSC52: true},
 		Keybinds:   defaultKeybinds(),
 		Agent:      defaultAgent(),
@@ -138,6 +168,7 @@ func defaultKeybinds() map[string]string {
 		"equalize":          "=",
 		"close-pane":        "x",
 		"zoom":              "z",
+		"stack-mode":        "t",
 		// Tabs
 		"new-tab":    "c",
 		"next-tab":   "n",
@@ -150,8 +181,15 @@ func defaultKeybinds() map[string]string {
 		"prev-workspace":   "P",
 		"rename-workspace": "$",
 		// Session
-		"detach": "d",
-		"quit":   "q",
+		"rename-session": "S",
+		"tree-picker":    "f",
+		"session-picker": "F",
+		"next-session":   ")",
+		"prev-session":   "(",
+		"global-tree":       "g",
+		"toggle-status-bar": "b",
+		"detach":            "d",
+		"quit":           "q",
 		// Scrollback
 		"scroll-mode": "[",
 	}
@@ -194,7 +232,7 @@ func Load() (*Config, error) {
 	if path == "" {
 		return cfg, nil
 	}
-	user := &Config{StatusBar: true, Animations: true}
+	user := &Config{StatusBar: true, Animations: true, AutoRename: true}
 	md, err := toml.DecodeFile(path, user)
 	if errors.Is(err, os.ErrNotExist) {
 		return cfg, nil
@@ -213,16 +251,17 @@ func (cfg *Config) merge(user *Config, md toml.MetaData) error {
 		return fmt.Errorf("unknown setting %q", md.Undecoded()[0].String())
 	}
 	if user.Prefix != "" {
-		b, err := input.ParsePrefix(user.Prefix)
+		p, err := input.ParsePrefix(user.Prefix)
 		if err != nil {
 			return err
 		}
-		cfg.Prefix, cfg.PrefixByte = user.Prefix, b
+		cfg.Prefix, cfg.PrefixKey = user.Prefix, p
 	}
 	if user.Shell != "" {
 		cfg.Shell = user.Shell
 	}
 	cfg.StatusBar = user.StatusBar
+	cfg.AutoRename = user.AutoRename
 	if err := cfg.mergeAgent(user.Agent, md); err != nil {
 		return err
 	}
@@ -240,15 +279,27 @@ func (cfg *Config) merge(user *Config, md toml.MetaData) error {
 		}
 		cfg.Borders = user.Borders
 	}
-	if len(user.Status) > 0 {
-		if _, err := ui.ParseStatusFormat(user.Status); err != nil {
-			return err
-		}
-		cfg.Status = user.Status
+	if err := cfg.mergeStatus(user.Status, md); err != nil {
+		return err
 	}
 	if err := cfg.mergeAnimation(user, md); err != nil {
 		return err
 	}
+	if err := cfg.mergeSplash(user.Splash, md); err != nil {
+		return err
+	}
+	if _, err := ui.ParseDialogTheme(user.Dialog); err != nil {
+		return err
+	}
+	cfg.Dialog = user.Dialog
+	if _, err := ui.ParseFinderTheme(user.Finder); err != nil {
+		return err
+	}
+	cfg.Finder = user.Finder
+	if _, err := ui.ParseStackTheme(user.Stack); err != nil {
+		return err
+	}
+	cfg.Stack = user.Stack
 	if md.IsDefined("copy", "osc52") {
 		cfg.Copy.OSC52 = user.Copy.OSC52
 	}
@@ -260,6 +311,9 @@ func (cfg *Config) merge(user *Config, md toml.MetaData) error {
 	}
 	if md.IsDefined("restore") {
 		cfg.Restore = user.Restore
+	}
+	if md.IsDefined("random_session_name") {
+		cfg.RandomSessionName = user.RandomSessionName
 	}
 	if md.IsDefined("scrollback") {
 		if n := user.Scrollback; n < 0 || n > 1_000_000 {
@@ -319,6 +373,83 @@ func (cfg *Config) mergeAgent(user Agent, md toml.MetaData) error {
 	}
 	cfg.Agent.OnInput, cfg.Agent.OnIdle = user.OnInput, user.OnIdle
 	return cfg.Agent.compile()
+}
+
+func (cfg *Config) mergeStatus(user ui.StatusConfig, md toml.MetaData) error {
+	strings := []struct {
+		key string
+		dst *string
+		src string
+	}{
+		{"left", &cfg.Status.Left, user.Left},
+		{"right", &cfg.Status.Right, user.Right},
+		{"tab", &cfg.Status.Tab, user.Tab},
+		{"tab_active", &cfg.Status.TabActive, user.TabActive},
+		{"tab_sep", &cfg.Status.TabSep, user.TabSep},
+		{"alert", &cfg.Status.Alert, user.Alert},
+		{"prefix", &cfg.Status.Prefix, user.Prefix},
+		{"prefix_active", &cfg.Status.PrefixActive, user.PrefixActive},
+		{"zoom", &cfg.Status.Zoom, user.Zoom},
+		{"tab_zoom_glyph", &cfg.Status.TabZoomGlyph, user.TabZoomGlyph},
+	}
+	for _, f := range strings {
+		if md.IsDefined("status", f.key) {
+			*f.dst = f.src
+		}
+	}
+	lists := []struct {
+		key string
+		dst *[]string
+		src []string
+	}{
+		{"tab_colors", &cfg.Status.TabColors, user.TabColors},
+		{"pane_colors", &cfg.Status.PaneColors, user.PaneColors},
+		{"tab_glyphs", &cfg.Status.TabGlyphs, user.TabGlyphs},
+		{"tab_index_glyphs", &cfg.Status.TabIndexGlyphs, user.TabIndexGlyphs},
+		{"pane_glyphs", &cfg.Status.PaneGlyphs, user.PaneGlyphs},
+		{"pane_zoom_glyphs", &cfg.Status.PaneZoomGlyphs, user.PaneZoomGlyphs},
+	}
+	for _, f := range lists {
+		if md.IsDefined("status", f.key) {
+			*f.dst = f.src
+		}
+	}
+	_, err := ui.ParseStatusConfig(cfg.Status)
+	return err
+}
+
+func (cfg *Config) mergeSplash(user Splash, md toml.MetaData) error {
+	if md.IsDefined("splash", "enabled") {
+		cfg.Splash.Enabled = user.Enabled
+	}
+	if md.IsDefined("splash", "duration") {
+		if user.Duration.D() < 0 {
+			return fmt.Errorf("splash.duration must not be negative")
+		}
+		cfg.Splash.Duration = user.Duration
+	}
+	if md.IsDefined("splash", "art") {
+		cfg.Splash.Art = user.Art
+	}
+	if md.IsDefined("splash", "subtitle") {
+		cfg.Splash.Subtitle = user.Subtitle
+		cfg.Splash.HasSubtitle = true
+	}
+	if md.IsDefined("splash", "hint") {
+		cfg.Splash.Hint = user.Hint
+		cfg.Splash.HasHint = true
+	}
+	if md.IsDefined("splash", "fg") {
+		cfg.Splash.Fg = user.Fg
+	}
+	if md.IsDefined("splash", "sub_fg") {
+		cfg.Splash.SubFg = user.SubFg
+	}
+	if md.IsDefined("splash", "bg") {
+		cfg.Splash.Bg = user.Bg
+	}
+	_, err := ui.ParseSplash(cfg.Splash.Art, cfg.Splash.Subtitle, cfg.Splash.Hint, cfg.Splash.Fg, cfg.Splash.SubFg, cfg.Splash.Bg)
+	return err
 }
 
 func (a *Agent) compile() error {

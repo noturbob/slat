@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/noturbob/slat/internal/vt"
 )
 
 func waitFor(t *testing.T, what string, cond func() bool) {
@@ -73,5 +75,31 @@ func TestForegroundAndCapture(t *testing.T) {
 	}
 	if !strings.Contains(full, "marker-line") {
 		t.Error("marker-line should still be in the scrollback capture")
+	}
+}
+
+func BenchmarkPaneLastLine(b *testing.B) {
+	term := vt.New(120, 40)
+	for i := 0; i < 40; i++ {
+		term.Write([]byte("line of terminal output with some text\r\n"))
+	}
+	p := &Pane{term: term}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = p.LastLine()
+	}
+}
+
+func BenchmarkPaneCaptureScreen(b *testing.B) {
+	term := vt.New(120, 40)
+	for i := 0; i < 40; i++ {
+		term.Write([]byte("line of terminal output with some text\r\n"))
+	}
+	p := &Pane{term: term}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = p.Capture(0, false)
 	}
 }

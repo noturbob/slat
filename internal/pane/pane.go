@@ -335,14 +335,62 @@ func (p *Pane) Capture(n int, history bool) []string {
 	return out
 }
 
-func lineText(cells []vt.Cell) string {
-	var b strings.Builder
-	for _, c := range cells {
-		if c.Wide != vt.WideTail {
-			b.WriteString(c.String())
+// LastLine returns the last non-blank line on the visible screen, avoiding
+// allocating the rest of the screen when only the prompt line is needed.
+func (p *Pane) LastLine() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	_, rows := p.term.Size()
+	first := p.term.Pushed()
+	for abs := first + rows - 1; abs >= first; abs-- {
+		cells := p.term.LineAt(abs)
+		if rowHasNonSpace(cells) {
+			return lineText(cells)
 		}
 	}
-	return strings.TrimRight(b.String(), " ")
+	return ""
+}
+
+func rowHasNonSpace(cells []vt.Cell) bool {
+	for _, c := range cells {
+		if c.Wide == vt.WideTail {
+			continue
+		}
+		if (c.R != 0 && c.R != ' ') || c.Comb != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func lineText(cells []vt.Cell) string {
+	end := len(cells)
+	for end > 0 {
+		c := cells[end-1]
+		if c.Wide != vt.WideTail && ((c.R != 0 && c.R != ' ') || c.Comb != "") {
+			break
+		}
+		end--
+	}
+	if end == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(end)
+	for _, c := range cells[:end] {
+		if c.Wide == vt.WideTail {
+			continue
+		}
+		if c.R == 0 {
+			b.WriteByte(' ')
+		} else {
+			b.WriteRune(c.R)
+		}
+		if c.Comb != "" {
+			b.WriteString(c.Comb)
+		}
+	}
+	return b.String()
 }
 
 // Cwd returns the working directory of the pane's shell, or "" where the

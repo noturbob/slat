@@ -1,9 +1,8 @@
 package ui
 
 import (
-	"fmt"
 	"io"
-	"strings"
+	"strconv"
 
 	"github.com/noturbob/slat/internal/vt"
 )
@@ -68,7 +67,6 @@ type Modes struct {
 // mouseModes is what slat turns on to receive reports: button events with
 // drag (1002) in SGR encoding (1006), which is the only one that works
 // past column 223.
-func mouseSeq(on bool) string { return modeSeq(1002, on) + modeSeq(1006, on) }
 
 // Screen paints frames onto a real terminal. It remembers what the terminal
 // currently shows and sends only the cells that changed, so redraws are
@@ -79,7 +77,7 @@ type Screen struct {
 	spare  *Frame // recycled for the next frame
 	cursor Cursor
 	modes  Modes
-	out    strings.Builder
+	out    []byte // reused across frames so Render allocates 0 bytes in steady state
 }
 
 // NewScreen returns a Screen that writes to w.
@@ -112,27 +110,27 @@ func (s *Screen) NextFrame(w, h int) *Frame {
 // Render brings the terminal up to date with frame. The Screen keeps
 // frame, so the caller must not modify it afterwards.
 func (s *Screen) Render(frame *Frame, cur Cursor, modes Modes) error {
-	b := &s.out
-	b.Reset()
+	b := s.out[:0]
 	full := s.prev == nil || s.prev.W != frame.W || s.prev.H != frame.H
 	if full {
-		b.WriteString("\x1b[0m\x1b[?25l\x1b[H\x1b[2J")
+		b = append(b, "\x1b[0m\x1b[?25l\x1b[H\x1b[2J"...)
 		// Unknown terminal state: set every mode explicitly.
-		b.WriteString(modeSeq(1, modes.AppCursor) + modeSeq(2004, modes.BracketedPaste))
-		b.WriteString(mouseSeq(modes.Mouse))
-		fmt.Fprintf(b, "\x1b[%d q", cur.Style)
+		b = appendModeSeq(b, 1, modes.AppCursor)
+		b = appendModeSeq(b, 2004, modes.BracketedPaste)
+		b = appendMouseSeq(b, modes.Mouse)
+		b = appendCursorStyle(b, cur.Style)
 	} else {
 		if modes.AppCursor != s.modes.AppCursor {
-			b.WriteString(modeSeq(1, modes.AppCursor))
+			b = appendModeSeq(b, 1, modes.AppCursor)
 		}
 		if modes.BracketedPaste != s.modes.BracketedPaste {
-			b.WriteString(modeSeq(2004, modes.BracketedPaste))
+			b = appendModeSeq(b, 2004, modes.BracketedPaste)
 		}
 		if modes.Mouse != s.modes.Mouse {
-			b.WriteString(mouseSeq(modes.Mouse))
+			b = appendMouseSeq(b, modes.Mouse)
 		}
 		if cur.Style != s.cursor.Style {
-			fmt.Fprintf(b, "\x1b[%d q", cur.Style)
+			b = appendCursorStyle(b, cur.Style)
 		}
 	}
 
@@ -164,38 +162,40 @@ func (s *Screen) Render(frame *Frame, cur Cursor, modes Modes) error {
 			if !painted {
 				painted = true
 				if !full {
-					b.WriteString("\x1b[?25l")
+					b = append(b, "\x1b[?25l"...)
 				}
 			}
 			if cx != x || cy != y {
-				fmt.Fprintf(b, "\x1b[%d;%dH", y+1, x+1)
+				b = appendCSI2(b, y+1, x+1, 'H')
 			}
 			if c.Style != pen {
-				b.WriteString(c.Style.SGR())
+				b = c.Style.AppendSGR(b)
 				pen = c.Style
 			}
-			b.WriteString(c.String())
+			b = c.AppendTo(b)
 			x += w
 			cx, cy = x, y
 		}
 	}
 	if pen != (vt.Style{}) {
-		b.WriteString("\x1b[0m")
+		b = append(b, "\x1b[0m"...)
 	}
-	if b.Len() == 0 && cur == s.cursor {
+	if len(b) == 0 && cur == s.cursor {
 		s.spare = frame // nothing changed; reuse it
 		return nil
 	}
 	if cur.Visible {
-		fmt.Fprintf(b, "\x1b[%d;%dH\x1b[?25h", cur.Y+1, cur.X+1)
+		b = appendCSI2(b, cur.Y+1, cur.X+1, 'H')
+		b = append(b, "\x1b[?25h"...)
 	} else {
-		b.WriteString("\x1b[?25l")
+		b = append(b, "\x1b[?25l"...)
 	}
 
+	s.out = b
 	s.spare, s.prev = s.prev, frame
 	s.cursor = cur
 	s.modes = modes
-	_, err := io.WriteString(s.w, b.String())
+	_, err := s.w.Write(b)
 	return err
 }
 
@@ -209,9 +209,32 @@ func changedWithin(line, old []vt.Cell, x, n int) bool {
 	return false
 }
 
-func modeSeq(mode int, on bool) string {
+func appendModeSeq(dst []byte, mode int, on bool) []byte {
+	dst = append(dst, "\x1b[?"...)
+	dst = strconv.AppendInt(dst, int64(mode), 10)
 	if on {
-		return fmt.Sprintf("\x1b[?%dh", mode)
+		return append(dst, 'h')
 	}
-	return fmt.Sprintf("\x1b[?%dl", mode)
+	return append(dst, 'l')
+}
+
+func appendMouseSeq(dst []byte, on bool) []byte {
+	if on {
+		return append(dst, "\x1b[?1002h\x1b[?1006h"...)
+	}
+	return append(dst, "\x1b[?1002l\x1b[?1006l"...)
+}
+
+func appendCursorStyle(dst []byte, style int) []byte {
+	dst = append(dst, "\x1b["...)
+	dst = strconv.AppendInt(dst, int64(style), 10)
+	return append(dst, ' ', 'q')
+}
+
+func appendCSI2(dst []byte, a, c int, suffix byte) []byte {
+	dst = append(dst, "\x1b["...)
+	dst = strconv.AppendInt(dst, int64(a), 10)
+	dst = append(dst, ';')
+	dst = strconv.AppendInt(dst, int64(c), 10)
+	return append(dst, suffix)
 }

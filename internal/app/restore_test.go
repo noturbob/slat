@@ -4,6 +4,7 @@ package app
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -98,7 +99,7 @@ func TestUnreadableStateStartsCleanly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(strings.TrimSuffix(path, "/session.json"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	for _, content := range []string{`{"version":99,"workspaces":[{}]}`, `not json at all`, `{}`} {

@@ -5,12 +5,15 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/noturbob/slat/internal/app"
 	"github.com/noturbob/slat/internal/config"
+	"github.com/noturbob/slat/internal/control"
 	"github.com/noturbob/slat/internal/proto"
 )
 
@@ -40,6 +43,27 @@ func New(cfg *config.Config, sockPath string) (*Server, error) {
 	}
 	s := &sink{}
 	a.SetOutput(s)
+	a.SetSessionLister(func() []app.SessionSummary {
+		dir := filepath.Dir(sockPath)
+		base := filepath.Base(sockPath)
+		prefix := "slat-"
+		if i := strings.LastIndexByte(base, '-'); i > 0 {
+			prefix = base[:i]
+		}
+		// Skip sockPath itself: openSessionPicker holds a.mu, so dialing our
+		// own socket would deadlock until the control timeout.
+		return control.ListSessions([]string{dir, os.Getenv("XDG_RUNTIME_DIR")}, prefix, sockPath)
+	})
+	a.SetGlobalTreeLister(func() []app.RemoteTreeNode {
+		dir := filepath.Dir(sockPath)
+		base := filepath.Base(sockPath)
+		prefix := "slat-"
+		if i := strings.LastIndexByte(base, '-'); i > 0 {
+			prefix = base[:i]
+		}
+		return control.ListGlobalTree([]string{dir, os.Getenv("XDG_RUNTIME_DIR")}, prefix, sockPath)
+	})
+	a.SetRemoteFocuser(control.FocusRemote)
 	return &Server{app: a, sink: s, sockPath: sockPath, stop: make(chan struct{})}, nil
 }
 
@@ -67,13 +91,24 @@ func (s *Server) Run() error {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
+	const maxConnections = 64
+	connSem := make(chan struct{}, maxConnections)
+
 	go func() {
 		for {
 			c, err := ln.Accept()
 			if err != nil {
 				return
 			}
-			go s.serve(c)
+			select {
+			case connSem <- struct{}{}:
+				go func() {
+					defer func() { <-connSem }()
+					s.serve(c)
+				}()
+			default:
+				c.Close()
+			}
 		}
 	}()
 

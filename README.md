@@ -190,6 +190,7 @@ every key inside slat.
 | `+` / `-` | Grow / shrink the pane |
 | `=` | Equalize all sizes |
 | `z` | Zoom the pane to full size (toggle) |
+| `t` | Toggle stacked mode (jump elements with `o`/`O`/`j`/`k` or click) |
 | `x` | Close the pane |
 | `[` or PageUp | Scroll and copy mode (see below) |
 
@@ -215,6 +216,12 @@ every key inside slat.
 
 | Key | Action |
 | --- | --- |
+| `S` | Rename the session |
+| `f` | Fuzzy tree picker (session / workspaces / tabs / panes) |
+| `F` | Switch between running sessions (fuzzy) |
+| `)` / `(` | Switch to next / previous running session |
+| `g` | Global fuzzy tree across all sessions, tabs & panes |
+| `b` | Toggle the bottom status bar |
 | `d` | Detach — the session keeps running |
 | `q` | Quit — ends every shell |
 | `?` | Show all keys |
@@ -309,6 +316,8 @@ $ slat capture 3 --lines 20             # read what it printed
 | Command | What it does |
 | --- | --- |
 | `slat ls` | every pane, with what each one is doing |
+| `slat sessions [--json]` | list running directory-based sessions |
+| `slat attach [NAME\|DIR]` | attach to a session by name or directory |
 | `slat status [PANE]` | one pane's status |
 | `slat pane new [--split v\|h] [--cwd D] [--cmd C] [--target P] [--focus]` | split a pane |
 | `slat pane close PANE` | close a pane |
@@ -354,9 +363,11 @@ slat reads `~/.config/slat/config.toml` (or `$XDG_CONFIG_HOME/slat/config.toml`)
 Every setting is optional:
 
 ```toml
-prefix     = "C-a"        # Ctrl + a letter, or C-\ C-] C-^ C-_
+prefix     = "C-a"        # Ctrl + a letter, C-\ C-] C-^ C-_, "F13"–"F24", or '\e[25~'
 shell      = "/bin/zsh"   # default: $SHELL
 status_bar = true
+auto_rename = true        # rename tabs after the active pane's program (manual rename wins)
+# random_session_name = false  # true picks <prefix>-<suffix> from 40x40 dictionaries (re-rolls on collision)
 scrollback = 5000         # lines kept per pane; 0 turns it off
 mouse      = true         # false hands the mouse back to your terminal
 restore    = true         # bring the session back after a reboot
@@ -381,11 +392,44 @@ easing = "out-cubic"      # linear, out-quad, out-cubic, out-back
 reveal = "curtain"        # curtain or none
 glyph  = "░"
 
+[splash]
+enabled  = true           # false (or duration = "0s") skips the startup banner
+duration = "700ms"
+# art    = ["..."]        # custom ASCII/Unicode lines
+# subtitle = "slat {version}"
+# hint     = "press {prefix} then ? for help"
+# fg / sub_fg / bg        # customize splash colours
+
+[dialog]
+# fg / sub_fg / head_fg / border_fg / bg   # customize modal dialog & help overlay colours
+
+[finder]
+# fg / sub_fg / head_fg / border_fg / bg / sel_fg / sel_bg  # fuzzy tree picker colours
+
+[stack]
+# fg / bg / active_fg / active_bg          # stacked pane header colours
+
 [status]
 left  = " {workspace} │ {tabs}"
 right = "{badge} pane {pane}/{panes}  {time} "
 tab   = " {index}:{name}{alert} "
 alert = " ●"
+
+# Example: 3-glyph tabs (icon, 1-based window index, 1-based pane count + zoomed set; 10-entry 0-9 arrays render multi-digit numbers > 9):
+# [status]
+# left             = "{prefix} {workspace} │ {tabs}"
+# right            = "{badge}{workspaces} {pane}/{panes} "
+# tab              = " {tab_glyph} {tab_index_glyph} {pane_glyph} {name}{alert} "
+# alert            = "{fg=bright-red,bold} ●{/}"
+# prefix           = "{fg=cyan,bg=236}  {/}"
+# prefix_active    = "{fg=#1e1e2e,bg=#f9e2af,bold}   {/}"
+# tab_glyphs       = ["■"]
+# tab_zoom_glyph   = "▣"
+# tab_index_glyphs = ["⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"]
+# pane_glyphs      = ["₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"]
+# pane_zoom_glyphs = ["⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"]
+# tab_colors       = ["cyan", "magenta", "yellow", "green", "blue"]
+# pane_colors      = ["208", "44", "#a6e3a1"]
 
 [keybinds]
 split-vertical   = "|"
@@ -394,16 +438,27 @@ resize-shrink    = "_"    # "-" was given away above
 zoom             = ""     # "" unbinds a command
 ```
 
-- `[theme]` colours are `bg`, `fg`, `dim`, `accent`, `border`, `tab_bg`,
-  `tab_fg`, `tab_active_bg` and `tab_active_fg`, written as a colour name, a
-  palette index (0-255) or `#rrggbb`. Only what slat draws is themed — pane
-  contents keep whatever colours the programs in them use.
-- `[status]` takes `left`, `right`, `tab` and `alert`. The sides accept
-  `{workspace}` `{workspace_index}` `{workspace_count}` `{workspaces}` `{tabs}`
-  `{tab}` `{tabs_count}` `{pane}` `{panes}` `{badge}` `{time}` `{seconds}`
-  `{date}`; `tab` accepts `{index}` `{name}` `{alert}`. Everything else is
-  literal text, so a Nerd Font glyph goes straight in — and each placeholder is
-  drawn in the colour that suits it, so there's no colour markup to write.
+- `[theme]` colours are `bg`, `status_bg`, `fg`, `dim`, `accent`, `border`,
+  `tab_bg`, `tab_fg`, `tab_active_bg`, `tab_active_fg`, `prefix_fg`,
+  `prefix_bg`, `prefix_active_fg` and `prefix_active_bg`, written as a colour
+  name, a palette index (0-255) or `#rrggbb` (`status_bg` and `*_bg` also
+  accept `""` or `"transparent"` for the terminal's default background). Only
+  what slat draws is themed — pane contents keep whatever colours the programs
+  in them use.
+- `[status]` takes `left`, `right`, `tab`, `tab_active`, `tab_sep`, `alert`,
+  `prefix`, `prefix_active`, `zoom`, `tab_zoom_glyph`, `tab_colors`,
+  `pane_colors`, `tab_glyphs`, `tab_index_glyphs`, `pane_glyphs` and
+  `pane_zoom_glyphs`. The sides accept `{prefix}` `{session}` `{workspace}`
+  `{workspace_index}` `{workspace_count}` `{workspaces}` `{tabs}` `{tab}`
+  `{tabs_count}` `{pane}` `{panes}` `{pane_glyph}` `{pane_glyph_current}`
+  `{zoom}` `{badge}` `{time}` `{seconds}` `{date}`; `tab` and `tab_active`
+  accept `{index}` `{name}` `{alert}` `{tab_glyph}` `{tab_index_glyph}`
+  `{pane_glyph}` `{pane_glyph_current}` `{zoom}`, and `tab_sep` (default `" "`,
+  set to `""` to remove space between tabs) is drawn
+  between tabs. Inline style tags like `{fg=cyan,bg=236,bold}🐟{/}` colour any Unicode glyph or span (using a colour name, 0–255 index, `#rrggbb`
+  hex, or `tab`/`pane` to pick from `tab_colors`/`pane_colors` by index). When
+  `{prefix}` is used, `{badge}` omits `"PREFIX"`; when `{zoom}`,
+  `tab_zoom_glyph`, or `pane_zoom_glyphs` is used, `{badge}` omits `"ZOOM"`.
 - A mistake anywhere — an unknown colour, a glyph two columns wide, a
   placeholder that doesn't exist, an easing curve that doesn't either — is
   reported when you run `slat`, never quietly drawn.

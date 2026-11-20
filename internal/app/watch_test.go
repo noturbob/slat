@@ -53,6 +53,7 @@ func TestHookUnsetDoesNothing(t *testing.T) {
 func TestStatusBarMarksTabWaitingForInput(t *testing.T) {
 	a, term := start(t, func(c *config.Config) {
 		c.Agent.InputAfter = config.Duration(300 * time.Millisecond)
+		c.AutoRename = false
 	})
 	a.FeedInput([]byte{prefix, 'c'}) // new tab
 	waitFor(t, term, "2:shell", 1)
@@ -229,5 +230,44 @@ func TestMoveMode(t *testing.T) {
 	waitColumn(t, term, "AFTERWARDS", false)
 	if strings.Contains(term.String(), "qecho") {
 		t.Error("the q that left move mode reached the shell")
+	}
+}
+
+func TestAutoRenameAndManualPrecedence(t *testing.T) {
+	a, _ := start(t)
+	a.mu.Lock()
+	tab := a.manager.ActiveTab()
+	id := tab.ActivePane.ID
+	a.mu.Unlock()
+
+	a.mu.Lock()
+	changed := a.syncTabNames([]PaneInfo{{Pane: id, Foreground: "nvim"}})
+	name := tab.Name
+	a.mu.Unlock()
+	if !changed || name != "nvim" {
+		t.Errorf("autorename = %q (changed=%v), want nvim", name, changed)
+	}
+
+	// Manual rename takes precedence over autorename.
+	a.mu.Lock()
+	a.manager.RenameTab("custom")
+	changed = a.syncTabNames([]PaneInfo{{Pane: id, Foreground: "htop"}})
+	name = tab.Name
+	a.mu.Unlock()
+	if changed || name != "custom" {
+		t.Errorf("manual rename overwritten: %q (changed=%v)", name, changed)
+	}
+
+	// auto_rename = false disables autorename globally.
+	a.mu.Lock()
+	tab.CustomName = false
+	a.cfg.AutoRename = false
+	a.mu.Unlock()
+	a.scanStatus()
+	a.mu.Lock()
+	name = tab.Name
+	a.mu.Unlock()
+	if name != "custom" {
+		t.Errorf("auto_rename=false still renamed tab to %q", name)
 	}
 }

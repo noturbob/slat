@@ -10,7 +10,13 @@ import (
 // watchInterval is how often every pane's status is re-read. Status is
 // derived from output timing, so it changes on its own and nothing else
 // would notice.
-const watchInterval = 500 * time.Millisecond
+const (
+	watchInterval      = 500 * time.Millisecond
+	maxConcurrentHooks = 8
+	hookTimeout        = 30 * time.Second
+)
+
+var hookSem = make(chan struct{}, maxConcurrentHooks)
 
 // watch keeps each pane's status up to date so the status bar can mark a
 // pane that needs attention, and the [agent] hooks fire once on the
@@ -29,7 +35,7 @@ func (a *App) watch() {
 }
 
 func (a *App) scanStatus() {
-	infos := a.Panes()
+	infos := a.panesStatus()
 
 	a.mu.Lock()
 	first := a.lastStatus == nil
@@ -70,6 +76,11 @@ func (a *App) scanStatus() {
 		}
 	}
 	a.attention = attention
+	if a.cfg.AutoRename {
+		if a.syncTabNames(infos) {
+			changed = true
+		}
+	}
 	if changed {
 		a.markDirty()
 	}
@@ -78,6 +89,35 @@ func (a *App) scanStatus() {
 	for _, run := range hooks {
 		run()
 	}
+}
+
+func (a *App) syncTabNames(infos []PaneInfo) bool {
+	changed := false
+	for _, ws := range a.manager.Workspaces {
+		for _, t := range ws.Tabs {
+			if t.CustomName || t.ActivePane == nil {
+				continue
+			}
+			fg := ""
+			for _, info := range infos {
+				if info.Pane == t.ActivePane.ID {
+					fg = info.Foreground
+					break
+				}
+			}
+			if fg == "" {
+				continue
+			}
+			if len([]rune(fg)) > maxNameLen {
+				fg = string([]rune(fg)[:maxNameLen])
+			}
+			if t.Name != fg {
+				t.Name = fg
+				changed = true
+			}
+		}
+	}
+	return changed
 }
 
 // hook prepares the configured command for a pane, or nil if unset. The
@@ -109,11 +149,27 @@ func (a *App) hook(cmd string, info PaneInfo) func() {
 		// The daemon's stderr is its log file; a hook's own output is not
 		// allowed anywhere near the terminal.
 		c.Stdout, c.Stderr = os.Stderr, os.Stderr
+		select {
+		case hookSem <- struct{}{}:
+		default:
+			fmt.Fprintf(os.Stderr, "slat: agent hook %q: too many running hooks, skipped\n", cmd)
+			return
+		}
 		if err := c.Start(); err != nil {
+			<-hookSem
 			fmt.Fprintf(os.Stderr, "slat: agent hook %q: %v\n", cmd, err)
 			return
 		}
-		go c.Wait() // reap it whenever it finishes
+		go func() {
+			defer func() { <-hookSem }()
+			timer := time.AfterFunc(hookTimeout, func() {
+				if c.Process != nil {
+					_ = c.Process.Kill()
+				}
+			})
+			defer timer.Stop()
+			_ = c.Wait() // reap it whenever it finishes
+		}()
 	}
 }
 

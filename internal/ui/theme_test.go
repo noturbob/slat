@@ -47,6 +47,75 @@ func TestParseTheme(t *testing.T) {
 		t.Errorf("ParseTheme(nil) = %v, %v", got, err)
 	}
 
+	// Prefix indicator colours can be customised via name, 0-255, or hex.
+	p, err := ParseTheme(map[string]string{
+		"prefix_fg":        "cyan",
+		"prefix_bg":        "236",
+		"prefix_active_fg": "#1e1e2e",
+		"prefix_active_bg": "bright-yellow",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.PrefixFg != vt.Indexed(6) || p.PrefixBg != vt.Indexed(236) ||
+		p.PrefixActiveFg != vt.RGB(0x1e, 0x1e, 0x2e) || p.PrefixActiveBg != vt.Indexed(11) {
+		t.Errorf("prefix colours = %+v", p)
+	}
+
+	// status_bg and *_bg accept "" / "transparent" for terminal default bg.
+	tr, err := ParseTheme(map[string]string{
+		"status_bg": "",
+		"tab_bg":    "transparent",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tr.HasStatusBg || tr.StatusBg != vt.DefaultColor || !tr.HasTabBg || tr.TabBg != vt.DefaultColor {
+		t.Errorf("transparent bg = %+v", tr)
+	}
+	tr.Apply()
+	if styleBar.Bg != vt.DefaultColor || styleTab.Bg != vt.DefaultColor {
+		t.Errorf("applied transparent bg: bar=%v tab=%v", styleBar.Bg, styleTab.Bg)
+	}
+
+	// Dialog colour overrides.
+	ds, err := ParseDialogTheme(DialogTheme{
+		Fg: "bright-white", SubFg: "248", HeadFg: "#89b4fa", BorderFg: "cyan", Bg: "#1e1e2e",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds.Apply()
+	if styleBoxKey.Fg != vt.Indexed(15) || styleBoxText.Fg != vt.Indexed(248) ||
+		styleBoxHead.Fg != vt.RGB(0x89, 0xb4, 0xfa) || styleBox.Fg != vt.Indexed(6) ||
+		styleBox.Bg != vt.RGB(0x1e, 0x1e, 0x2e) {
+		t.Errorf("dialog styles = box:%+v head:%+v key:%+v text:%+v", styleBox, styleBoxHead, styleBoxKey, styleBoxText)
+	}
+	if _, err := ParseDialogTheme(DialogTheme{Fg: "notacolor"}); err == nil {
+		t.Error("expected error for invalid dialog.fg")
+	}
+
+	fs, err := ParseFinderTheme(FinderTheme{
+		Fg: "white", SubFg: "248", HeadFg: "cyan", BorderFg: "blue", Bg: "#1e1e2e", SelFg: "16", SelBg: "yellow",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs.Apply()
+	if styleFinderKey.Fg != vt.Indexed(7) || styleFinderSel.Bg != vt.Indexed(3) || styleFinder.Bg != vt.RGB(0x1e, 0x1e, 0x2e) {
+		t.Errorf("finder styles = %+v %+v", styleFinder, styleFinderSel)
+	}
+
+	ss, err := ParseStackTheme(StackTheme{Fg: "250", Bg: "236", ActiveFg: "#1e1e2e", ActiveBg: "#89b4fa"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ss.Apply()
+	if styleStack.Fg != vt.Indexed(250) || styleStackActive.Bg != vt.RGB(0x89, 0xb4, 0xfa) {
+		t.Errorf("stack styles = %+v %+v", styleStack, styleStackActive)
+	}
+	themes["default"].Apply()
+
 	// Typos are errors, not surprises later.
 	for _, bad := range []map[string]string{
 		{"name": "no-such-theme"},

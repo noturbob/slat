@@ -95,3 +95,39 @@ func TestSearch(t *testing.T) {
 		t.Errorf("wide-char line: col %d width %d ok %v (line %d)", col, w, ok, abs)
 	}
 }
+
+func BenchmarkHistoryPush1M(b *testing.B) {
+	term := New(80, 24)
+	term.SetScrollback(1_000_000)
+	line := make([]Cell, 80)
+	for i := range line {
+		line[i] = Cell{R: 'x'}
+	}
+	// Fill the 1M ring once so we measure steady-state ring overwrite.
+	for i := 0; i < 1_000_000; i++ {
+		term.pushHistory(line)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		term.pushHistory(line)
+	}
+}
+
+func BenchmarkHistorySearch1M(b *testing.B) {
+	term := New(20, 3)
+	term.SetScrollback(1_000_000)
+	line := make([]Cell, 16)
+	for i := range line {
+		line[i] = Cell{R: 'a'}
+	}
+	for i := 0; i < 1_000_000; i++ {
+		term.pushHistory(line)
+	}
+	from := term.Pushed() + 2
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _, _, _ = term.Search("needle", from, -1)
+	}
+}

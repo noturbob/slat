@@ -51,32 +51,63 @@ type Style struct {
 	Attrs  Attr
 }
 
+var attrSeqs = [8]string{";1", ";2", ";3", ";4", ";5", ";7", ";8", ";9"}
+
 // SGR returns the escape sequence that selects s from a reset state.
 func (s Style) SGR() string {
-	var b strings.Builder
-	b.WriteString("\x1b[0")
-	for i, a := range []Attr{Bold, Faint, Italic, Underline, Blink, Reverse, Invisible, Strike} {
-		if s.Attrs&a != 0 {
-			b.WriteString([]string{";1", ";2", ";3", ";4", ";5", ";7", ";8", ";9"}[i])
-		}
-	}
-	writeColor(&b, s.Fg, 30, 90, 38)
-	writeColor(&b, s.Bg, 40, 100, 48)
-	b.WriteByte('m')
-	return b.String()
+	var buf [64]byte
+	return string(s.AppendSGR(buf[:0]))
 }
 
-func writeColor(b *strings.Builder, c Color, base, bright, ext int) {
+// WriteSGR appends the SGR escape sequence for s directly to b without
+// intermediate string allocations.
+func (s Style) WriteSGR(b *strings.Builder) {
+	var buf [64]byte
+	b.Write(s.AppendSGR(buf[:0]))
+}
+
+// AppendSGR appends the SGR escape sequence for s to dst.
+func (s Style) AppendSGR(dst []byte) []byte {
+	if s.Attrs == 0 && s.Fg == DefaultColor && s.Bg == DefaultColor {
+		return append(dst, "\x1b[0m"...)
+	}
+	dst = append(dst, "\x1b[0"...)
+	if s.Attrs != 0 {
+		for i, a := range [8]Attr{Bold, Faint, Italic, Underline, Blink, Reverse, Invisible, Strike} {
+			if s.Attrs&a != 0 {
+				dst = append(dst, attrSeqs[i]...)
+			}
+		}
+	}
+	dst = appendColor(dst, s.Fg, 30, 90, 38)
+	dst = appendColor(dst, s.Bg, 40, 100, 48)
+	return append(dst, 'm')
+}
+
+func appendColor(dst []byte, c Color, base, bright, ext int) []byte {
 	switch {
 	case c == DefaultColor:
+		return dst
 	case c&rgbFlag != 0:
-		fmt.Fprintf(b, ";%d;2;%d;%d;%d", ext, c>>16&0xff, c>>8&0xff, c&0xff)
+		dst = append(dst, ';')
+		dst = strconv.AppendInt(dst, int64(ext), 10)
+		dst = append(dst, ';', '2', ';')
+		dst = strconv.AppendInt(dst, int64(c>>16&0xff), 10)
+		dst = append(dst, ';')
+		dst = strconv.AppendInt(dst, int64(c>>8&0xff), 10)
+		dst = append(dst, ';')
+		return strconv.AppendInt(dst, int64(c&0xff), 10)
 	case c&0xff < 8:
-		fmt.Fprintf(b, ";%d", base+int(c&0xff))
+		dst = append(dst, ';')
+		return strconv.AppendInt(dst, int64(base)+int64(c&0xff), 10)
 	case c&0xff < 16:
-		fmt.Fprintf(b, ";%d", bright+int(c&0xff)-8)
+		dst = append(dst, ';')
+		return strconv.AppendInt(dst, int64(bright)+int64(c&0xff)-8, 10)
 	default:
-		fmt.Fprintf(b, ";%d;5;%d", ext, c&0xff)
+		dst = append(dst, ';')
+		dst = strconv.AppendInt(dst, int64(ext), 10)
+		dst = append(dst, ';', '5', ';')
+		return strconv.AppendInt(dst, int64(c&0xff), 10)
 	}
 }
 
@@ -104,6 +135,33 @@ func (c Cell) String() string {
 		return string(c.R)
 	}
 	return string(c.R) + c.Comb
+}
+
+// WriteTo appends what the cell displays directly to b without allocating.
+func (c Cell) WriteTo(b *strings.Builder) {
+	if c.R == 0 {
+		b.WriteByte(' ')
+		return
+	}
+	b.WriteRune(c.R)
+	if c.Comb != "" {
+		b.WriteString(c.Comb)
+	}
+}
+
+// AppendTo appends what the cell displays to dst.
+func (c Cell) AppendTo(dst []byte) []byte {
+	if c.R == 0 {
+		return append(dst, ' ')
+	}
+	if c.R < 0x80 && c.Comb == "" {
+		return append(dst, byte(c.R))
+	}
+	dst = utf8.AppendRune(dst, c.R)
+	if c.Comb != "" {
+		dst = append(dst, c.Comb...)
+	}
+	return dst
 }
 
 // width is fixed at "ambiguous = narrow", what nearly every terminal does;
@@ -691,7 +749,14 @@ func (t *Terminal) csi(final byte) {
 	}
 }
 
-func (t *Terminal) reply(s string) { t.replies = append(t.replies, s...) }
+const maxReplies = 4096
+
+func (t *Terminal) reply(s string) {
+	if len(t.replies)+len(s) > maxReplies {
+		return
+	}
+	t.replies = append(t.replies, s...)
+}
 
 func (t *Terminal) setPrivateMode(mode int, on bool) {
 	switch mode {

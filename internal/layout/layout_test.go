@@ -87,3 +87,46 @@ func TestRatioAt(t *testing.T) {
 		t.Errorf("ratio at the far right = %v, want it clamped to 0.9", got)
 	}
 }
+
+func TestEqualize(t *testing.T) {
+	// 3 sequential vertical splits: [p1 | [p2 | p3]] should become 1/3 each.
+	p1, p2, p3 := &pane.Pane{ID: 1}, &pane.Pane{ID: 2}, &pane.Pane{ID: 3}
+	root := &Node{
+		Split: pane.SplitVertical,
+		Ratio: 0.5,
+		Children: [2]*Node{
+			NewLeaf(p1),
+			{
+				Split:    pane.SplitVertical,
+				Ratio:    0.5,
+				Children: [2]*Node{NewLeaf(p2), NewLeaf(p3)},
+			},
+		},
+	}
+	Equalize(root)
+	a1, b1, _ := Split(Rect{Rows: 24, Cols: 92}, root.Split, root.Ratio)
+	a2, b2, _ := Split(b1, root.Children[1].Split, root.Children[1].Ratio)
+	if a1.Cols != 30 || a2.Cols != 30 || b2.Cols != 30 {
+		t.Errorf("3-pane equalize cols = %d, %d, %d; want 30, 30, 30", a1.Cols, a2.Cols, b2.Cols)
+	}
+
+	// Mixed split: [p1 | [p2 / p3]] -> p1 gets half width; p2 and p3 share the other half vertically.
+	mix := &Node{
+		Split: pane.SplitVertical,
+		Ratio: 0.2,
+		Children: [2]*Node{
+			NewLeaf(p1),
+			{
+				Split:    pane.SplitHorizontal,
+				Ratio:    0.2,
+				Children: [2]*Node{NewLeaf(p2), NewLeaf(p3)},
+			},
+		},
+	}
+	Equalize(mix)
+	ma, mb, _ := Split(Rect{Rows: 21, Cols: 81}, mix.Split, mix.Ratio)
+	m2, m3, _ := Split(mb, mix.Children[1].Split, mix.Children[1].Ratio)
+	if ma.Cols != 40 || mb.Cols != 40 || m2.Rows != 10 || m3.Rows != 10 {
+		t.Errorf("mixed equalize got p1_c=%d p2=(%d,%d) p3=(%d,%d)", ma.Cols, m2.Rows, m2.Cols, m3.Rows, m3.Cols)
+	}
+}

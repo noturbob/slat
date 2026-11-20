@@ -5,6 +5,7 @@ package app
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -40,6 +41,7 @@ const (
 type App struct {
 	cfg      *config.Config
 	status   ui.StatusFormat
+	splash   ui.Splash
 	help     []ui.HelpEntry
 	quit     chan struct{}
 	quitOnce sync.Once
@@ -61,15 +63,26 @@ type App struct {
 	scroll      *scroll // scroll mode, or nil
 	showHelp    bool
 	prompt      *prompt
+	tree        *treeState
 	message     string
 	messageEnd  time.Time
 	bannerEnd   time.Time
 	bannerShown bool
 	attached    bool
 
-	statePath     string    // where the session is saved between runs
-	restoredFrom  time.Time // when the restored session was saved
-	restoredPanes int
+	statePath       string                // where the session is saved between runs
+	sessionDir      string                // canonical working directory for this session
+	listSessions    func() []SessionSummary // lists all running daemons
+	listGlobalTree  func() []RemoteTreeNode
+	focusRemote     func(sock string, wsIdx, tabIdx, paneID int)
+	switchTarget    string // target socket for cross-session switch
+	lastSavedSig    sessionSig            // skips idle 15s snapshots when nothing changed
+	restoredFrom    time.Time             // when the restored session was saved
+	restoredPanes   int
+	statusTabs          []string
+	statusAlert         []bool
+	statusPaneCount     []int
+	statusTabActivePane []int
 }
 
 type prompt struct {
@@ -88,30 +101,70 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 	theme.Apply()
+	dlg, err := ui.ParseDialogTheme(cfg.Dialog)
+	if err != nil {
+		return nil, err
+	}
+	dlg.Apply()
+	fnd, err := ui.ParseFinderTheme(cfg.Finder)
+	if err != nil {
+		return nil, err
+	}
+	fnd.Apply()
+	stk, err := ui.ParseStackTheme(cfg.Stack)
+	if err != nil {
+		return nil, err
+	}
+	stk.Apply()
 	borders, err := ui.ParseBorders(cfg.Borders)
 	if err != nil {
 		return nil, err
 	}
 	borders.Apply()
-	status, err := ui.ParseStatusFormat(cfg.Status)
+	status, err := ui.ParseStatusConfig(cfg.Status)
 	if err != nil {
 		return nil, err
 	}
+	prefixName := cfg.PrefixKey.Name
+	subtitle := "terminal multiplexer " + Version
+	if cfg.Splash.HasSubtitle {
+		subtitle = strings.ReplaceAll(cfg.Splash.Subtitle, "{version}", Version)
+	}
+	hint := fmt.Sprintf("press %s then ? for help", prefixName)
+	if cfg.Splash.HasHint {
+		hint = strings.ReplaceAll(cfg.Splash.Hint, "{prefix}", prefixName)
+	}
+	splash, err := ui.ParseSplash(cfg.Splash.Art, subtitle, hint, cfg.Splash.Fg, cfg.Splash.SubFg, cfg.Splash.Bg)
+	if err != nil {
+		return nil, err
+	}
+	sessionDir := session.CanonicalDir("")
 	a := &App{
-		cfg:      cfg,
-		status:   status,
-		help:     helpEntries(cfg),
-		quit:     make(chan struct{}),
-		detachCh: make(chan struct{}, 1),
-		dirty:    make(chan struct{}, 1),
-		handler:  input.NewHandler(cfg.PrefixByte, cfg.Keybinds),
-		screen:   ui.NewScreen(io.Discard),
+		cfg:        cfg,
+		status:     status,
+		splash:     splash,
+		help:       helpEntries(cfg),
+		quit:       make(chan struct{}),
+		detachCh:   make(chan struct{}, 1),
+		dirty:      make(chan struct{}, 1),
+		handler:    input.NewHandler(cfg.PrefixKey, cfg.Keybinds),
+		screen:     ui.NewScreen(io.Discard),
+		sessionDir: sessionDir,
 	}
 	a.manager = session.NewManager(cfg.Shell, cfg.Scrollback, a.markDirty)
+	if cfg.RandomSessionName {
+		a.manager.SessionName = session.RandomSessionName(nil)
+	} else {
+		base := filepath.Base(sessionDir)
+		if base == "" || base == "." || base == string(filepath.Separator) {
+			base = "slat"
+		}
+		a.manager.SessionName = base + "-" + time.Now().Format("150405")
+	}
 	if cfg.Restore {
 		// A path we cannot work out only means this session will not be
 		// saved; it is no reason to refuse to start.
-		if path, err := session.StatePath(); err == nil {
+		if path, err := session.StatePathForDir(sessionDir); err == nil {
 			a.statePath = path
 		}
 	}
@@ -152,8 +205,11 @@ func (a *App) Attach(cols, rows int) {
 	a.screen.Invalidate()
 	if !a.bannerShown {
 		a.bannerShown = true
-		a.bannerEnd = time.Now().Add(bannerTime)
-		time.AfterFunc(bannerTime, a.markDirty)
+		if a.cfg.Splash.Enabled && a.cfg.Splash.Duration.D() > 0 {
+			dur := a.cfg.Splash.Duration.D()
+			a.bannerEnd = time.Now().Add(dur)
+			time.AfterFunc(dur, a.markDirty)
+		}
 	}
 	// Say so once, on the first attach: output that predates the reboot
 	// looks like output from this one otherwise.
@@ -178,6 +234,96 @@ func (a *App) HandleResize(cols, rows int) {
 	defer a.mu.Unlock()
 	a.cols, a.rows = max(cols, 1), max(rows, 1)
 	a.markDirty()
+}
+
+// SessionSummary describes a running session for `slat sessions`.
+type SessionSummary struct {
+	Name     string `json:"name"`
+	Dir      string `json:"dir"`
+	Tabs     int    `json:"tabs"`
+	Panes    int    `json:"panes"`
+	Attached bool   `json:"attached"`
+	Socket   string `json:"socket,omitempty"`
+}
+
+// SetSessionLister configures the callback used to discover other running
+// sessions for <prefix> F and collision-free random session naming.
+func (a *App) SetSessionLister(fn func() []SessionSummary) {
+	a.mu.Lock()
+	a.listSessions = fn
+	needReroll := a.cfg.RandomSessionName && a.restoredPanes == 0
+	a.mu.Unlock()
+	if needReroll && fn != nil {
+		sessions := fn()
+		inUse := make(map[string]bool, len(sessions))
+		for _, s := range sessions {
+			if s.Name != "" {
+				inUse[s.Name] = true
+			}
+		}
+		a.mu.Lock()
+		if inUse[a.manager.SessionName] {
+			a.manager.SessionName = session.RandomSessionName(inUse)
+		}
+		a.mu.Unlock()
+	}
+}
+
+// SetGlobalTreeLister configures the callback used to collect tree nodes from
+// other running sessions for <prefix> g.
+func (a *App) SetGlobalTreeLister(fn func() []RemoteTreeNode) {
+	a.mu.Lock()
+	a.listGlobalTree = fn
+	a.mu.Unlock()
+}
+
+// SetRemoteFocuser configures the callback used to focus a workspace/tab/pane
+// on another daemon before switching to it.
+func (a *App) SetRemoteFocuser(fn func(sock string, wsIdx, tabIdx, paneID int)) {
+	a.mu.Lock()
+	a.focusRemote = fn
+	a.mu.Unlock()
+}
+
+// PopSwitchTarget returns and clears any pending cross-session switch socket.
+func (a *App) PopSwitchTarget() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	t := a.switchTarget
+	a.switchTarget = ""
+	return t
+}
+
+func (a *App) requestSwitch(sock string) {
+	a.switchTarget = sock
+	select {
+	case a.detachCh <- struct{}{}:
+	default:
+	}
+}
+
+// SessionInfo returns a snapshot of the session's metadata.
+func (a *App) SessionInfo() SessionSummary {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.sessionInfoLocked()
+}
+
+func (a *App) sessionInfoLocked() SessionSummary {
+	tabs, panes := 0, 0
+	for _, ws := range a.manager.Workspaces {
+		tabs += len(ws.Tabs)
+		for _, t := range ws.Tabs {
+			panes += layout.CountPanes(t.Layout)
+		}
+	}
+	return SessionSummary{
+		Name:     a.manager.SessionName,
+		Dir:      a.sessionDir,
+		Tabs:     tabs,
+		Panes:    panes,
+		Attached: a.attached,
+	}
 }
 
 // Done is closed when the session has ended (quit, or the last pane died).
@@ -257,11 +403,20 @@ func (a *App) render() {
 	}
 	area := a.paneArea()
 	var borders []layout.Rect
+	allPanes := visible
+	tab := a.manager.ActiveTab()
+	stacked := a.zoomed == nil && tab != nil && tab.Stacked && len(visible) > 1
+	headerRows := 0
 	if a.zoomed != nil {
 		visible = []*pane.Pane{a.zoomed}
 		a.zoomed.SetRect(area.Row, area.Col, area.Rows, area.Cols)
+	} else if stacked {
+		headerRows = min(len(visible), max(area.Rows-1, 0))
+		ap := a.manager.ActivePane()
+		visible = []*pane.Pane{ap}
+		ap.SetRect(area.Row+headerRows, area.Col, area.Rows-headerRows, area.Cols)
 	} else {
-		borders = layout.Apply(a.manager.ActiveTab().Layout, area)
+		borders = layout.Apply(tab.Layout, area)
 	}
 	if !a.attached {
 		return
@@ -270,8 +425,7 @@ func (a *App) render() {
 	frame := a.screen.NextFrame(a.cols, a.rows)
 	now := time.Now()
 	if now.Before(a.bannerEnd) {
-		hint := fmt.Sprintf("press %s then ? for help", input.PrefixName(a.cfg.PrefixByte))
-		ui.DrawBanner(frame, Version, hint)
+		ui.DrawSplash(frame, a.splash)
 		a.screen.Render(frame, ui.Cursor{}, ui.Modes{})
 		return
 	}
@@ -292,6 +446,17 @@ func (a *App) render() {
 	}
 	ar, ac, arows, acols := active.Rect()
 	ui.DrawBorders(frame, borders, layout.Rect{Row: ar, Col: ac, Rows: arows, Cols: acols})
+	if stacked && headerRows > 0 {
+		headers := make([]ui.StackHeader, len(allPanes))
+		for i, p := range allPanes {
+			_, title, _ := p.Foreground()
+			if title == "" {
+				title = "pane"
+			}
+			headers[i] = ui.StackHeader{Index: i + 1, Title: title, Active: p == active}
+		}
+		ui.DrawStackHeaders(frame, layout.Rect{Row: area.Row, Col: area.Col, Rows: headerRows, Cols: area.Cols}, headers)
+	}
 	if a.anim != nil && !a.drawAnim(frame, visible, now) {
 		a.anim = nil
 	}
@@ -311,12 +476,16 @@ func (a *App) render() {
 		ui.DrawStatusBar(frame, a.rows-1, a.statusOfBar(now), a.status)
 	}
 	if a.prompt != nil {
-		x := ui.DrawPrompt(frame, a.rows-1, a.prompt.label, string(a.prompt.text))
-		cur = ui.Cursor{X: x, Y: a.rows - 1, Visible: true}
+		x, y := ui.DrawDialog(frame, a.prompt.label, string(a.prompt.text))
+		cur = ui.Cursor{X: x, Y: y, Visible: true}
 	}
 	if a.showHelp {
-		ui.DrawHelp(frame, "slat · keys after "+input.PrefixName(a.cfg.PrefixByte), a.help)
+		ui.DrawHelp(frame, "slat · keys after "+a.cfg.PrefixKey.Name, a.help)
 		cur.Visible = false
+	}
+	if a.tree != nil {
+		x, y := a.drawTree(frame)
+		cur = ui.Cursor{X: x, Y: y, Visible: true}
 	}
 	a.screen.Render(frame, cur, modes)
 }
@@ -324,18 +493,34 @@ func (a *App) render() {
 func (a *App) statusOfBar(now time.Time) ui.Status {
 	ws := a.manager.ActiveWorkspace()
 	st := ui.Status{
+		Session:        a.manager.SessionName,
 		Workspace:      ws.Name,
 		WorkspaceIndex: a.manager.ActiveWorkspaceIdx,
 		WorkspaceCount: len(a.manager.Workspaces),
 		ActiveTab:      ws.ActiveTabIdx,
 	}
-	for ti, t := range ws.Tabs {
-		st.Tabs = append(st.Tabs, t.Name)
-		st.TabAlert = append(st.TabAlert, a.tabNeedsInput(ws.Name, ti+1))
+	a.statusTabs = a.statusTabs[:0]
+	a.statusAlert = a.statusAlert[:0]
+	a.statusPaneCount = a.statusPaneCount[:0]
+	a.statusTabActivePane = a.statusTabActivePane[:0]
+	for _, t := range ws.Tabs {
+		a.statusTabs = append(a.statusTabs, t.Name)
+		a.statusPaneCount = append(a.statusPaneCount, layout.CountPanes(t.Layout))
+		a.statusTabActivePane = append(a.statusTabActivePane, max(layout.PaneIndex(t.Layout, t.ActivePane), 0))
+		alert := len(a.attention) > 0 && layout.AnyPane(t.Layout, func(p *pane.Pane) bool {
+			return a.attention[p.ID]
+		})
+		a.statusAlert = append(a.statusAlert, alert)
 	}
+	st.Tabs = a.statusTabs
+	st.TabAlert = a.statusAlert
+	st.TabPaneCount = a.statusPaneCount
+	st.TabActivePane = a.statusTabActivePane
 	panes := a.manager.ActivePanes()
 	st.PaneIndex = slices.Index(panes, a.manager.ActivePane())
 	st.PaneCount = len(panes)
+	st.PrefixActive = a.handler.IsPrefixActive()
+	st.Zoomed = a.zoomed != nil
 	switch {
 	case a.handler.IsPrefixActive():
 		st.Badge = "PREFIX"
@@ -347,6 +532,8 @@ func (a *App) statusOfBar(now time.Time) ui.Status {
 		st.Badge = "MOVE"
 	case a.zoomed != nil:
 		st.Badge = "ZOOM"
+	case a.manager.ActiveTab() != nil && a.manager.ActiveTab().Stacked && len(panes) > 1:
+		st.Badge = "STACK"
 	}
 	if now.Before(a.messageEnd) {
 		st.Message = a.message
@@ -378,6 +565,10 @@ func (a *App) FeedInput(buf []byte) {
 			}
 			continue
 		}
+		if a.tree != nil {
+			i = a.treeKey(buf, i)
+			continue
+		}
 		if a.showHelp {
 			// Any key closes help. Drop the rest of the chunk so that a
 			// multi-byte key (an arrow is ESC [ A) doesn't leak into the shell.
@@ -386,14 +577,14 @@ func (a *App) FeedInput(buf []byte) {
 		}
 
 		if a.scroll != nil {
-			if b != a.handler.PrefixByte() {
+			if a.handler.MatchPrefix(buf[i:]) == 0 {
 				i = a.scrollKey(buf, i)
 				continue
 			}
 			a.scroll = nil // any command leaves scroll mode
 		}
 
-		if a.moving && b != a.handler.PrefixByte() {
+		if a.moving && a.handler.MatchPrefix(buf[i:]) == 0 {
 			if dir, ok := moveKeys[b]; ok {
 				a.movePane(dir)
 				continue
@@ -415,6 +606,17 @@ func (a *App) FeedInput(buf []byte) {
 			}
 		}
 
+		// Match multi-byte (and single-byte) prefix before the 0x1b prefix+arrow
+		// handler, so pressing a multi-byte prefix twice triggers ActionSendPrefix.
+		if plen := a.handler.MatchPrefix(buf[i:]); plen > 0 {
+			action := a.handler.ProcessPrefix()
+			i += plen - 1
+			if !a.do(action) {
+				return
+			}
+			continue
+		}
+
 		if b == 0x1b && a.handler.IsPrefixActive() {
 			// prefix + arrow key selects a pane in that direction;
 			// prefix + PageUp scrolls back.
@@ -428,7 +630,7 @@ func (a *App) FeedInput(buf []byte) {
 			}
 			if i+2 < len(buf) && (buf[i+1] == '[' || buf[i+1] == 'O') {
 				if act, ok := arrowActions[buf[i+2]]; ok {
-					a.do(act, b)
+					a.do(act)
 					i += 2
 					continue
 				}
@@ -438,16 +640,12 @@ func (a *App) FeedInput(buf []byte) {
 
 		action := a.handler.ProcessByte(b)
 		if action == input.ActionForwardInput {
-			// Forward everything up to the next prefix byte in one write.
-			j := i
-			for j < len(buf) && buf[j] != a.handler.PrefixByte() {
-				j++
-			}
-			a.forward(buf[i:j])
-			i = j - 1
+			n := a.handler.ForwardLen(buf[i:])
+			a.forward(buf[i : i+n])
+			i += n - 1
 			continue
 		}
-		if !a.do(action, b) {
+		if !a.do(action) {
 			return
 		}
 	}
@@ -473,10 +671,10 @@ func (a *App) forward(data []byte) {
 
 // do runs a command. It returns false when input processing should stop
 // because the client is leaving.
-func (a *App) do(action input.Action, b byte) bool {
+func (a *App) do(action input.Action) bool {
 	switch action {
 	case input.ActionSendPrefix:
-		a.forward([]byte{b})
+		a.forward(a.handler.PrefixBytes())
 
 	// ── Panes
 	case input.ActionSplitVertical, input.ActionSplitHorizontal:
@@ -533,6 +731,9 @@ func (a *App) do(action input.Action, b byte) bool {
 		} else if len(a.manager.ActivePanes()) > 1 {
 			a.zoomed = a.manager.ActivePane()
 		}
+	case input.ActionStackMode:
+		a.zoomed = nil
+		a.manager.ToggleStack()
 	case input.ActionClosePane:
 		if a.manager.KillActivePane() {
 			a.doQuit()
@@ -575,6 +776,21 @@ func (a *App) do(action input.Action, b byte) bool {
 	// ── Session
 	case input.ActionShowHelp:
 		a.showHelp = true
+	case input.ActionRenameSession:
+		a.startPrompt("rename session", a.manager.SessionName, a.manager.RenameSession)
+	case input.ActionTreePicker:
+		a.openTree()
+	case input.ActionSessionPicker:
+		a.openSessionPicker()
+	case input.ActionNextSession:
+		a.switchSession(1)
+	case input.ActionPrevSession:
+		a.switchSession(-1)
+	case input.ActionGlobalTreePicker:
+		a.openGlobalTreePicker()
+	case input.ActionToggleStatusBar:
+		a.cfg.StatusBar = !a.cfg.StatusBar
+		a.screen.Invalidate()
 	case input.ActionDetach:
 		select {
 		case a.detachCh <- struct{}{}:
@@ -597,6 +813,15 @@ func (a *App) do(action input.Action, b byte) bool {
 
 func (a *App) selectPane(dir string) {
 	a.zoomed = nil
+	if tab := a.manager.ActiveTab(); tab != nil && tab.Stacked && len(a.manager.ActivePanes()) > 1 {
+		switch dir {
+		case "down", "right":
+			a.manager.NextPane()
+		case "up", "left":
+			a.manager.PrevPane()
+		}
+		return
+	}
 	a.manager.SelectPaneInDirection(dir)
 }
 
@@ -648,7 +873,7 @@ func helpEntries(cfg *config.Config) []ui.HelpEntry {
 			if group == "Session" {
 				out = append(out,
 					ui.HelpEntry{Key: "?", Desc: "This help"},
-					ui.HelpEntry{Key: input.PrefixName(cfg.PrefixByte), Desc: "Send prefix to shell"})
+					ui.HelpEntry{Key: cfg.PrefixKey.Name, Desc: "Send prefix to shell"})
 			}
 		}
 		if key := cfg.Keybinds[b.Name]; key != "" {
