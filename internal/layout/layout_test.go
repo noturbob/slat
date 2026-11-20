@@ -130,3 +130,81 @@ func TestEqualize(t *testing.T) {
 		t.Errorf("mixed equalize got p1_c=%d p2=(%d,%d) p3=(%d,%d)", ma.Cols, m2.Rows, m2.Cols, m3.Rows, m3.Cols)
 	}
 }
+
+func TestParseMode(t *testing.T) {
+	cases := []struct {
+		in   string
+		want Mode
+		ok   bool
+	}{
+		{"master-left", ModeMasterLeft, true},
+		{"master_right", ModeMasterRight, true},
+		{"MASTER TOP", ModeMasterTop, true},
+		{"master-bottom", ModeMasterBottom, true},
+		{"even-horizontal", ModeEvenHorizontal, true},
+		{"even_vertical", ModeEvenVertical, true},
+		{"grid", ModeGrid, true},
+		{"stack", ModeStack, true},
+		{"unknown", "", false},
+	}
+	for _, tc := range cases {
+		got, ok := ParseMode(tc.in)
+		if ok != tc.ok || got != tc.want {
+			t.Errorf("ParseMode(%q) = (%q, %v), want (%q, %v)", tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+	if len(AllModes()) != 8 {
+		t.Errorf("AllModes() len = %d, want 8", len(AllModes()))
+	}
+}
+
+func collectRects(n *Node, area Rect) (rects, borders []Rect) {
+	if n == nil {
+		return nil, nil
+	}
+	if n.Pane != nil {
+		return []Rect{area}, nil
+	}
+	a, b, border := Split(area, n.Split, n.Ratio)
+	borders = append(borders, border)
+	ra, ba := collectRects(n.Children[0], a)
+	rb, bb := collectRects(n.Children[1], b)
+	rects = append(ra, rb...)
+	borders = append(borders, ba...)
+	borders = append(borders, bb...)
+	return rects, borders
+}
+
+func TestArrangeModes(t *testing.T) {
+	area := Rect{Row: 0, Col: 0, Rows: 40, Cols: 120}
+	for _, info := range AllModes() {
+		for count := 1; count <= 5; count++ {
+			panes := make([]*pane.Pane, count)
+			for i := range panes {
+				panes[i] = &pane.Pane{ID: i + 1}
+			}
+			root := Arrange(panes, info.Mode)
+			got := CollectPanes(root)
+			if len(got) != count {
+				t.Fatalf("mode %s count %d: CollectPanes = %d", info.Mode, count, len(got))
+			}
+			rects, borders := collectRects(root, area)
+			if len(rects) != count {
+				t.Fatalf("mode %s count %d: rects = %d", info.Mode, count, len(rects))
+			}
+			cells := 0
+			for i, r := range rects {
+				if r.Rows < 1 || r.Cols < 1 {
+					t.Fatalf("mode %s count %d: pane %d empty rect %+v", info.Mode, count, i, r)
+				}
+				cells += r.Rows * r.Cols
+			}
+			for _, b := range borders {
+				cells += b.Rows * b.Cols
+			}
+			if cells != area.Rows*area.Cols {
+				t.Fatalf("mode %s count %d: covered %d != %d", info.Mode, count, cells, area.Rows*area.Cols)
+			}
+		}
+	}
+}

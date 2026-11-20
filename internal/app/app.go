@@ -5,6 +5,7 @@ package app
 import (
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -83,12 +84,15 @@ type App struct {
 	statusAlert         []bool
 	statusPaneCount     []int
 	statusTabActivePane []int
+	preset              *session.Preset
 }
 
 type prompt struct {
-	label string
-	text  []byte
-	apply func(string)
+	label     string
+	text      []byte
+	apply     func(string)
+	confirm   bool
+	onConfirm func()
 }
 
 // New creates a new App from the given config.
@@ -178,12 +182,25 @@ func (a *App) SetOutput(w io.Writer) {
 	a.screen = ui.NewScreen(w)
 }
 
+// SetPreset configures a preconfigured session to load on Start. Call before Start.
+func (a *App) SetPreset(p session.Preset) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cp := p
+	a.preset = &cp
+}
+
 // Start creates the first workspace and starts rendering. It doesn't block.
 func (a *App) Start(cols, rows int) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.cols, a.rows = max(cols, 1), max(rows, 1)
-	if !a.restoreSession() {
+	switch {
+	case a.preset != nil:
+		if err := a.manager.ApplyPreset(*a.preset, a.paneArea()); err != nil {
+			return err
+		}
+	case !a.restoreSession():
 		if err := a.manager.AddWorkspace(a.paneArea()); err != nil {
 			return err
 		}
@@ -688,6 +705,11 @@ func (a *App) do(action input.Action) bool {
 		} else {
 			a.startAnim(a.manager.ActivePane(), dir)
 		}
+	case input.ActionAddPane:
+		a.zoomed = nil
+		if err := a.manager.AddPane(a.paneArea()); err != nil {
+			a.notify(err.Error())
+		}
 	case input.ActionNextPane:
 		a.zoomed = nil
 		a.manager.NextPane()
@@ -725,6 +747,8 @@ func (a *App) do(action input.Action) bool {
 	case input.ActionEqualizeLayout:
 		a.zoomed = nil
 		a.manager.EqualizeLayout()
+	case input.ActionLayoutPicker:
+		a.openLayoutPicker()
 	case input.ActionZoom:
 		if a.zoomed != nil {
 			a.zoomed = nil
@@ -788,6 +812,8 @@ func (a *App) do(action input.Action) bool {
 		a.switchSession(-1)
 	case input.ActionGlobalTreePicker:
 		a.openGlobalTreePicker()
+	case input.ActionSaveSession:
+		a.startSaveSession()
 	case input.ActionToggleStatusBar:
 		a.cfg.StatusBar = !a.cfg.StatusBar
 		a.screen.Invalidate()
@@ -831,10 +857,50 @@ func (a *App) startPrompt(label, current string, apply func(string)) {
 	a.prompt = &prompt{label: label, text: []byte(current), apply: apply}
 }
 
+func (a *App) startConfirm(label string, onConfirm func()) {
+	a.prompt = &prompt{label: label, confirm: true, onConfirm: onConfirm}
+}
+
+func (a *App) startSaveSession() {
+	a.startPrompt("save session as", a.manager.SessionName, func(name string) {
+		path, err := session.PresetPathForName(name)
+		if err != nil {
+			a.notify(err.Error())
+			return
+		}
+		writePreset := func() {
+			p := a.manager.ExportPreset()
+			p.SessionName = name
+			if err := session.SavePreset(path, p); err != nil {
+				a.notify(err.Error())
+				return
+			}
+			a.notify("saved session " + name)
+		}
+		if _, err := os.Stat(path); err == nil {
+			a.startConfirm(fmt.Sprintf("overwrite %s.toml? [y/N]", name), writePreset)
+			return
+		}
+		writePreset()
+	})
+}
+
 // promptKey handles one byte typed into the prompt. It returns false when
 // the rest of the input chunk must be discarded.
 func (a *App) promptKey(b byte) bool {
 	p := a.prompt
+	if p.confirm {
+		a.prompt = nil
+		if b == 'y' || b == 'Y' {
+			p.onConfirm()
+			return true
+		}
+		if b == 0x1b {
+			return false
+		}
+		a.notify("save canceled")
+		return true
+	}
 	switch b {
 	case '\r', '\n':
 		a.prompt = nil

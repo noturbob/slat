@@ -140,6 +140,7 @@ const (
 	// Pane management
 	ActionSplitVertical
 	ActionSplitHorizontal
+	ActionAddPane
 	ActionNextPane
 	ActionPrevPane
 	ActionClosePane
@@ -158,6 +159,7 @@ const (
 	ActionResizeGrow
 	ActionResizeShrink
 	ActionEqualizeLayout
+	ActionLayoutPicker
 	// Tab management
 	ActionNewTab
 	ActionNextTab
@@ -186,6 +188,7 @@ const (
 	ActionNextSession
 	ActionPrevSession
 	ActionGlobalTreePicker
+	ActionSaveSession
 	ActionQuit
 	ActionDetach
 	ActionSendPrefix
@@ -205,6 +208,7 @@ type Binding struct {
 var Bindings = []Binding{
 	{"split-vertical", "Panes", "Split left / right", ActionSplitVertical},
 	{"split-horizontal", "Panes", "Split top / bottom", ActionSplitHorizontal},
+	{"add-pane", "Panes", "Add pane (honors layout)", ActionAddPane},
 	{"next-pane", "Panes", "Next pane", ActionNextPane},
 	{"prev-pane", "Panes", "Previous pane", ActionPrevPane},
 	{"select-pane-up", "Panes", "Pane above (or ↑)", ActionSelectPaneUp},
@@ -220,6 +224,7 @@ var Bindings = []Binding{
 	{"resize-grow", "Panes", "Grow pane", ActionResizeGrow},
 	{"resize-shrink", "Panes", "Shrink pane", ActionResizeShrink},
 	{"equalize", "Panes", "Equalize sizes", ActionEqualizeLayout},
+	{"layout-picker", "Panes", "Choose layout (fuzzy)", ActionLayoutPicker},
 	{"zoom", "Panes", "Toggle zoom", ActionZoom},
 	{"stack-mode", "Panes", "Toggle stacked mode", ActionStackMode},
 	{"close-pane", "Panes", "Close pane", ActionClosePane},
@@ -239,6 +244,7 @@ var Bindings = []Binding{
 	{"next-session", "Session", "Next session", ActionNextSession},
 	{"prev-session", "Session", "Previous session", ActionPrevSession},
 	{"global-tree", "Session", "All sessions/tabs/panes tree", ActionGlobalTreePicker},
+	{"save-session", "Session", "Save preconfigured session", ActionSaveSession},
 	{"toggle-status-bar", "Session", "Toggle status bar", ActionToggleStatusBar},
 	{"detach", "Session", "Detach (keeps running)", ActionDetach},
 	{"quit", "Session", "Quit (ends session)", ActionQuit},

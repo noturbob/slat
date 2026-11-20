@@ -1,8 +1,62 @@
 package layout
 
 import (
+	"math"
+	"strings"
+
 	"github.com/noturbob/slat/internal/pane"
 )
+
+// Mode identifies a named pane arrangement for a tab.
+type Mode string
+
+const (
+	ModeEvenHorizontal Mode = "even-horizontal"
+	ModeEvenVertical   Mode = "even-vertical"
+	ModeMasterLeft     Mode = "master-left"
+	ModeMasterRight    Mode = "master-right"
+	ModeMasterTop      Mode = "master-top"
+	ModeMasterBottom   Mode = "master-bottom"
+	ModeGrid           Mode = "grid"
+	ModeStack          Mode = "stack"
+)
+
+// ModeInfo describes a layout mode for pickers and documentation.
+type ModeInfo struct {
+	Mode        Mode
+	Description string
+}
+
+var allModes = []ModeInfo{
+	{ModeMasterLeft, "master on the left, stack on the right"},
+	{ModeMasterRight, "master on the right, stack on the left"},
+	{ModeMasterTop, "master on the top, stack on the bottom"},
+	{ModeMasterBottom, "master on the bottom, stack on the top"},
+	{ModeEvenHorizontal, "even horizontal (equal columns)"},
+	{ModeEvenVertical, "even vertical (equal rows)"},
+	{ModeGrid, "grid (every pane equal)"},
+	{ModeStack, "stack (active pane full-screen with headers)"},
+}
+
+// AllModes returns all supported layout modes in display order.
+func AllModes() []ModeInfo {
+	out := make([]ModeInfo, len(allModes))
+	copy(out, allModes)
+	return out
+}
+
+// ParseMode normalizes and validates a layout mode name.
+func ParseMode(s string) (Mode, bool) {
+	norm := strings.ToLower(strings.TrimSpace(s))
+	norm = strings.ReplaceAll(norm, "_", "-")
+	norm = strings.ReplaceAll(norm, " ", "-")
+	for _, m := range allModes {
+		if string(m.Mode) == norm {
+			return m.Mode, true
+		}
+	}
+	return "", false
+}
 
 // Rect is a rectangular region of the screen, 0-based.
 type Rect struct {
@@ -256,4 +310,83 @@ func spanCount(n *Node, dir pane.SplitDirection) int {
 		return 1
 	}
 	return spanCount(n.Children[0], dir) + spanCount(n.Children[1], dir)
+}
+
+// Arrange builds a binary layout tree for panes according to mode.
+// For ModeStack or a single pane, it returns an even-horizontal tree.
+func Arrange(panes []*pane.Pane, mode Mode) *Node {
+	if len(panes) == 0 {
+		return nil
+	}
+	if len(panes) == 1 {
+		return NewLeaf(panes[0])
+	}
+	switch mode {
+	case ModeEvenVertical:
+		return splitChain(panes, pane.SplitHorizontal)
+	case ModeMasterLeft:
+		return &Node{
+			Split:    pane.SplitVertical,
+			Ratio:    0.5,
+			Children: [2]*Node{NewLeaf(panes[0]), splitChain(panes[1:], pane.SplitHorizontal)},
+		}
+	case ModeMasterRight:
+		return &Node{
+			Split:    pane.SplitVertical,
+			Ratio:    0.5,
+			Children: [2]*Node{splitChain(panes[1:], pane.SplitHorizontal), NewLeaf(panes[0])},
+		}
+	case ModeMasterTop:
+		return &Node{
+			Split:    pane.SplitHorizontal,
+			Ratio:    0.5,
+			Children: [2]*Node{NewLeaf(panes[0]), splitChain(panes[1:], pane.SplitVertical)},
+		}
+	case ModeMasterBottom:
+		return &Node{
+			Split:    pane.SplitHorizontal,
+			Ratio:    0.5,
+			Children: [2]*Node{splitChain(panes[1:], pane.SplitVertical), NewLeaf(panes[0])},
+		}
+	case ModeGrid:
+		return arrangeGrid(panes)
+	case ModeEvenHorizontal, ModeStack:
+		return splitChain(panes, pane.SplitVertical)
+	default:
+		return splitChain(panes, pane.SplitVertical)
+	}
+}
+
+func splitChain(panes []*pane.Pane, dir pane.SplitDirection) *Node {
+	nodes := make([]*Node, len(panes))
+	for i, p := range panes {
+		nodes[i] = NewLeaf(p)
+	}
+	return joinNodes(nodes, dir)
+}
+
+func joinNodes(nodes []*Node, dir pane.SplitDirection) *Node {
+	n := len(nodes)
+	if n == 0 {
+		return nil
+	}
+	if n == 1 {
+		return nodes[0]
+	}
+	return &Node{
+		Split:    dir,
+		Ratio:    1.0 / float64(n),
+		Children: [2]*Node{nodes[0], joinNodes(nodes[1:], dir)},
+	}
+}
+
+func arrangeGrid(panes []*pane.Pane) *Node {
+	n := len(panes)
+	cols := int(math.Ceil(math.Sqrt(float64(n))))
+	var rowNodes []*Node
+	for i := 0; i < n; i += cols {
+		end := min(i+cols, n)
+		rowNodes = append(rowNodes, splitChain(panes[i:end], pane.SplitVertical))
+	}
+	return joinNodes(rowNodes, pane.SplitHorizontal)
 }

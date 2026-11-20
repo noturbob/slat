@@ -182,6 +182,7 @@ every key inside slat.
 | Key | Action |
 | --- | --- |
 | `v` / `h` | Split left / right, top / bottom |
+| `a` | Add a pane (honoring the active tab's layout) |
 | `o` / `O` | Next / previous pane |
 | arrows, or `k` `j` `H` `L` | Pane above / below / left / right |
 | `s` | Swap with the next pane |
@@ -189,6 +190,7 @@ every key inside slat.
 | `<` `>` `K` `J` | Move the pane left / right / up / down |
 | `+` / `-` | Grow / shrink the pane |
 | `=` | Equalize all sizes |
+| `l` | Choose layout (fuzzy menu) |
 | `z` | Zoom the pane to full size (toggle) |
 | `t` | Toggle stacked mode (jump elements with `o`/`O`/`j`/`k` or click) |
 | `x` | Close the pane |
@@ -221,6 +223,7 @@ every key inside slat.
 | `F` | Switch between running sessions (fuzzy) |
 | `)` / `(` | Switch to next / previous running session |
 | `g` | Global fuzzy tree across all sessions, tabs & panes |
+| `E` | Save current session as a preconfigured TOML (asks before overwriting) |
 | `b` | Toggle the bottom status bar |
 | `d` | Detach — the session keeps running |
 | `q` | Quit — ends every shell |
@@ -279,6 +282,75 @@ the way out, and keeps up to 2000 lines per pane.
 
 ```toml
 restore = false     # start clean every time
+```
+
+### Layouts
+
+Press <kbd>Ctrl</kbd>+<kbd>s</kbd> then <kbd>l</kbd> to open the fuzzy layout
+picker and switch the active tab between 8 built-in layouts:
+
+| Layout | Description |
+| --- | --- |
+| `master-left` | Master pane on the left, stack on the right |
+| `master-right` | Master pane on the right, stack on the left |
+| `master-top` | Master pane on the top, stack on the bottom |
+| `master-bottom` | Master pane on the bottom, stack on the top |
+| `even-horizontal` | All panes side-by-side in equal columns |
+| `even-vertical` | All panes stacked top-to-bottom in equal rows (default) |
+| `grid` | Every pane equal in a balanced grid |
+| `stack` | Active pane full-screen with clickable header tabs |
+
+### Preconfigured sessions
+
+Save reusable session definitions as TOML files in `~/.config/slat/sessions/`
+(or anywhere on disk — see [`slat.session_example.toml`](slat.session_example.toml)):
+
+```toml
+session_name = "sample-session"
+start_directory = "~/code/10-apps/project"
+
+[[tabs]]
+name = "doc"
+layout = "stack" # defaults to "even-vertical"
+panes = [
+  "nvim README.md",
+]
+
+[[tabs]]
+name = "editor"
+panes = [
+  "nvim -S session.vim",
+]
+```
+
+Start or attach to a preconfigured session by name (resolved from
+`~/.config/slat/sessions/<name>.toml`) or by file path:
+
+```bash
+slat session slat.session_example
+slat session ./slat.session_example.toml
+```
+
+Inside slat, press <kbd>Ctrl</kbd>+<kbd>s</kbd> then <kbd>E</kbd> to save the
+running session to `~/.config/slat/sessions/<name>.toml`. If a file with that
+name already exists, slat asks for confirmation before overwriting.
+
+#### Shell extensions (`bash`, `zsh`, `fish`)
+
+Source the extension for your shell to get `slat-session`, an `fzf` menu over
+all `.toml` files in `~/.config/slat/sessions/` with a live file preview:
+
+```bash
+# bash (~/.bashrc)
+source /path/to/slat/shell/slat.bash
+
+# zsh (~/.zshrc)
+source /path/to/slat/shell/slat.zsh
+```
+
+```fish
+# fish (~/.config/fish/config.fish)
+source /path/to/slat/shell/slat.fish
 ```
 
 ### Mouse

@@ -15,6 +15,7 @@ import (
 	"github.com/noturbob/slat/internal/config"
 	"github.com/noturbob/slat/internal/control"
 	"github.com/noturbob/slat/internal/proto"
+	"github.com/noturbob/slat/internal/session"
 )
 
 // Server is the slat background daemon. It owns the single running
@@ -65,6 +66,11 @@ func New(cfg *config.Config, sockPath string) (*Server, error) {
 	})
 	a.SetRemoteFocuser(control.FocusRemote)
 	return &Server{app: a, sink: s, sockPath: sockPath, stop: make(chan struct{})}, nil
+}
+
+// SetPreset configures a preconfigured session to load when Run starts.
+func (s *Server) SetPreset(p session.Preset) {
+	s.app.SetPreset(p)
 }
 
 // Run starts the session immediately (so shells are alive even before any

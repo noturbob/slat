@@ -18,6 +18,8 @@ type Tab struct {
 	Name       string
 	CustomName bool
 	Stacked    bool
+	LayoutMode layout.Mode
+	prevMode   layout.Mode
 	Layout     *layout.Node
 	ActivePane *pane.Pane
 }
@@ -130,6 +132,7 @@ func (m *Manager) createTab(area layout.Rect, dir string) error {
 	}
 	ws.Tabs = append(ws.Tabs, &Tab{
 		Name:       "shell",
+		LayoutMode: layout.ModeEvenVertical,
 		Layout:     layout.NewLeaf(p),
 		ActivePane: p,
 	})
@@ -212,8 +215,44 @@ func (m *Manager) RenameTab(name string) {
 
 // ToggleStack toggles stacked pane mode on the active tab.
 func (m *Manager) ToggleStack() {
-	if tab := m.ActiveTab(); tab != nil {
-		tab.Stacked = !tab.Stacked
+	tab := m.ActiveTab()
+	if tab == nil {
+		return
+	}
+	if tab.Stacked {
+		prev := tab.prevMode
+		if prev == "" || prev == layout.ModeStack {
+			prev = layout.ModeEvenVertical
+		}
+		tab.Stacked = false
+		tab.LayoutMode = prev
+	} else {
+		if tab.LayoutMode != layout.ModeStack {
+			tab.prevMode = tab.LayoutMode
+		}
+		tab.Stacked = true
+		tab.LayoutMode = layout.ModeStack
+	}
+}
+
+// ApplyLayout rearranges the active tab's panes according to mode.
+func (m *Manager) ApplyLayout(mode layout.Mode) {
+	tab := m.ActiveTab()
+	if tab == nil {
+		return
+	}
+	if mode != layout.ModeStack {
+		tab.prevMode = mode
+	}
+	tab.LayoutMode = mode
+	if mode == layout.ModeStack {
+		tab.Stacked = true
+		return
+	}
+	tab.Stacked = false
+	panes := layout.CollectPanes(tab.Layout)
+	if len(panes) > 1 {
+		tab.Layout = layout.Arrange(panes, mode)
 	}
 }
 
@@ -251,6 +290,35 @@ func (m *Manager) ActiveTab() *Tab {
 func (m *Manager) SplitPane(dir pane.SplitDirection) error {
 	_, err := m.SplitAt(m.ActivePane(), dir, "")
 	return err
+}
+
+// AddPane adds a new pane to the active tab and arranges all panes in the tab
+// according to the tab's current layout mode.
+func (m *Manager) AddPane(area layout.Rect) error {
+	tab := m.ActiveTab()
+	if tab == nil {
+		return fmt.Errorf("no active tab")
+	}
+	newP, err := m.newPane(max(area.Rows, 1), max(area.Cols, 1), m.activeDir())
+	if err != nil {
+		return err
+	}
+	panes := append(layout.CollectPanes(tab.Layout), newP)
+	mode := tab.LayoutMode
+	if mode == "" {
+		if tab.Stacked {
+			mode = layout.ModeStack
+		} else {
+			mode = layout.ModeEvenVertical
+		}
+	}
+	tab.LayoutMode = mode
+	tab.Layout = layout.Arrange(panes, mode)
+	tab.ActivePane = newP
+	if !tab.Stacked {
+		layout.Apply(tab.Layout, area)
+	}
+	return nil
 }
 
 // SplitAt splits the given pane, focuses the new one and returns it. The

@@ -3,6 +3,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -38,5 +40,35 @@ func TestSocketPathPerDirectory(t *testing.T) {
 	}
 	if _, _, err := resolveAttach([]string{"nonexistent-session-xyz"}); err == nil {
 		t.Error("expected error for unknown session name")
+	}
+}
+
+func TestResolveSessionPreset(t *testing.T) {
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+
+	sessionsDir := filepath.Join(cfgHome, "slat", "sessions")
+	if err := os.MkdirAll(sessionsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	workDir := t.TempDir()
+	tomlBody := "session_name = \"ex\"\nstart_directory = \"" + workDir + "\"\n"
+	namedPath := filepath.Join(sessionsDir, "slat.session_example.toml")
+	if err := os.WriteFile(namedPath, []byte(tomlBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	sock, dir, path, err := resolveSessionPreset([]string{"slat.session_example"})
+	if err != nil {
+		t.Fatalf("resolveSessionPreset(name): %v", err)
+	}
+	if path != namedPath || dir == "" || sock == "" {
+		t.Errorf("resolveSessionPreset(name) = (%q, %q, %q)", sock, dir, path)
+	}
+
+	_, _, directPath, err := resolveSessionPreset([]string{namedPath})
+	if err != nil || directPath != namedPath {
+		t.Errorf("resolveSessionPreset(path) = %q, %v", directPath, err)
 	}
 }

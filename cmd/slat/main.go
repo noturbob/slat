@@ -24,6 +24,7 @@ const usage = `slat — a terminal multiplexer
 usage:
   slat                   attach to this directory's session (starting it if needed)
   slat attach [NAME|DIR] attach to a session by name or directory
+  slat session NAME|PATH start or attach to a preconfigured session TOML
   slat sessions [--json] list running sessions
   slat --version         print the version
   slat --help            show this help and the command reference
@@ -100,7 +101,7 @@ func main() {
 	case len(args) == 0:
 	case args[0] == "__daemon":
 		// Hidden: slat re-execs itself with this to become the daemon.
-		if err := runDaemon(); err != nil {
+		if err := runDaemon(args[1:]); err != nil {
 			fmt.Fprintf(os.Stderr, "slat: %v\n", err)
 			os.Exit(1)
 		}
@@ -114,6 +115,17 @@ func main() {
 		return
 	case args[0] == "sessions":
 		os.Exit(runSessions(args[1:]))
+	case args[0] == "session":
+		sock, dir, presetPath, err := resolveSessionPreset(args[1:])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "slat: %v\n", err)
+			os.Exit(1)
+		}
+		if err := runClientWithPreset(sock, dir, presetPath); err != nil {
+			fmt.Fprintf(os.Stderr, "slat: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	case args[0] == "attach":
 		sock, dir, err := resolveAttach(args[1:])
 		if err != nil {
@@ -162,7 +174,32 @@ func resolveAttach(args []string) (sock, dir string, err error) {
 	return "", "", fmt.Errorf("no session %q (run 'slat sessions' to list)", target)
 }
 
-func runDaemon() error {
+func resolveSessionPreset(args []string) (sock, dir, presetPath string, err error) {
+	if len(args) != 1 {
+		return "", "", "", fmt.Errorf("usage: slat session <NAME|PATH>")
+	}
+	presetPath, err = session.ResolvePresetPath(args[0])
+	if err != nil {
+		return "", "", "", err
+	}
+	preset, err := session.LoadPreset(presetPath)
+	if err != nil {
+		return "", "", "", err
+	}
+	dir = session.ExpandPath(preset.StartDirectory)
+	if dir == "" {
+		dir = session.CanonicalDir("")
+	} else {
+		dir = session.CanonicalDir(dir)
+	}
+	return socketPathForDir(dir), dir, presetPath, nil
+}
+
+func runDaemon(args []string) error {
+	var presetPath string
+	if len(args) >= 2 && args[0] == "--session" {
+		presetPath = args[1]
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -171,14 +208,25 @@ func runDaemon() error {
 	if err != nil {
 		return err
 	}
+	if presetPath != "" {
+		p, err := session.LoadPreset(presetPath)
+		if err != nil {
+			return err
+		}
+		srv.SetPreset(p)
+	}
 	return srv.Run()
 }
 
 func runClient() error {
-	return runClientAt(socketPath(), "")
+	return runClientWithPreset(socketPath(), "", "")
 }
 
 func runClientAt(sock, dir string) error {
+	return runClientWithPreset(sock, dir, "")
+}
+
+func runClientWithPreset(sock, dir, presetPath string) error {
 	if os.Getenv("SLAT") != "" {
 		return fmt.Errorf("already inside a slat session (unset SLAT to force)")
 	}
@@ -192,7 +240,7 @@ func runClientAt(sock, dir string) error {
 			if _, err := config.Load(); err != nil {
 				return err
 			}
-			if err := spawnDaemon(sock, dir); err != nil {
+			if err := spawnDaemon(sock, dir, presetPath); err != nil {
 				return fmt.Errorf("failed to start daemon: %w", err)
 			}
 			if err := waitForSocket(sock, 3*time.Second); err != nil {
@@ -231,7 +279,7 @@ func daemonAlive(sock string) bool {
 	return true
 }
 
-func spawnDaemon(sock, dir string) error {
+func spawnDaemon(sock, dir, presetPath string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -247,7 +295,14 @@ func spawnDaemon(sock, dir string) error {
 		return err
 	}
 	defer logf.Close()
-	cmd := exec.Command(exe, "__daemon")
+	daemonArgs := []string{"__daemon"}
+	if presetPath != "" {
+		if abs, absErr := filepath.Abs(presetPath); absErr == nil {
+			presetPath = abs
+		}
+		daemonArgs = append(daemonArgs, "--session", presetPath)
+	}
+	cmd := exec.Command(exe, daemonArgs...)
 	if dir != "" {
 		cmd.Dir = dir
 	}

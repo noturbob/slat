@@ -16,6 +16,7 @@ const cliUsage = `slat commands (for scripts and agents):
 
   slat sessions [--json]                 list running sessions
   slat attach [NAME|DIR]                 attach to a session by name or directory
+  slat session NAME|PATH                 start or attach to a preconfigured session
   slat ls [--json]                       list panes and what each is doing
   slat status [PANE] [--json]            one pane's status
   slat pane new [--split v|h] [--cwd D] [--cmd C] [--target P] [--focus]

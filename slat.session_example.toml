@@ -1,0 +1,15 @@
+session_name = "sample-session"
+start_directory = "~/code/10-apps/project"
+
+[[tabs]]
+name = "doc"
+layout = "stack" # defaults to "even-vertical"
+panes = [
+  "nvim README.md",
+]
+
+[[tabs]]
+name = "editor"
+panes = [
+  "nvim -S session.vim",
+]

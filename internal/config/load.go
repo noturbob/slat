@@ -151,6 +151,7 @@ func defaultKeybinds() map[string]string {
 		// Panes
 		"split-horizontal":  "h",
 		"split-vertical":    "v",
+		"add-pane":          "a",
 		"next-pane":         "o",
 		"prev-pane":         "O",
 		"select-pane-up":    "k",
@@ -166,6 +167,7 @@ func defaultKeybinds() map[string]string {
 		"resize-grow":       "+",
 		"resize-shrink":     "-",
 		"equalize":          "=",
+		"layout-picker":     "l",
 		"close-pane":        "x",
 		"zoom":              "z",
 		"stack-mode":        "t",
@@ -187,6 +189,7 @@ func defaultKeybinds() map[string]string {
 		"next-session":   ")",
 		"prev-session":   "(",
 		"global-tree":       "g",
+		"save-session":      "E",
 		"toggle-status-bar": "b",
 		"detach":            "d",
 		"quit":           "q",

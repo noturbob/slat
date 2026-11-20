@@ -39,10 +39,11 @@ type WorkspaceState struct {
 }
 
 type TabState struct {
-	Name       string     `json:"name"`
-	CustomName bool       `json:"custom_name,omitempty"`
-	Stacked    bool       `json:"stacked,omitempty"`
-	Layout     *NodeState `json:"layout"`
+	Name       string      `json:"name"`
+	CustomName bool        `json:"custom_name,omitempty"`
+	Stacked    bool        `json:"stacked,omitempty"`
+	LayoutMode layout.Mode `json:"layout_mode,omitempty"`
+	Layout     *NodeState  `json:"layout"`
 }
 
 // NodeState mirrors layout.Node: either a pane or a split with two children.
@@ -76,6 +77,7 @@ func (m *Manager) Snapshot(history int) State {
 				Name:       tab.Name,
 				CustomName: tab.CustomName,
 				Stacked:    tab.Stacked,
+				LayoutMode: tab.LayoutMode,
 				Layout:     snapshotNode(tab.Layout, tab.ActivePane, history),
 			})
 		}
@@ -122,7 +124,15 @@ func (m *Manager) Restore(st State, area layout.Rect) (int, error) {
 	for _, w := range st.Workspaces {
 		ws := &Workspace{Name: w.Name, ActiveTabIdx: w.Active}
 		for _, t := range w.Tabs {
-			tab := &Tab{Name: t.Name, CustomName: t.CustomName, Stacked: t.Stacked}
+			mode := t.LayoutMode
+			if mode == "" {
+				if t.Stacked {
+					mode = layout.ModeStack
+				} else {
+					mode = layout.ModeEvenVertical
+				}
+			}
+			tab := &Tab{Name: t.Name, CustomName: t.CustomName, Stacked: t.Stacked, LayoutMode: mode}
 			node, active, n, err := m.restoreNode(t.Layout, area)
 			if err != nil {
 				return count, err

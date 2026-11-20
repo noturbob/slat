@@ -4,6 +4,7 @@ package app
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -356,5 +357,96 @@ func TestToggleStatusBar(t *testing.T) {
 	waitFor(t, term, "pane 1/1", 1)
 	if area := a.paneArea(); area.Rows != 29 {
 		t.Fatalf("paneArea.Rows = %d, want 29 when status bar shown", area.Rows)
+	}
+}
+
+func TestLayoutPicker(t *testing.T) {
+	a, term := start(t)
+	a.FeedInput([]byte{prefix, 'v'})
+	waitFor(t, term, "pane 2/2", 1)
+
+	// Open layout picker (<prefix> l), filter for master-right, press Enter.
+	a.FeedInput([]byte{prefix, 'l'})
+	waitFor(t, term, "layouts (8/8)", 1)
+	a.FeedInput([]byte("master-right"))
+	waitFor(t, term, "▸ master-right", 1)
+	a.FeedInput([]byte{'\r'})
+	waitGone(t, term, "layouts (")
+
+	a.mu.Lock()
+	mode := a.manager.ActiveTab().LayoutMode
+	a.mu.Unlock()
+	if mode != "master-right" {
+		t.Fatalf("LayoutMode = %q, want %q", mode, "master-right")
+	}
+}
+
+func TestSaveSessionWithOverwriteConfirm(t *testing.T) {
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+
+	a, term := start(t)
+	waitFor(t, term, "pane 1/1", 1)
+
+	// Save session as "demo" (<prefix> E -> Ctrl-U -> "demo" -> Enter).
+	a.FeedInput([]byte{prefix, 'E'})
+	waitFor(t, term, "save session as", 1)
+	a.FeedInput([]byte{0x15})
+	a.FeedInput([]byte("demo\r"))
+	waitFor(t, term, "saved session demo", 1)
+
+	target := filepath.Join(cfgHome, "slat", "sessions", "demo.toml")
+	if _, err := os.Stat(target); err != nil {
+		t.Fatalf("expected saved preset at %s: %v", target, err)
+	}
+
+	// Trigger save again with the same name -> should ask before overwriting.
+	a.FeedInput([]byte{prefix, 'E'})
+	waitFor(t, term, "save session as", 1)
+	a.FeedInput([]byte{0x15})
+	a.FeedInput([]byte("demo\r"))
+	waitFor(t, term, "overwrite demo.toml? [y/N]", 1)
+
+	// Press 'n' to cancel.
+	a.FeedInput([]byte{'n'})
+	waitFor(t, term, "save canceled", 1)
+
+	// Trigger again and press 'y' to overwrite.
+	a.FeedInput([]byte{prefix, 'E'})
+	waitFor(t, term, "save session as", 1)
+	a.FeedInput([]byte{0x15})
+	a.FeedInput([]byte("demo\r"))
+	waitFor(t, term, "overwrite demo.toml? [y/N]", 1)
+	a.FeedInput([]byte{'y'})
+	waitFor(t, term, "saved session demo", 1)
+}
+
+func TestAddPaneHonorsLayout(t *testing.T) {
+	a, term := start(t)
+	waitFor(t, term, "pane 1/1", 1)
+
+	// Switch to master-left layout, then add two panes with <prefix> a.
+	a.mu.Lock()
+	a.manager.ApplyLayout("master-left")
+	a.mu.Unlock()
+
+	a.FeedInput([]byte{prefix, 'a'})
+	waitFor(t, term, "pane 2/2", 1)
+	a.FeedInput([]byte{prefix, 'a'})
+	waitFor(t, term, "pane 3/3", 1)
+
+	a.mu.Lock()
+	tab := a.manager.ActiveTab()
+	mode := tab.LayoutMode
+	split := tab.Layout.Split
+	rightSplit := tab.Layout.Children[1].Split
+	a.mu.Unlock()
+
+	if mode != "master-left" {
+		t.Fatalf("LayoutMode = %q, want master-left", mode)
+	}
+	// master-left has vertical root split (left master | right stack) and horizontal stack split.
+	if split != pane.SplitVertical || rightSplit != pane.SplitHorizontal {
+		t.Fatalf("unexpected tree splits for master-left: root=%v right=%v", split, rightSplit)
 	}
 }

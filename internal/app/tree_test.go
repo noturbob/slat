@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -179,5 +180,21 @@ func TestSwitchNextPrevSession(t *testing.T) {
 	}
 	if got := a.PopSwitchTarget(); got != "/tmp/alpha.sock" {
 		t.Errorf("prev-session PopSwitchTarget = %q, want /tmp/alpha.sock", got)
+	}
+}
+
+func TestBuildTreeSingleLine(t *testing.T) {
+	a, term := start(t)
+	waitFor(t, term, "pane 1/1", 1)
+
+	a.mu.Lock()
+	nodes := a.buildTree()
+	a.mu.Unlock()
+	if len(nodes) != 1 {
+		t.Fatalf("buildTree len = %d, want 1", len(nodes))
+	}
+	lbl := nodes[0].label
+	if !strings.Contains(lbl, "1:") || !strings.Contains(lbl, "pane 1") {
+		t.Errorf("expected window and pane on one line, got %q", lbl)
 	}
 }

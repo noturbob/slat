@@ -30,6 +30,7 @@ type treeNode struct {
 	pane       *pane.Pane // nil for workspace/tab nodes
 	paneID     int        // used for remote pane focus
 	socket     string     // non-empty for cross-session picker items
+	layoutMode layout.Mode
 	active     bool
 }
 
@@ -40,6 +41,7 @@ type treeState struct {
 	filtered []treeNode
 	cursor   int
 	offset   int
+	onSelect func(treeNode)
 }
 
 func (a *App) openTree() {
@@ -49,6 +51,46 @@ func (a *App) openTree() {
 	// Start cursor on the currently active pane if present.
 	for i, n := range ts.filtered {
 		if n.active && n.pane != nil {
+			ts.cursor = i
+			break
+		}
+	}
+	a.tree = ts
+}
+
+func (a *App) openLayoutPicker() {
+	var cur layout.Mode
+	if tab := a.manager.ActiveTab(); tab != nil {
+		cur = tab.LayoutMode
+		if cur == "" {
+			if tab.Stacked {
+				cur = layout.ModeStack
+			} else {
+				cur = layout.ModeEvenVertical
+			}
+		}
+	}
+	modes := layout.AllModes()
+	all := make([]treeNode, 0, len(modes))
+	for _, m := range modes {
+		all = append(all, treeNode{
+			label:      fmt.Sprintf("%-16s  %s", string(m.Mode), m.Description),
+			searchText: fmt.Sprintf("%s %s", string(m.Mode), m.Description),
+			layoutMode: m.Mode,
+			active:     m.Mode == cur,
+		})
+	}
+	ts := &treeState{
+		title: "layouts",
+		all:   all,
+		onSelect: func(n treeNode) {
+			a.zoomed = nil
+			a.manager.ApplyLayout(n.layoutMode)
+		},
+	}
+	ts.refilter()
+	for i, n := range ts.filtered {
+		if n.active {
 			ts.cursor = i
 			break
 		}
@@ -203,22 +245,8 @@ func (a *App) buildTree() []treeNode {
 	activeWS := a.manager.ActiveWorkspaceIdx
 	for wi, ws := range a.manager.Workspaces {
 		wsActive := wi == activeWS
-		out = append(out, treeNode{
-			label:      fmt.Sprintf("%s / %s", sess, ws.Name),
-			searchText: fmt.Sprintf("%s %s", sess, ws.Name),
-			wsIdx:      wi,
-			tabIdx:     -1,
-			active:     wsActive,
-		})
 		for ti, tab := range ws.Tabs {
 			tabActive := wsActive && ti == ws.ActiveTabIdx
-			out = append(out, treeNode{
-				label:      fmt.Sprintf("  %d: %s", ti+1, tab.Name),
-				searchText: fmt.Sprintf("%s %s %d:%s %s", sess, ws.Name, ti+1, tab.Name, tab.Name),
-				wsIdx:      wi,
-				tabIdx:     ti,
-				active:     tabActive,
-			})
 			panes := layout.CollectPanes(tab.Layout)
 			for pi, p := range panes {
 				_, fg, _ := p.Foreground()
@@ -227,8 +255,8 @@ func (a *App) buildTree() []treeNode {
 				}
 				paneActive := tabActive && p == tab.ActivePane
 				out = append(out, treeNode{
-					label:      fmt.Sprintf("    pane %d (%s)", pi+1, fg),
-					searchText: fmt.Sprintf("%s %s %d:%s pane %d %s", sess, ws.Name, ti+1, tab.Name, pi+1, fg),
+					label:      fmt.Sprintf("%s / %s · %d:%s · pane %d (%s)", sess, ws.Name, ti+1, tab.Name, pi+1, fg),
+					searchText: fmt.Sprintf("%s %s %d:%s %s pane %d %s", sess, ws.Name, ti+1, tab.Name, tab.Name, pi+1, fg),
 					wsIdx:      wi,
 					tabIdx:     ti,
 					pane:       p,
@@ -358,7 +386,12 @@ func (a *App) treeKey(buf []byte, i int) int {
 		a.tree = nil
 	case '\r':
 		if len(ts.filtered) > 0 && ts.cursor >= 0 && ts.cursor < len(ts.filtered) {
-			a.jumpToTreeNode(ts.filtered[ts.cursor])
+			sel := ts.filtered[ts.cursor]
+			if ts.onSelect != nil {
+				ts.onSelect(sel)
+			} else {
+				a.jumpToTreeNode(sel)
+			}
 		}
 		a.tree = nil
 	case 0x10, 0x0b: // Ctrl-P, Ctrl-K
