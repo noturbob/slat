@@ -463,6 +463,7 @@ func (cfg *Config) mergeStatus(user ui.StatusConfig, md toml.MetaData) error {
 		{"pane_colors", &cfg.Status.PaneColors, user.PaneColors},
 		{"tab_glyphs", &cfg.Status.TabGlyphs, user.TabGlyphs},
 		{"tab_index_glyphs", &cfg.Status.TabIndexGlyphs, user.TabIndexGlyphs},
+		{"tab_index_zoom_glyphs", &cfg.Status.TabIndexZoomGlyphs, user.TabIndexZoomGlyphs},
 		{"pane_glyphs", &cfg.Status.PaneGlyphs, user.PaneGlyphs},
 		{"pane_zoom_glyphs", &cfg.Status.PaneZoomGlyphs, user.PaneZoomGlyphs},
 		{"current_pane_glyphs", &cfg.Status.CurrentPaneGlyphs, user.CurrentPaneGlyphs},
@@ -472,6 +473,22 @@ func (cfg *Config) mergeStatus(user ui.StatusConfig, md toml.MetaData) error {
 	}
 	for _, f := range lists {
 		if md.IsDefined("status", f.key) {
+			*f.dst = f.src
+		}
+	}
+	zoomFlags := []struct {
+		key string
+		dst *bool
+		src bool
+	}{
+		{"tab", &cfg.Status.ZoomGlyphs.Tab, user.ZoomGlyphs.Tab},
+		{"tab_index", &cfg.Status.ZoomGlyphs.TabIndex, user.ZoomGlyphs.TabIndex},
+		{"pane", &cfg.Status.ZoomGlyphs.Pane, user.ZoomGlyphs.Pane},
+		{"current_pane", &cfg.Status.ZoomGlyphs.CurrentPane, user.ZoomGlyphs.CurrentPane},
+		{"current_pane_id", &cfg.Status.ZoomGlyphs.CurrentPaneID, user.ZoomGlyphs.CurrentPaneID},
+	}
+	for _, f := range zoomFlags {
+		if md.IsDefined("status", "zoom_glyphs", f.key) {
 			*f.dst = f.src
 		}
 	}

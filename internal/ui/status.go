@@ -27,31 +27,43 @@ type StatusScriptSpec struct {
 	Fallback string
 }
 
+// ZoomGlyphsConfig controls per-glyph-type zoomed glyph replacement under
+// [status.zoom_glyphs]. All flags default to false (off).
+type ZoomGlyphsConfig struct {
+	Tab           bool `toml:"tab"`
+	TabIndex      bool `toml:"tab_index"`
+	Pane          bool `toml:"pane"`
+	CurrentPane   bool `toml:"current_pane"`
+	CurrentPaneID bool `toml:"current_pane_id"`
+}
+
 // StatusConfig is the [status] table as read from TOML.
 type StatusConfig struct {
-	Left           string                        `toml:"left"`
-	Right          string                        `toml:"right"`
-	Tab            string                        `toml:"tab"`
-	TabActive      string                        `toml:"tab_active"`
-	TabSep         string                        `toml:"tab_sep"`
-	Alert          string                        `toml:"alert"`
-	Prefix         string                        `toml:"prefix"`
-	PrefixActive   string                        `toml:"prefix_active"`
-	Zoom                   string                        `toml:"zoom"`
-	TabZoomGlyph           string                        `toml:"tab_zoom_glyph"`
-	PaneID                 string                        `toml:"pane_id"`
-	PaneIDActive           string                        `toml:"pane_id_active"`
-	TabColors              []string                      `toml:"tab_colors"`
-	PaneColors             []string                      `toml:"pane_colors"`
-	TabGlyphs              []string                      `toml:"tab_glyphs"`
-	TabIndexGlyphs         []string                      `toml:"tab_index_glyphs"`
-	PaneGlyphs             []string                      `toml:"pane_glyphs"`
-	PaneZoomGlyphs         []string                      `toml:"pane_zoom_glyphs"`
-	CurrentPaneGlyphs      []string                      `toml:"current_pane_glyphs"`
-	CurrentPaneZoomGlyphs  []string                      `toml:"current_pane_zoom_glyphs"`
-	CurrentPaneIDGlyphs    []string                      `toml:"current_pane_id_glyphs"`
-	CurrentPaneIDZoomGlyphs []string                     `toml:"current_pane_id_zoom_glyphs"`
-	Scripts                map[string]StatusScriptConfig `toml:"scripts"`
+	Left                    string                        `toml:"left"`
+	Right                   string                        `toml:"right"`
+	Tab                     string                        `toml:"tab"`
+	TabActive               string                        `toml:"tab_active"`
+	TabSep                  string                        `toml:"tab_sep"`
+	Alert                   string                        `toml:"alert"`
+	Prefix                  string                        `toml:"prefix"`
+	PrefixActive            string                        `toml:"prefix_active"`
+	Zoom                    string                        `toml:"zoom"`
+	TabZoomGlyph            string                        `toml:"tab_zoom_glyph"`
+	PaneID                  string                        `toml:"pane_id"`
+	PaneIDActive            string                        `toml:"pane_id_active"`
+	TabColors               []string                      `toml:"tab_colors"`
+	PaneColors              []string                      `toml:"pane_colors"`
+	TabGlyphs               []string                      `toml:"tab_glyphs"`
+	TabIndexGlyphs          []string                      `toml:"tab_index_glyphs"`
+	TabIndexZoomGlyphs      []string                      `toml:"tab_index_zoom_glyphs"`
+	PaneGlyphs              []string                      `toml:"pane_glyphs"`
+	PaneZoomGlyphs          []string                      `toml:"pane_zoom_glyphs"`
+	CurrentPaneGlyphs       []string                      `toml:"current_pane_glyphs"`
+	CurrentPaneZoomGlyphs   []string                      `toml:"current_pane_zoom_glyphs"`
+	CurrentPaneIDGlyphs     []string                      `toml:"current_pane_id_glyphs"`
+	CurrentPaneIDZoomGlyphs []string                      `toml:"current_pane_id_zoom_glyphs"`
+	ZoomGlyphs              ZoomGlyphsConfig              `toml:"zoom_glyphs"`
+	Scripts                 map[string]StatusScriptConfig `toml:"scripts"`
 }
 
 // StatusFormat is the validated status bar layout and palettes. Each part is
@@ -74,12 +86,14 @@ type StatusFormat struct {
 	PaneColors              []vt.Color
 	TabGlyphs               []string
 	TabIndexGlyphs          []string
+	TabIndexZoomGlyphs      []string
 	PaneGlyphs              []string
 	PaneZoomGlyphs          []string
 	CurrentPaneGlyphs       []string
 	CurrentPaneZoomGlyphs   []string
 	CurrentPaneIDGlyphs     []string
 	CurrentPaneIDZoomGlyphs []string
+	ZoomGlyphs              ZoomGlyphsConfig
 	Scripts                 map[string]StatusScriptSpec
 	compiled                map[string][]compiledPart
 	leftParts               []compiledPart
@@ -208,12 +222,14 @@ func ParseStatusConfig(cfg StatusConfig) (StatusFormat, error) {
 		PaneIDActive:            cfg.PaneIDActive,
 		TabGlyphs:               slices.Clone(cfg.TabGlyphs),
 		TabIndexGlyphs:          slices.Clone(cfg.TabIndexGlyphs),
+		TabIndexZoomGlyphs:      slices.Clone(cfg.TabIndexZoomGlyphs),
 		PaneGlyphs:              slices.Clone(cfg.PaneGlyphs),
 		PaneZoomGlyphs:          slices.Clone(cfg.PaneZoomGlyphs),
 		CurrentPaneGlyphs:       slices.Clone(cfg.CurrentPaneGlyphs),
 		CurrentPaneZoomGlyphs:   slices.Clone(cfg.CurrentPaneZoomGlyphs),
 		CurrentPaneIDGlyphs:     slices.Clone(cfg.CurrentPaneIDGlyphs),
 		CurrentPaneIDZoomGlyphs: slices.Clone(cfg.CurrentPaneIDZoomGlyphs),
+		ZoomGlyphs:              cfg.ZoomGlyphs,
 		compiled:                make(map[string][]compiledPart, 16),
 	}
 	if len(cfg.Scripts) > 0 {
@@ -271,6 +287,7 @@ func ParseStatusConfig(cfg StatusConfig) (StatusFormat, error) {
 	}{
 		{"tab_glyphs", f.TabGlyphs},
 		{"tab_index_glyphs", f.TabIndexGlyphs},
+		{"tab_index_zoom_glyphs", f.TabIndexZoomGlyphs},
 		{"pane_glyphs", f.PaneGlyphs},
 		{"pane_zoom_glyphs", f.PaneZoomGlyphs},
 		{"current_pane_glyphs", f.CurrentPaneGlyphs},
@@ -371,21 +388,27 @@ func (f StatusFormat) HasPrefixPlaceholder() bool {
 // HasZoomIndicator reports whether a dedicated zoom indicator is configured in
 // the bar or tab format, so {badge} does not duplicate "ZOOM".
 func (f StatusFormat) HasZoomIndicator() bool {
-	hasPaneZoom := len(f.PaneZoomGlyphs) > 0 && (hasField(f.Tab, "pane_glyph") || hasField(f.TabActive, "pane_glyph") ||
-		hasField(f.Left, "pane_glyph_current") || hasField(f.Right, "pane_glyph_current") ||
-		hasField(f.Tab, "pane_glyph_current") || hasField(f.TabActive, "pane_glyph_current") ||
-		hasField(f.Left, "current_pane_glyph") || hasField(f.Right, "current_pane_glyph") ||
-		hasField(f.Tab, "current_pane_glyph") || hasField(f.TabActive, "current_pane_glyph") ||
-		hasField(f.Left, "current_pane_id_glyph") || hasField(f.Right, "current_pane_id_glyph") ||
-		hasField(f.Tab, "current_pane_id_glyph") || hasField(f.TabActive, "current_pane_id_glyph"))
-	hasCurPaneZoom := len(f.CurrentPaneZoomGlyphs) > 0 && (hasField(f.Left, "current_pane_glyph") || hasField(f.Right, "current_pane_glyph") ||
-		hasField(f.Tab, "current_pane_glyph") || hasField(f.TabActive, "current_pane_glyph"))
-	hasCurIDZoom := len(f.CurrentPaneIDZoomGlyphs) > 0 && (hasField(f.Left, "current_pane_id_glyph") || hasField(f.Right, "current_pane_id_glyph") ||
-		hasField(f.Tab, "current_pane_id_glyph") || hasField(f.TabActive, "current_pane_id_glyph"))
+	hasTabZoom := f.ZoomGlyphs.Tab && f.TabZoomGlyph != "" &&
+		(hasField(f.Tab, "tab_glyph") || hasField(f.TabActive, "tab_glyph"))
+	hasTabIndexZoom := f.ZoomGlyphs.TabIndex && len(f.TabIndexZoomGlyphs) > 0 &&
+		(hasField(f.Tab, "tab_index_glyph") || hasField(f.TabActive, "tab_index_glyph"))
+	hasPaneZoom := f.ZoomGlyphs.Pane && len(f.PaneZoomGlyphs) > 0 &&
+		(hasField(f.Tab, "pane_glyph") || hasField(f.TabActive, "pane_glyph") ||
+			hasField(f.Left, "pane_glyph_current") || hasField(f.Right, "pane_glyph_current") ||
+			hasField(f.Tab, "pane_glyph_current") || hasField(f.TabActive, "pane_glyph_current") ||
+			hasField(f.Left, "current_pane_glyph") || hasField(f.Right, "current_pane_glyph") ||
+			hasField(f.Tab, "current_pane_glyph") || hasField(f.TabActive, "current_pane_glyph") ||
+			hasField(f.Left, "current_pane_id_glyph") || hasField(f.Right, "current_pane_id_glyph") ||
+			hasField(f.Tab, "current_pane_id_glyph") || hasField(f.TabActive, "current_pane_id_glyph"))
+	hasCurPaneZoom := f.ZoomGlyphs.CurrentPane && len(f.CurrentPaneZoomGlyphs) > 0 &&
+		(hasField(f.Left, "current_pane_glyph") || hasField(f.Right, "current_pane_glyph") ||
+			hasField(f.Tab, "current_pane_glyph") || hasField(f.TabActive, "current_pane_glyph"))
+	hasCurIDZoom := f.ZoomGlyphs.CurrentPaneID && len(f.CurrentPaneIDZoomGlyphs) > 0 &&
+		(hasField(f.Left, "current_pane_id_glyph") || hasField(f.Right, "current_pane_id_glyph") ||
+			hasField(f.Tab, "current_pane_id_glyph") || hasField(f.TabActive, "current_pane_id_glyph"))
 	return hasField(f.Left, "zoom") || hasField(f.Right, "zoom") ||
 		hasField(f.Tab, "zoom") || hasField(f.TabActive, "zoom") ||
-		(f.TabZoomGlyph != "" && (hasField(f.Tab, "tab_glyph") || hasField(f.TabActive, "tab_glyph"))) ||
-		hasPaneZoom || hasCurPaneZoom || hasCurIDZoom
+		hasTabZoom || hasTabIndexZoom || hasPaneZoom || hasCurPaneZoom || hasCurIDZoom
 }
 
 func hasField(format, name string) bool {
@@ -801,19 +824,31 @@ func emitStatus(b *barSink, format string, st Status, f StatusFormat) {
 				if st.PaneIndex < 0 {
 					continue
 				}
-				glyphs := pickGlyphSet(nil, nil, f.PaneGlyphs, f.PaneZoomGlyphs, st.Zoomed)
+				glyphs := pickGlyphSet(nil, nil, f.PaneGlyphs, activeZoomSet(f.PaneZoomGlyphs, f.ZoomGlyphs.Pane), st.Zoomed)
 				emitPaneNumberGlyph(b, f, glyphs, st.PaneIndex+1, st.PaneIndex, cur, styleBar, ctx)
 			case "current_pane_glyph":
 				if st.PaneIndex < 0 {
 					continue
 				}
-				glyphs := pickGlyphSet(f.CurrentPaneGlyphs, f.CurrentPaneZoomGlyphs, f.PaneGlyphs, f.PaneZoomGlyphs, st.Zoomed)
+				glyphs := pickGlyphSet(
+					f.CurrentPaneGlyphs,
+					activeZoomSet(f.CurrentPaneZoomGlyphs, f.ZoomGlyphs.CurrentPane),
+					f.PaneGlyphs,
+					activeZoomSet(f.PaneZoomGlyphs, f.ZoomGlyphs.Pane),
+					st.Zoomed,
+				)
 				emitPaneNumberGlyph(b, f, glyphs, st.PaneIndex+1, st.PaneIndex, cur, styleBar, ctx)
 			case "current_pane_id_glyph":
 				if st.PaneID <= 0 {
 					continue
 				}
-				glyphs := pickGlyphSet(f.CurrentPaneIDGlyphs, f.CurrentPaneIDZoomGlyphs, f.PaneGlyphs, f.PaneZoomGlyphs, st.Zoomed)
+				glyphs := pickGlyphSet(
+					f.CurrentPaneIDGlyphs,
+					activeZoomSet(f.CurrentPaneIDZoomGlyphs, f.ZoomGlyphs.CurrentPaneID),
+					f.PaneGlyphs,
+					activeZoomSet(f.PaneZoomGlyphs, f.ZoomGlyphs.Pane),
+					st.Zoomed,
+				)
 				colorIdx := max(st.PaneIndex, 0)
 				emitPaneNumberGlyph(b, f, glyphs, st.PaneID, colorIdx, cur, styleBar, ctx)
 			case "workspaces":
@@ -915,21 +950,22 @@ func emitTabs(b *barSink, st Status, f StatusFormat, ctx styleCtx) {
 					if c := f.tabColor(i); c != 0 && cur == tabBase {
 						s.Fg = c
 					}
-					if i == st.ActiveTab && st.Zoomed && f.TabZoomGlyph != "" {
+					if f.ZoomGlyphs.Tab && i == st.ActiveTab && st.Zoomed && f.TabZoomGlyph != "" {
 						emitPlain(b, f, f.TabZoomGlyph, s, tabCtx)
 					} else if len(f.TabGlyphs) > 0 {
 						emitPlain(b, f, f.TabGlyphs[i%len(f.TabGlyphs)], s, tabCtx)
 					}
 				case "tab_index_glyph":
-					if len(f.TabIndexGlyphs) > 0 {
+					glyphs := pickGlyphSet(f.TabIndexGlyphs, activeZoomSet(f.TabIndexZoomGlyphs, f.ZoomGlyphs.TabIndex), nil, nil, i == st.ActiveTab && st.Zoomed)
+					if len(glyphs) > 0 {
 						s := cur
 						if c := f.tabColor(i); c != 0 && cur == tabBase {
 							s.Fg = c
 						}
-						emitNumberGlyphs(b, f, f.TabIndexGlyphs, i+1, s, tabCtx)
+						emitNumberGlyphs(b, f, glyphs, i+1, s, tabCtx)
 					}
 				case "pane_glyph":
-					glyphs := pickGlyphSet(nil, nil, f.PaneGlyphs, f.PaneZoomGlyphs, i == st.ActiveTab && st.Zoomed)
+					glyphs := pickGlyphSet(nil, nil, f.PaneGlyphs, activeZoomSet(f.PaneZoomGlyphs, f.ZoomGlyphs.Pane), i == st.ActiveTab && st.Zoomed)
 					pCtx := styleCtx{tabColor: f.tabColor(i), paneColor: f.paneColor(paneCount - 1)}
 					emitPaneNumberGlyph(b, f, glyphs, paneCount, paneCount-1, cur, tabBase, pCtx)
 				case "pane_glyph_current":
@@ -937,7 +973,7 @@ func emitTabs(b *barSink, st Status, f StatusFormat, ctx styleCtx) {
 					if i < len(st.TabActivePane) && st.TabActivePane[i] >= 0 {
 						activeIdx = st.TabActivePane[i]
 					}
-					glyphs := pickGlyphSet(nil, nil, f.PaneGlyphs, f.PaneZoomGlyphs, i == st.ActiveTab && st.Zoomed)
+					glyphs := pickGlyphSet(nil, nil, f.PaneGlyphs, activeZoomSet(f.PaneZoomGlyphs, f.ZoomGlyphs.Pane), i == st.ActiveTab && st.Zoomed)
 					pCtx := styleCtx{tabColor: f.tabColor(i), paneColor: f.paneColor(activeIdx)}
 					emitPaneNumberGlyph(b, f, glyphs, activeIdx+1, activeIdx, cur, tabBase, pCtx)
 				case "current_pane_glyph":
@@ -945,7 +981,13 @@ func emitTabs(b *barSink, st Status, f StatusFormat, ctx styleCtx) {
 					if i < len(st.TabActivePane) && st.TabActivePane[i] >= 0 {
 						activeIdx = st.TabActivePane[i]
 					}
-					glyphs := pickGlyphSet(f.CurrentPaneGlyphs, f.CurrentPaneZoomGlyphs, f.PaneGlyphs, f.PaneZoomGlyphs, i == st.ActiveTab && st.Zoomed)
+					glyphs := pickGlyphSet(
+						f.CurrentPaneGlyphs,
+						activeZoomSet(f.CurrentPaneZoomGlyphs, f.ZoomGlyphs.CurrentPane),
+						f.PaneGlyphs,
+						activeZoomSet(f.PaneZoomGlyphs, f.ZoomGlyphs.Pane),
+						i == st.ActiveTab && st.Zoomed,
+					)
 					pCtx := styleCtx{tabColor: f.tabColor(i), paneColor: f.paneColor(activeIdx)}
 					emitPaneNumberGlyph(b, f, glyphs, activeIdx+1, activeIdx, cur, tabBase, pCtx)
 				case "current_pane_id_glyph":
@@ -956,7 +998,13 @@ func emitTabs(b *barSink, st Status, f StatusFormat, ctx styleCtx) {
 					if i < len(st.TabActivePane) && st.TabActivePane[i] >= 0 {
 						activeIdx = st.TabActivePane[i]
 					}
-					glyphs := pickGlyphSet(f.CurrentPaneIDGlyphs, f.CurrentPaneIDZoomGlyphs, f.PaneGlyphs, f.PaneZoomGlyphs, i == st.ActiveTab && st.Zoomed)
+					glyphs := pickGlyphSet(
+						f.CurrentPaneIDGlyphs,
+						activeZoomSet(f.CurrentPaneIDZoomGlyphs, f.ZoomGlyphs.CurrentPaneID),
+						f.PaneGlyphs,
+						activeZoomSet(f.PaneZoomGlyphs, f.ZoomGlyphs.Pane),
+						i == st.ActiveTab && st.Zoomed,
+					)
 					pCtx := styleCtx{tabColor: f.tabColor(i), paneColor: f.paneColor(activeIdx)}
 					emitPaneNumberGlyph(b, f, glyphs, st.TabActivePaneID[i], activeIdx, cur, tabBase, pCtx)
 				case "zoom":
@@ -974,6 +1022,13 @@ func emitTabs(b *barSink, st Status, f StatusFormat, ctx styleCtx) {
 			emitPlain(b, f, f.TabSep, styleBar, ctx)
 		}
 	}
+}
+
+func activeZoomSet(glyphs []string, enabled bool) []string {
+	if !enabled {
+		return nil
+	}
+	return glyphs
 }
 
 func pickGlyphSet(primary, primaryZoom, fallback, fallbackZoom []string, zoomed bool) []string {
@@ -1049,10 +1104,16 @@ func DrawPaneIDBadge(f *Frame, row, col, cols, paneID, paneIndex int, active, zo
 				case "index":
 					b.emit(smallInt(paneIndex), cur)
 				case "pane_glyph":
-					glyphs := pickGlyphSet(nil, nil, format.PaneGlyphs, format.PaneZoomGlyphs, zoomed)
+					glyphs := pickGlyphSet(nil, nil, format.PaneGlyphs, activeZoomSet(format.PaneZoomGlyphs, format.ZoomGlyphs.Pane), zoomed)
 					emitPaneNumberGlyph(b, format, glyphs, paneIndex, max(paneIndex-1, 0), cur, base, ctx)
 				case "current_pane_id_glyph":
-					glyphs := pickGlyphSet(format.CurrentPaneIDGlyphs, format.CurrentPaneIDZoomGlyphs, format.PaneGlyphs, format.PaneZoomGlyphs, zoomed)
+					glyphs := pickGlyphSet(
+						format.CurrentPaneIDGlyphs,
+						activeZoomSet(format.CurrentPaneIDZoomGlyphs, format.ZoomGlyphs.CurrentPaneID),
+						format.PaneGlyphs,
+						activeZoomSet(format.PaneZoomGlyphs, format.ZoomGlyphs.Pane),
+						zoomed,
+					)
 					emitPaneNumberGlyph(b, format, glyphs, paneID, max(paneIndex-1, 0), cur, base, ctx)
 				}
 			}

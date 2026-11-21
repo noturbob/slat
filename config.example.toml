@@ -100,12 +100,21 @@ alert          = "{fg=red,bold} ?{/}"
 
 # Optional glyph arrays (provide 10 entries 0-9 for multi-digit numbers):
 # tab_index_glyphs            = ["⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"]
+# tab_index_zoom_glyphs       = ["⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"]
 # pane_glyphs                 = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"]
 # pane_zoom_glyphs            = ["⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"]
 # current_pane_glyphs         = ["₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"]
 # current_pane_zoom_glyphs    = ["𝟎", "𝟏", "𝟐", "𝟑", "𝟒", "𝟓", "𝟔", "𝟕", "𝟖", "𝟗"]
 # current_pane_id_glyphs      = ["𝟘", "𝟙", "𝟚", "𝟛", "𝟜", "𝟝", "𝟞", "𝟟", "𝟠", "𝟡"]
 # current_pane_id_zoom_glyphs = ["𝟬", "𝟭", "𝟮", "𝟯", "𝟰", "𝟱", "𝟲", "𝟳", "𝟴", "𝟵"]
+
+# Per-glyph-type zoomed glyph overrides (all false by default):
+# [status.zoom_glyphs]
+# tab             = false
+# tab_index       = false
+# pane            = false
+# current_pane    = false
+# current_pane_id = false
 
 # Live status-line scripts (referenced as {script:git} in left/right):
 # [status.scripts.git]

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/noturbob/slat/internal/ui"
 )
 
 func load(t *testing.T, toml string) (*Config, error) {
@@ -258,6 +260,7 @@ tab_colors = ["cyan", "#ff8800", "44"]
 pane_colors = ["red", "208"]
 tab_glyphs = ["🐟", "🦀"]
 tab_index_glyphs = ["⓪", "①", "②"]
+tab_index_zoom_glyphs = ["⓿", "❶", "❷"]
 pane_glyphs = ["₀", "₁", "₂"]
 pane_zoom_glyphs = ["⓿", "❶", "❷"]
 `)
@@ -269,8 +272,12 @@ pane_zoom_glyphs = ["⓿", "❶", "❷"]
 		t.Errorf("tables not kept: %v %+v", cfg.Borders, cfg.Status)
 	}
 	if len(cfg.Status.TabColors) != 3 || len(cfg.Status.PaneGlyphs) != 3 ||
-		len(cfg.Status.TabIndexGlyphs) != 3 || len(cfg.Status.PaneZoomGlyphs) != 3 {
+		len(cfg.Status.TabIndexGlyphs) != 3 || len(cfg.Status.TabIndexZoomGlyphs) != 3 ||
+		len(cfg.Status.PaneZoomGlyphs) != 3 {
 		t.Errorf("status arrays not kept: %+v", cfg.Status)
+	}
+	if cfg.Status.ZoomGlyphs != (ui.ZoomGlyphsConfig{}) {
+		t.Errorf("ZoomGlyphs = %+v, want all false by default", cfg.Status.ZoomGlyphs)
 	}
 	// Unset status fields keep their defaults.
 	if cfg.Status.Alert != " ?" {
@@ -309,6 +316,10 @@ current_pane_zoom_glyphs = ["A", "B"]
 current_pane_id_glyphs = ["0", "1", "2"]
 current_pane_id_zoom_glyphs = ["⓪", "①", "②"]
 
+[status.zoom_glyphs]
+current_pane = true
+current_pane_id = true
+
 [status.scripts.git]
 command = "git branch --show-current"
 interval = "5s"
@@ -323,6 +334,10 @@ fallback = "{fg=red}err{/}"
 	}
 	if cfgScripts.Status.Scripts["git"].Command != "git branch --show-current" {
 		t.Errorf("Status.Scripts[git] = %+v", cfgScripts.Status.Scripts["git"])
+	}
+	wantZG := ui.ZoomGlyphsConfig{CurrentPane: true, CurrentPaneID: true}
+	if cfgScripts.Status.ZoomGlyphs != wantZG {
+		t.Errorf("Status.ZoomGlyphs = %+v, want %+v", cfgScripts.Status.ZoomGlyphs, wantZG)
 	}
 
 	if cfgScripts.Navigation.Keys != "alt" {

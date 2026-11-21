@@ -25,3 +25,6 @@ pane_id        = "{fg=fg,bg=tab_bg} {id} {/}"
 pane_id_active = "{fg=bg,bg=accent,bold} {id} {/}"
 current_pane_glyphs      = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"]
 current_pane_zoom_glyphs = ["𝟎", "𝟏", "𝟐", "𝟑", "𝟒", "𝟓", "𝟔", "𝟕", "𝟖", "𝟗"]
+
+[status.zoom_glyphs]
+current_pane = true

@@ -41,6 +41,10 @@ current_pane_zoom_glyphs    = ["⓿", "❶", "❷", "❸", "❹", "❺", "❻", 
 current_pane_id_glyphs      = ["𝟎", "𝟏", "𝟐", "𝟑", "𝟒", "𝟓", "𝟔", "𝟕", "𝟖", "𝟗"]
 current_pane_id_zoom_glyphs = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"]
 
+[status.zoom_glyphs]
+current_pane    = true
+current_pane_id = true
+
 [status.scripts.git]
 command  = "git -C \"$SLAT_PANE_CWD\" branch --show-current 2>/dev/null | sed 's/.*/{fg=accent}✦ &{\\/}/'"
 interval = "5s"

@@ -231,6 +231,7 @@ func TestStatusZoomedTabAndBadge(t *testing.T) {
 	cfg.TabGlyphs = []string{"■"}
 	cfg.TabColors = []string{"cyan", "yellow"}
 	cfg.TabZoomGlyph = "▣"
+	cfg.ZoomGlyphs.Tab = true
 
 	f, err := ParseStatusConfig(cfg)
 	if err != nil {
@@ -294,6 +295,8 @@ func TestStatusThreeGlyphTabs(t *testing.T) {
 	cfg.TabIndexGlyphs = []string{"⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"}
 	cfg.PaneGlyphs = []string{"₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"}
 	cfg.PaneZoomGlyphs = []string{"⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"}
+	cfg.ZoomGlyphs.Tab = true
+	cfg.ZoomGlyphs.Pane = true
 	cfg.TabColors = []string{"cyan", "magenta", "yellow"}
 	cfg.PaneColors = []string{"208", "44", "#a6e3a1", "red"}
 
@@ -349,6 +352,8 @@ func TestStatusMultiDigitGlyphs(t *testing.T) {
 	cfg.TabIndexGlyphs = []string{"⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"}
 	cfg.PaneGlyphs = []string{"₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"}
 	cfg.PaneZoomGlyphs = []string{"⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"}
+	cfg.ZoomGlyphs.Tab = true
+	cfg.ZoomGlyphs.Pane = true
 
 	f, err := ParseStatusConfig(cfg)
 	if err != nil {
@@ -446,6 +451,7 @@ func TestStatusPaneGlyphCurrent(t *testing.T) {
 	cfg.TabIndexGlyphs = []string{"⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"}
 	cfg.PaneGlyphs = []string{"₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"}
 	cfg.PaneZoomGlyphs = []string{"⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"}
+	cfg.ZoomGlyphs.Pane = true
 	cfg.PaneColors = []string{"cyan", "yellow", "red"}
 
 	f, err := ParseStatusConfig(cfg)
@@ -523,6 +529,8 @@ func BenchmarkDrawStatusBar(b *testing.B) {
 	cfg.TabIndexGlyphs = []string{"⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"}
 	cfg.PaneGlyphs = []string{"₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"}
 	cfg.PaneZoomGlyphs = []string{"⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"}
+	cfg.ZoomGlyphs.Tab = true
+	cfg.ZoomGlyphs.Pane = true
 	cfg.TabColors = []string{"cyan", "magenta", "yellow"}
 	cfg.PaneColors = []string{"208", "44", "#a6e3a1", "red"}
 	f, err := ParseStatusConfig(cfg)
@@ -557,6 +565,8 @@ func BenchmarkDrawStatusBarUncompiled(b *testing.B) {
 	cfg.TabIndexGlyphs = []string{"⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"}
 	cfg.PaneGlyphs = []string{"₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"}
 	cfg.PaneZoomGlyphs = []string{"⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"}
+	cfg.ZoomGlyphs.Tab = true
+	cfg.ZoomGlyphs.Pane = true
 	cfg.TabColors = []string{"cyan", "magenta", "yellow"}
 	cfg.PaneColors = []string{"208", "44", "#a6e3a1", "red"}
 	f, err := ParseStatusConfig(cfg)
@@ -702,6 +712,17 @@ func TestCurrentPaneAndIDGlyphsAndPaneIDBadge(t *testing.T) {
 	cfg.CurrentPaneIDGlyphs = []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
 	cfg.CurrentPaneIDZoomGlyphs = []string{"⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"}
 
+	fOff, err := ParseStatusConfig(cfg)
+	if err != nil {
+		t.Fatalf("ParseStatusConfig (default off): %v", err)
+	}
+	if fOff.HasZoomIndicator() {
+		t.Errorf("HasZoomIndicator = true, want false when zoom_glyphs are all false by default")
+	}
+
+	cfg.ZoomGlyphs.CurrentPane = true
+	cfg.ZoomGlyphs.CurrentPaneID = true
+
 	f, err := ParseStatusConfig(cfg)
 	if err != nil {
 		t.Fatalf("ParseStatusConfig: %v", err)
@@ -816,5 +837,88 @@ func TestStatusMessageInlineColors(t *testing.T) {
 	col := strings.Index(line, "ALERT")
 	if fr.Lines[0][col].Style.Fg != vt.Indexed(1) {
 		t.Errorf("ALERT fg = %+v, want red (indexed 1)", fr.Lines[0][col].Style.Fg)
+	}
+}
+
+func TestStatusZoomGlyphsPerType(t *testing.T) {
+	themes["default"].Apply()
+
+	baseCfg := func() StatusConfig {
+		cfg := DefaultStatusConfig()
+		cfg.Left = "{tabs}"
+		cfg.Right = "{badge} {current_pane_glyph}/{current_pane_id_glyph}"
+		cfg.Tab = " {tab_glyph}{tab_index_glyph}:{pane_glyph} "
+		cfg.TabGlyphs = []string{"■"}
+		cfg.TabZoomGlyph = "▣"
+		cfg.TabIndexGlyphs = []string{"0", "1", "2"}
+		cfg.TabIndexZoomGlyphs = []string{"⓪", "①", "②"}
+		cfg.PaneGlyphs = []string{"a", "b", "c"}
+		cfg.PaneZoomGlyphs = []string{"A", "B", "C"}
+		cfg.CurrentPaneGlyphs = []string{"x", "y", "z"}
+		cfg.CurrentPaneZoomGlyphs = []string{"X", "Y", "Z"}
+		cfg.CurrentPaneIDGlyphs = []string{"p", "q", "r"}
+		cfg.CurrentPaneIDZoomGlyphs = []string{"P", "Q", "R"}
+		return cfg
+	}
+
+	st := Status{
+		Tabs:            []string{"t1"},
+		TabPaneCount:    []int{2},
+		TabActivePane:   []int{1},
+		TabActivePaneID: []int{2},
+		ActiveTab:       0,
+		PaneIndex:       1,
+		PaneID:          2,
+		PaneCount:       2,
+		Zoomed:          true,
+		Badge:           "ZOOM",
+	}
+
+	render := func(cfg StatusConfig) (string, StatusFormat) {
+		f, err := ParseStatusConfig(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fr := NewFrame(80, 1)
+		DrawStatusBar(fr, 0, st, f)
+		return row(fr, 0), f
+	}
+
+	// Default: all zoom_glyphs flags are false -> normal glyphs and ZOOM badge shown.
+	gotDefault, fDefault := render(baseCfg())
+	if fDefault.HasZoomIndicator() {
+		t.Errorf("HasZoomIndicator = true, want false by default")
+	}
+	if !strings.Contains(gotDefault, "■0:b") || !strings.Contains(gotDefault, "ZOOM  y/q") {
+		t.Errorf("default zoom_glyphs off = %q", gotDefault)
+	}
+
+	// Each glyph type can be enabled independently.
+	cases := []struct {
+		name  string
+		tweak func(*ZoomGlyphsConfig)
+		want  []string
+	}{
+		{"tab", func(z *ZoomGlyphsConfig) { z.Tab = true }, []string{"▣0:b", " y/q"}},
+		{"tab_index", func(z *ZoomGlyphsConfig) { z.TabIndex = true }, []string{"■⓪:b", " y/q"}},
+		{"pane", func(z *ZoomGlyphsConfig) { z.Pane = true }, []string{"■0:B", " y/q"}},
+		{"current_pane", func(z *ZoomGlyphsConfig) { z.CurrentPane = true }, []string{"■0:b", " Y/q"}},
+		{"current_pane_id", func(z *ZoomGlyphsConfig) { z.CurrentPaneID = true }, []string{"■0:b", " y/Q"}},
+	}
+	for _, tc := range cases {
+		cfg := baseCfg()
+		tc.tweak(&cfg.ZoomGlyphs)
+		got, f := render(cfg)
+		if !f.HasZoomIndicator() {
+			t.Errorf("%s: HasZoomIndicator = false, want true", tc.name)
+		}
+		if strings.Contains(got, "ZOOM") {
+			t.Errorf("%s: ZOOM badge should be suppressed: %q", tc.name, got)
+		}
+		for _, w := range tc.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s: missing %q in %q", tc.name, w, got)
+			}
+		}
 	}
 }

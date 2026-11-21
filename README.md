@@ -524,9 +524,12 @@ zoom             = ""     # "" unbinds a command
 - `[status]` takes `left`, `right`, `tab`, `tab_active`, `tab_sep`, `alert`,
   `prefix`, `prefix_active`, `zoom`, `tab_zoom_glyph`, `pane_id`,
   `pane_id_active`, `tab_colors`, `pane_colors`, `tab_glyphs`,
-  `tab_index_glyphs`, `pane_glyphs`, `pane_zoom_glyphs`,
-  `current_pane_glyphs`, `current_pane_zoom_glyphs`, `current_pane_id_glyphs`
-  and `current_pane_id_zoom_glyphs`. The sides accept `{prefix}` `{session}`
+  `tab_index_glyphs`, `tab_index_zoom_glyphs`, `pane_glyphs`,
+  `pane_zoom_glyphs`, `current_pane_glyphs`, `current_pane_zoom_glyphs`,
+  `current_pane_id_glyphs` and `current_pane_id_zoom_glyphs`, plus
+  `[status.zoom_glyphs]` (`tab`, `tab_index`, `pane`, `current_pane`,
+  `current_pane_id` — all `false` by default, set to `true` to enable zoomed
+  glyph replacement for that glyph type). The sides accept `{prefix}` `{session}`
   `{workspace}` `{workspace_index}` `{workspace_count}` `{workspaces}`
   `{tabs}` `{tab}` `{tabs_count}` `{pane}` `{panes}` `{pane_glyph}`
   `{pane_glyph_current}` `{current_pane_glyph}` `{current_pane_id_glyph}`
@@ -539,8 +542,8 @@ zoom             = ""     # "" unbinds a command
   `tab_sep` (default `" "`, set to `""` to remove space between tabs) is drawn
   between tabs. Inline style tags like `{fg=cyan,bg=236,bold}🐟{/}` or `{fg=accent,bg=tab_bg}●{/}` colour any Unicode glyph or span (using a colour name, 0–255 index, `#rrggbb`
   hex, an active `[theme]` key such as `accent`, `bg`, `fg`, `dim`, `status_bg`, `tab_bg`, `tab_fg`, `tab_active_bg`, `tab_active_fg`, or `tab`/`pane` to pick from `tab_colors`/`pane_colors` by index). When
-  `{prefix}` is used, `{badge}` omits `"PREFIX"`; when `{zoom}`,
-  `tab_zoom_glyph`, or `pane_zoom_glyphs` is used, `{badge}` omits `"ZOOM"`.
+  `{prefix}` is used, `{badge}` omits `"PREFIX"`; when `{zoom}` or an enabled
+  `[status.zoom_glyphs]` override is active, `{badge}` omits `"ZOOM"`.
 - `[status.scripts.<name>]` runs a shell command on an `interval` (default
   `5s`, `0s` to run once) with a `timeout` (default `2s`), and renders its
   `stdout` wherever `{script:<name>}` appears in `status.left` or
