@@ -602,7 +602,7 @@ zoom             = ""     # "" unbinds a command
 ### Source layout
 
 ```text
-cmd/slat/        entry point: starts or attaches to the daemon
+cmd/slat/        entry point & mcli-based CLI: starts or attaches to the daemon (run `slat help <cmd>` for per-command flags)
 internal/
   daemon/        socket server, attach / detach, session lifetime
   client/        raw mode, alternate screen, stdin/stdout ⇄ daemon

@@ -1,7 +1,11 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -10,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jxskiss/mcli"
 	"github.com/noturbob/slat/internal/app"
 	"github.com/noturbob/slat/internal/client"
 	"github.com/noturbob/slat/internal/config"
@@ -19,22 +24,39 @@ import (
 	"github.com/noturbob/slat/internal/ui"
 )
 
-const usage = `slat — a terminal multiplexer
+type globalFlags struct {
+	Config  string `cli:"-c, --config, path to config file"`
+	Version bool   `cli:"-v, --version, print the version"`
+}
 
-usage:
-  slat [-c|--config PATH]             attach to this directory's session (starting it if needed)
-  slat [-c|--config PATH] attach [NAME|DIR]
-                                      attach to a session by name or directory
-  slat [-c|--config PATH] session NAME|PATH
-                                      start or attach to a preconfigured session TOML
-  slat sessions [--json]              list running sessions
-  slat --version                      print the version
-  slat --help                         show this help and the command reference
+type cliDeps struct {
+	doControl     func(sock string, req control.Request, timeout time.Duration) (control.Response, error)
+	listSessions  func() []app.SessionSummary
+	defaultSocket func() string
+	runClient     func(sock, dir, presetPath, configPath string) error
+	runDaemon     func(presetPath, configPath string) error
+	resolveAttach func(target string) (sock, dir string, err error)
+	resolvePreset func(target string) (sock, dir, presetPath string, err error)
+	out           io.Writer
+	errOut        io.Writer
+	exit          func(int)
+	continueOnErr bool
+}
 
-Inside slat, press the prefix (Ctrl-S by default) then ? for keybindings.
-Config: %s
-Themes: %s (set theme.name; any colour can be overridden)
-`
+func defaultDeps() cliDeps {
+	return cliDeps{
+		doControl:     control.Do,
+		listSessions:  listSessions,
+		defaultSocket: cliSocketPath,
+		runClient:     runClientWithConfig,
+		runDaemon:     runDaemon,
+		resolveAttach: resolveAttach,
+		resolvePreset: resolveSessionPreset,
+		out:           os.Stdout,
+		errOut:        os.Stderr,
+		exit:          os.Exit,
+	}
+}
 
 func socketPath() string { return socketPathForDir("") }
 
@@ -98,105 +120,178 @@ func main() {
 	if info, ok := debug.ReadBuildInfo(); ok && app.Version == "dev" && info.Main.Version != "(devel)" && info.Main.Version != "" {
 		app.Version = info.Main.Version
 	}
-	args := os.Args[1:]
-	if len(args) > 0 && args[0] == "__daemon" {
-		// Hidden: slat re-execs itself with this to become the daemon.
-		if err := runDaemon(args[1:]); err != nil {
-			fmt.Fprintf(os.Stderr, "slat: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	}
-	configPath, args, err := extractConfigFlag(args)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "slat: %v\n", err)
-		os.Exit(2)
-	}
-	switch {
-	case len(args) == 0:
-	case args[0] == "-v" || args[0] == "--version" || args[0] == "version":
-		fmt.Println("slat", app.Version)
-		return
-	case args[0] == "-h" || args[0] == "--help" || args[0] == "help":
-		fmt.Printf(usage, config.Path(), strings.Join(ui.ThemeNames(), ", "))
-		fmt.Print("\n" + cliUsage)
-		return
-	case args[0] == "sessions":
-		os.Exit(runSessions(args[1:]))
-	case args[0] == "session":
-		sock, dir, presetPath, err := resolveSessionPreset(args[1:])
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "slat: %v\n", err)
-			os.Exit(1)
-		}
-		if err := runClientWithConfig(sock, dir, presetPath, configPath); err != nil {
-			fmt.Fprintf(os.Stderr, "slat: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	case args[0] == "attach":
-		sock, dir, err := resolveAttach(args[1:])
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "slat: %v\n", err)
-			os.Exit(1)
-		}
-		if err := runClientWithConfig(sock, dir, "", configPath); err != nil {
-			fmt.Fprintf(os.Stderr, "slat: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	default:
-		// Agent-facing commands talk to a running session over the socket.
-		if handled, code := runCLI(cliSocketPath(), args); handled {
-			os.Exit(code)
-		}
-		fmt.Fprintf(os.Stderr, "slat: unknown argument %q (try slat --help)\n", args[0])
-		os.Exit(2)
-	}
-
-	if err := runClientWithConfig(socketPath(), "", "", configPath); err != nil {
-		fmt.Fprintf(os.Stderr, "slat: %v\n", err)
-		os.Exit(1)
-	}
+	m, _ := newCLIApp(defaultDeps())
+	m.EnableFlagCompletionForAllCommands = true
+	m.AddCompletion()
+	m.Run(os.Args[1:]...)
 }
 
-func extractConfigFlag(args []string) (configPath string, rest []string, err error) {
-	rest = make([]string, 0, len(args))
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if a == "--" {
-			rest = append(rest, args[i:]...)
-			break
+func resolveConfigPath(raw string) string {
+	p := strings.TrimSpace(raw)
+	if p != "" {
+		if abs, err := filepath.Abs(p); err == nil {
+			p = abs
 		}
-		switch {
-		case a == "-c" || a == "--config":
-			if i+1 >= len(args) {
-				return "", nil, fmt.Errorf("%s needs a config file path", a)
+	}
+	return p
+}
+
+func addCmd[T any](
+	m *mcli.App,
+	name, desc string,
+	maxPositional int,
+	check func(*mcli.Context, int) bool,
+	parseOpts []mcli.ParseOpt,
+	fn func(*mcli.Context, *T),
+	cmdOpts ...mcli.CmdOpt,
+) {
+	m.Add(name, mcli.NewCommand(func(ctx *mcli.Context, args *T) {
+		if check(ctx, maxPositional) {
+			fn(ctx, args)
+		}
+	}, parseOpts...), desc, cmdOpts...)
+}
+
+func newCLIApp(deps cliDeps) (*mcli.App, *globalFlags) {
+	m := mcli.NewApp()
+	m.Description = "slat — a terminal multiplexer"
+	m.Options = mcli.Options{
+		KeepCommandOrder: true,
+		HelpFooter: fmt.Sprintf(
+			"Inside slat, press the prefix (Ctrl-S by default) then ? for keybindings.\nConfig: %s\nThemes: %s (set theme.name; any colour can be overridden)",
+			config.Path(), strings.Join(ui.ThemeNames(), ", "),
+		),
+	}
+
+	var globals globalFlags
+	m.SetGlobalFlags(&globals)
+
+	var parseOpts []mcli.ParseOpt
+	if deps.continueOnErr {
+		parseOpts = append(parseOpts, mcli.WithErrorHandling(flag.ContinueOnError))
+	}
+
+	fail := func(code int, err error) {
+		fmt.Fprintf(deps.errOut, "slat: %v\n", err)
+		deps.exit(code)
+	}
+
+	checkCmd := func(ctx *mcli.Context, maxPositional int) bool {
+		if err := ctx.ArgsError(); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				deps.exit(0)
+				return false
 			}
-			i++
-			configPath = args[i]
-		case strings.HasPrefix(a, "--config="):
-			configPath = strings.TrimPrefix(a, "--config=")
-		case strings.HasPrefix(a, "-c="):
-			configPath = strings.TrimPrefix(a, "-c=")
-		default:
-			rest = append(rest, a)
+			fail(2, err)
+			return false
 		}
-	}
-	configPath = strings.TrimSpace(configPath)
-	if configPath != "" {
-		if abs, absErr := filepath.Abs(configPath); absErr == nil {
-			configPath = abs
+		if maxPositional >= 0 && ctx.FlagSet().NArg() > maxPositional {
+			fail(2, fmt.Errorf("unexpected argument %q (try slat --help)", ctx.FlagSet().Arg(maxPositional)))
+			return false
 		}
+		if globals.Version {
+			fmt.Fprintln(deps.out, "slat", app.Version)
+			deps.exit(0)
+			return false
+		}
+		return true
 	}
-	return configPath, rest, nil
+
+	type rootArgs struct{}
+	m.AddRoot(mcli.NewCommand(func(ctx *mcli.Context, _ *rootArgs) {
+		if !checkCmd(ctx, 0) {
+			return
+		}
+		if err := deps.runClient(socketPath(), "", "", resolveConfigPath(globals.Config)); err != nil {
+			fail(1, err)
+		}
+	}, parseOpts...))
+
+	catSession := mcli.WithCategory("Session")
+
+	type attachArgs struct {
+		Target string `cli:"target, session name, directory, or socket path"`
+	}
+	addCmd(m, "attach", "attach to a session by name or directory", 1, checkCmd, parseOpts,
+		func(_ *mcli.Context, args *attachArgs) {
+			sock, dir, err := deps.resolveAttach(args.Target)
+			if err != nil {
+				fail(1, err)
+				return
+			}
+			if err := deps.runClient(sock, dir, "", resolveConfigPath(globals.Config)); err != nil {
+				fail(1, err)
+			}
+		}, catSession)
+
+	type sessionsArgs struct {
+		JSONFlag
+	}
+	// Registered before "session" so mcli's prefix matcher doesn't indent it under "session".
+	addCmd(m, "sessions", "list running sessions", 0, checkCmd, parseOpts,
+		func(_ *mcli.Context, args *sessionsArgs) {
+			sessions := deps.listSessions()
+			if args.JSON {
+				b, _ := json.Marshal(control.Response{Schema: control.Schema, Sessions: sessions})
+				fmt.Fprintln(deps.out, string(b))
+				return
+			}
+			if len(sessions) == 0 {
+				fmt.Fprintln(deps.out, "no active sessions")
+				return
+			}
+			for _, s := range sessions {
+				state := "detached"
+				if s.Attached {
+					state = "attached"
+				}
+				fmt.Fprintf(deps.out, "%-14s  %d tabs  %d panes  %-8s  %s\n", s.Name, s.Tabs, s.Panes, state, s.Dir)
+			}
+		}, catSession)
+
+	type sessionArgs struct {
+		Target string `cli:"#R, target, preconfigured session name or TOML path"`
+	}
+	addCmd(m, "session", "start or attach to a preconfigured session TOML", 1, checkCmd, parseOpts,
+		func(_ *mcli.Context, args *sessionArgs) {
+			sock, dir, presetPath, err := deps.resolvePreset(args.Target)
+			if err != nil {
+				fail(1, err)
+				return
+			}
+			if err := deps.runClient(sock, dir, presetPath, resolveConfigPath(globals.Config)); err != nil {
+				fail(1, err)
+			}
+		}, catSession)
+
+	type versionArgs struct{}
+	addCmd(m, "version", "print the version", 0, checkCmd, parseOpts,
+		func(_ *mcli.Context, _ *versionArgs) {
+			fmt.Fprintln(deps.out, "slat", app.Version)
+		})
+
+	type daemonArgs struct {
+		Session string `cli:"--session, path to session preset TOML"`
+	}
+	// Hidden: slat re-execs itself with this to become the daemon.
+	m.AddHidden("__daemon", mcli.NewCommand(func(ctx *mcli.Context, args *daemonArgs) {
+		if !checkCmd(ctx, 0) {
+			return
+		}
+		if err := deps.runDaemon(args.Session, resolveConfigPath(globals.Config)); err != nil {
+			fail(1, err)
+		}
+	}, parseOpts...), "run the background daemon")
+
+	registerAgentCommands(m, deps, checkCmd, fail, parseOpts)
+	m.AddHelp()
+	return m, &globals
 }
 
-func resolveAttach(args []string) (sock, dir string, err error) {
-	if len(args) == 0 {
+func resolveAttach(target string) (sock, dir string, err error) {
+	if target == "" {
 		return socketPath(), "", nil
 	}
-	target := args[0]
 	if fi, stErr := os.Stat(target); stErr == nil {
 		if fi.IsDir() {
 			abs := session.CanonicalDir(target)
@@ -214,11 +309,8 @@ func resolveAttach(args []string) (sock, dir string, err error) {
 	return "", "", fmt.Errorf("no session %q (run 'slat sessions' to list)", target)
 }
 
-func resolveSessionPreset(args []string) (sock, dir, presetPath string, err error) {
-	if len(args) != 1 {
-		return "", "", "", fmt.Errorf("usage: slat session <NAME|PATH>")
-	}
-	presetPath, err = session.ResolvePresetPath(args[0])
+func resolveSessionPreset(target string) (sock, dir, presetPath string, err error) {
+	presetPath, err = session.ResolvePresetPath(target)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -235,22 +327,7 @@ func resolveSessionPreset(args []string) (sock, dir, presetPath string, err erro
 	return socketPathForDir(dir), dir, presetPath, nil
 }
 
-func runDaemon(args []string) error {
-	var presetPath, configPath string
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--session":
-			if i+1 < len(args) {
-				i++
-				presetPath = args[i]
-			}
-		case "--config":
-			if i+1 < len(args) {
-				i++
-				configPath = args[i]
-			}
-		}
-	}
+func runDaemon(presetPath, configPath string) error {
 	var (
 		cfg *config.Config
 		err error

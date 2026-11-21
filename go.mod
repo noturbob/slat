@@ -10,4 +10,9 @@ require (
 	golang.org/x/term v0.48.0
 )
 
-require github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
+require (
+	github.com/MakeNowJust/heredoc/v2 v2.0.1 // indirect
+	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
+	github.com/jxskiss/mcli v0.10.3 // indirect
+	github.com/rivo/uniseg v0.4.7 // indirect
+)
