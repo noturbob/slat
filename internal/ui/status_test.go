@@ -962,3 +962,58 @@ func TestStatusProcessGlyphs(t *testing.T) {
 		t.Errorf("process_glyphs should take precedence over tab_zoom_glyph: %q", got)
 	}
 }
+
+func TestCurrentPaneGlyphsDoNotFallbackToPaneGlyphs(t *testing.T) {
+	themes["default"].Apply()
+
+	cfg := DefaultStatusConfig()
+	cfg.Left = "{tabs}"
+	cfg.Right = "{badge} [{current_pane_glyph}/{current_pane_id_glyph}]"
+	cfg.Tab = " {pane_glyph} "
+	cfg.PaneGlyphs = []string{"0", "1", "2"}
+	cfg.PaneZoomGlyphs = []string{"⓿", "❶", "❷"}
+	cfg.ZoomGlyphs.Pane = true
+
+	f, err := ParseStatusConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.HasZoomIndicator() {
+		t.Errorf("HasZoomIndicator = false, want true because {pane_glyph} is in tab")
+	}
+
+	st := Status{
+		Tabs:         []string{"t1"},
+		TabPaneCount: []int{2},
+		ActiveTab:    0,
+		PaneIndex:    1,
+		PaneID:       2,
+		PaneCount:    2,
+		Zoomed:       true,
+		Badge:        "ZOOM",
+	}
+	fr := NewFrame(60, 1)
+	DrawStatusBar(fr, 0, st, f)
+	got := row(fr, 0)
+	if !strings.Contains(got, "[/]") {
+		t.Errorf("current_pane_glyph/current_pane_id_glyph should not fall back to pane_glyphs: %q", got)
+	}
+
+	// Only {current_pane_glyph}/{current_pane_id_glyph} without their own arrays:
+	// ZoomGlyphs.Pane must not trigger HasZoomIndicator().
+	cfg2 := DefaultStatusConfig()
+	cfg2.Left = "{tabs}"
+	cfg2.Right = "{badge} {current_pane_glyph}/{current_pane_id_glyph}"
+	cfg2.Tab = " {index} "
+	cfg2.PaneGlyphs = []string{"0", "1", "2"}
+	cfg2.PaneZoomGlyphs = []string{"⓿", "❶", "❷"}
+	cfg2.ZoomGlyphs.Pane = true
+
+	f2, err := ParseStatusConfig(cfg2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f2.HasZoomIndicator() {
+		t.Errorf("HasZoomIndicator = true, want false when only current_pane_* placeholders are used without their own arrays")
+	}
+}

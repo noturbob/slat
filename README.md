@@ -526,7 +526,8 @@ zoom             = ""     # "" unbinds a command
   `pane_id_active`, `tab_colors`, `pane_colors`, `tab_glyphs`,
   `tab_index_glyphs`, `tab_index_zoom_glyphs`, `pane_glyphs`,
   `pane_zoom_glyphs`, `current_pane_glyphs`, `current_pane_zoom_glyphs`,
-  `current_pane_id_glyphs` and `current_pane_id_zoom_glyphs`, plus
+  `current_pane_id_glyphs` and `current_pane_id_zoom_glyphs` (each placeholder
+  uses only its own glyph array, with no fallback to `pane_glyphs`), plus
   `[status.zoom_glyphs]` (`tab`, `tab_index`, `pane`, `current_pane`,
   `current_pane_id` — all `false` by default, set to `true` to enable zoomed
   glyph replacement for that glyph type) and `[status.process_glyphs]`
