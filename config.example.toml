@@ -116,6 +116,12 @@ alert          = "{fg=red,bold} ?{/}"
 # current_pane    = false
 # current_pane_id = false
 
+# Override {tab_glyph} (or render {process_glyph}) based on the active pane's foreground process:
+# [status.process_glyphs]
+# ssh  = "{fg=yellow}󰣀{/}"
+# nvim = ""
+# vim  = ""
+
 # Live status-line scripts (referenced as {script:git} in left/right):
 # [status.scripts.git]
 # command  = "~/.config/slat/scripts/status-git.sh"

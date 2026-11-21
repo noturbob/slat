@@ -161,8 +161,9 @@ type Status struct {
 	Tabs           []string
 	TabAlert       []bool // a pane in this tab is waiting for input
 	TabPaneCount    []int  // number of panes in each tab
-	TabActivePane   []int  // 0-based active pane index in each tab
-	TabActivePaneID []int  // active pane ID in each tab
+	TabActivePane   []int    // 0-based active pane index in each tab
+	TabActivePaneID []int    // active pane ID in each tab
+	TabProcess      []string // active pane foreground process name in each tab
 	ActiveTab       int
 	Badge           string // "PREFIX", "ZOOM", ... or ""
 	PrefixActive    bool

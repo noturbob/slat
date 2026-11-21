@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strconv"
@@ -63,6 +64,7 @@ type StatusConfig struct {
 	CurrentPaneIDGlyphs     []string                      `toml:"current_pane_id_glyphs"`
 	CurrentPaneIDZoomGlyphs []string                      `toml:"current_pane_id_zoom_glyphs"`
 	ZoomGlyphs              ZoomGlyphsConfig              `toml:"zoom_glyphs"`
+	ProcessGlyphs           map[string]string             `toml:"process_glyphs"`
 	Scripts                 map[string]StatusScriptConfig `toml:"scripts"`
 }
 
@@ -94,6 +96,7 @@ type StatusFormat struct {
 	CurrentPaneIDGlyphs     []string
 	CurrentPaneIDZoomGlyphs []string
 	ZoomGlyphs              ZoomGlyphsConfig
+	ProcessGlyphs           map[string]string
 	Scripts                 map[string]StatusScriptSpec
 	compiled                map[string][]compiledPart
 	leftParts               []compiledPart
@@ -230,6 +233,7 @@ func ParseStatusConfig(cfg StatusConfig) (StatusFormat, error) {
 		CurrentPaneIDGlyphs:     slices.Clone(cfg.CurrentPaneIDGlyphs),
 		CurrentPaneIDZoomGlyphs: slices.Clone(cfg.CurrentPaneIDZoomGlyphs),
 		ZoomGlyphs:              cfg.ZoomGlyphs,
+		ProcessGlyphs:           maps.Clone(cfg.ProcessGlyphs),
 		compiled:                make(map[string][]compiledPart, 16),
 	}
 	if len(cfg.Scripts) > 0 {
@@ -247,7 +251,7 @@ func ParseStatusConfig(cfg StatusConfig) (StatusFormat, error) {
 		sides = append(sides, "script:"+name)
 	}
 	tabFields := []string{
-		"alert", "index", "name", "tab_glyph", "tab_index_glyph",
+		"alert", "index", "name", "tab_glyph", "tab_index_glyph", "process_glyph",
 		"pane_glyph", "pane_glyph_current", "current_pane_glyph", "current_pane_id_glyph", "zoom",
 	}
 	paneIDFields := []string{"id", "index", "pane_glyph", "current_pane_id_glyph"}
@@ -301,6 +305,12 @@ func ParseStatusConfig(cfg StatusConfig) (StatusFormat, error) {
 			}
 			f.compiled[g] = compileFormat(g)
 		}
+	}
+	for proc, g := range f.ProcessGlyphs {
+		if err := checkFormat(g, nil); err != nil {
+			return f, fmt.Errorf("status.process_glyphs.%s: %w", proc, err)
+		}
+		f.compiled[g] = compileFormat(g)
 	}
 	var err error
 	if f.TabColors, err = parseColorList("status.tab_colors", cfg.TabColors); err != nil {
@@ -950,10 +960,20 @@ func emitTabs(b *barSink, st Status, f StatusFormat, ctx styleCtx) {
 					if c := f.tabColor(i); c != 0 && cur == tabBase {
 						s.Fg = c
 					}
-					if f.ZoomGlyphs.Tab && i == st.ActiveTab && st.Zoomed && f.TabZoomGlyph != "" {
+					if pg, ok := f.processGlyph(st, i); ok {
+						emitPlain(b, f, pg, s, tabCtx)
+					} else if f.ZoomGlyphs.Tab && i == st.ActiveTab && st.Zoomed && f.TabZoomGlyph != "" {
 						emitPlain(b, f, f.TabZoomGlyph, s, tabCtx)
 					} else if len(f.TabGlyphs) > 0 {
 						emitPlain(b, f, f.TabGlyphs[i%len(f.TabGlyphs)], s, tabCtx)
+					}
+				case "process_glyph":
+					if pg, ok := f.processGlyph(st, i); ok {
+						s := cur
+						if c := f.tabColor(i); c != 0 && cur == tabBase {
+							s.Fg = c
+						}
+						emitPlain(b, f, pg, s, tabCtx)
 					}
 				case "tab_index_glyph":
 					glyphs := pickGlyphSet(f.TabIndexGlyphs, activeZoomSet(f.TabIndexZoomGlyphs, f.ZoomGlyphs.TabIndex), nil, nil, i == st.ActiveTab && st.Zoomed)
@@ -1022,6 +1042,23 @@ func emitTabs(b *barSink, st Status, f StatusFormat, ctx styleCtx) {
 			emitPlain(b, f, f.TabSep, styleBar, ctx)
 		}
 	}
+}
+
+func (f StatusFormat) processGlyph(st Status, tabIdx int) (string, bool) {
+	if len(f.ProcessGlyphs) == 0 || tabIdx < 0 || tabIdx >= len(st.TabProcess) {
+		return "", false
+	}
+	proc := st.TabProcess[tabIdx]
+	if proc == "" {
+		return "", false
+	}
+	if g, ok := f.ProcessGlyphs[proc]; ok {
+		return g, true
+	}
+	if g, ok := f.ProcessGlyphs[strings.ToLower(proc)]; ok {
+		return g, true
+	}
+	return "", false
 }
 
 func activeZoomSet(glyphs []string, enabled bool) []string {

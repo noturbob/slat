@@ -492,6 +492,9 @@ func (cfg *Config) mergeStatus(user ui.StatusConfig, md toml.MetaData) error {
 			*f.dst = f.src
 		}
 	}
+	if md.IsDefined("status", "process_glyphs") {
+		cfg.Status.ProcessGlyphs = user.ProcessGlyphs
+	}
 	if md.IsDefined("status", "scripts") {
 		cfg.Status.Scripts = user.Scripts
 	}

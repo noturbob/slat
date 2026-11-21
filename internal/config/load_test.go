@@ -294,6 +294,7 @@ pane_zoom_glyphs = ["⓿", "❶", "❷"]
 		"[status]\ntab_colors = [\"notacolor\"]\n",
 		"[status]\nleft = \"{fg=nope}x{/}\"\n",
 		"[status]\nright = \"{script:missing}\"\n",
+		"[status.process_glyphs]\nssh = \"{fg=nope}S{/}\"\n",
 		"[shortcuts]\n\"bad\" = \"echo hi\"\n",
 		"[shortcuts]\n\"Alt+1\" = \"\"\n",
 	} {
@@ -320,6 +321,10 @@ current_pane_id_zoom_glyphs = ["⓪", "①", "②"]
 current_pane = true
 current_pane_id = true
 
+[status.process_glyphs]
+ssh = "{fg=yellow}S{/}"
+nvim = "N"
+
 [status.scripts.git]
 command = "git branch --show-current"
 interval = "5s"
@@ -338,6 +343,9 @@ fallback = "{fg=red}err{/}"
 	wantZG := ui.ZoomGlyphsConfig{CurrentPane: true, CurrentPaneID: true}
 	if cfgScripts.Status.ZoomGlyphs != wantZG {
 		t.Errorf("Status.ZoomGlyphs = %+v, want %+v", cfgScripts.Status.ZoomGlyphs, wantZG)
+	}
+	if cfgScripts.Status.ProcessGlyphs["ssh"] != "{fg=yellow}S{/}" || cfgScripts.Status.ProcessGlyphs["nvim"] != "N" {
+		t.Errorf("Status.ProcessGlyphs = %+v", cfgScripts.Status.ProcessGlyphs)
 	}
 
 	if cfgScripts.Navigation.Keys != "alt" {

@@ -922,3 +922,43 @@ func TestStatusZoomGlyphsPerType(t *testing.T) {
 		}
 	}
 }
+
+func TestStatusProcessGlyphs(t *testing.T) {
+	themes["default"].Apply()
+
+	cfg := DefaultStatusConfig()
+	cfg.Left = "{tabs}"
+	cfg.Tab = " {tab_glyph}:{process_glyph}{name} "
+	cfg.TabGlyphs = []string{"■"}
+	cfg.TabZoomGlyph = "▣"
+	cfg.ZoomGlyphs.Tab = true
+	cfg.TabColors = []string{"cyan", "yellow", "green"}
+	cfg.ProcessGlyphs = map[string]string{
+		"ssh":  "{fg=red}S{/}",
+		"nvim": "N",
+	}
+
+	f, err := ParseStatusConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	st := Status{
+		Tabs:       []string{"remote", "edit", "shell"},
+		TabProcess: []string{"ssh", "nvim", "bash"},
+		ActiveTab:  0,
+		Zoomed:     true, // ssh on zoomed active tab must still win over tab_zoom_glyph
+	}
+
+	fr := NewFrame(60, 1)
+	DrawStatusBar(fr, 0, st, f)
+	got := row(fr, 0)
+	for _, want := range []string{"S:Sremote", "N:Nedit", "■:shell"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in %q", want, got)
+		}
+	}
+	if strings.Contains(got, "▣") {
+		t.Errorf("process_glyphs should take precedence over tab_zoom_glyph: %q", got)
+	}
+}

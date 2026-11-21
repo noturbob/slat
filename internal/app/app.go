@@ -88,6 +88,7 @@ type App struct {
 	statusPaneCount       []int
 	statusTabActivePane   []int
 	statusTabActivePaneID []int
+	statusTabProcess      []string
 	scriptOutputs         map[string]string
 	statusScripts         map[string]string
 	preset                *session.Preset
@@ -558,15 +559,19 @@ func (a *App) statusOfBar(now time.Time) ui.Status {
 	a.statusPaneCount = a.statusPaneCount[:0]
 	a.statusTabActivePane = a.statusTabActivePane[:0]
 	a.statusTabActivePaneID = a.statusTabActivePaneID[:0]
+	a.statusTabProcess = a.statusTabProcess[:0]
 	for _, t := range ws.Tabs {
 		a.statusTabs = append(a.statusTabs, t.Name)
 		a.statusPaneCount = append(a.statusPaneCount, layout.CountPanes(t.Layout))
 		a.statusTabActivePane = append(a.statusTabActivePane, max(layout.PaneIndex(t.Layout, t.ActivePane), 0))
 		activeID := 0
+		activeProc := ""
 		if t.ActivePane != nil {
 			activeID = t.ActivePane.ID
+			_, activeProc, _ = t.ActivePane.Foreground()
 		}
 		a.statusTabActivePaneID = append(a.statusTabActivePaneID, activeID)
+		a.statusTabProcess = append(a.statusTabProcess, activeProc)
 		alert := len(a.attention) > 0 && layout.AnyPane(t.Layout, func(p *pane.Pane) bool {
 			return a.attention[p.ID]
 		})
@@ -577,6 +582,7 @@ func (a *App) statusOfBar(now time.Time) ui.Status {
 	st.TabPaneCount = a.statusPaneCount
 	st.TabActivePane = a.statusTabActivePane
 	st.TabActivePaneID = a.statusTabActivePaneID
+	st.TabProcess = a.statusTabProcess
 	panes := a.manager.ActivePanes()
 	ap := a.manager.ActivePane()
 	if ap != nil {

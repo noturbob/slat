@@ -529,13 +529,16 @@ zoom             = ""     # "" unbinds a command
   `current_pane_id_glyphs` and `current_pane_id_zoom_glyphs`, plus
   `[status.zoom_glyphs]` (`tab`, `tab_index`, `pane`, `current_pane`,
   `current_pane_id` — all `false` by default, set to `true` to enable zoomed
-  glyph replacement for that glyph type). The sides accept `{prefix}` `{session}`
+  glyph replacement for that glyph type) and `[status.process_glyphs]`
+  (a `process = "glyph"` map that overrides `{tab_glyph}` — and populates
+  `{process_glyph}` — when the tab's active pane is running that process,
+  taking precedence over `tab_zoom_glyph` and `tab_glyphs`). The sides accept `{prefix}` `{session}`
   `{workspace}` `{workspace_index}` `{workspace_count}` `{workspaces}`
   `{tabs}` `{tab}` `{tabs_count}` `{pane}` `{panes}` `{pane_glyph}`
   `{pane_glyph_current}` `{current_pane_glyph}` `{current_pane_id_glyph}`
   `{zoom}` `{badge}` `{time}` `{seconds}` `{date}`; `tab` and `tab_active`
   accept `{index}` `{name}` `{alert}` `{tab_glyph}` `{tab_index_glyph}`
-  `{pane_glyph}` `{pane_glyph_current}` `{current_pane_glyph}`
+  `{process_glyph}` `{pane_glyph}` `{pane_glyph_current}` `{current_pane_glyph}`
   `{current_pane_id_glyph}` `{zoom}`; `pane_id` and `pane_id_active` (toggled
   in the top-right corner of each pane with `identify-panes`, default `prefix`
   + `i`) accept `{id}` `{index}` `{pane_glyph}` `{current_pane_id_glyph}`; and
