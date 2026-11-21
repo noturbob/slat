@@ -394,7 +394,8 @@ $ slat capture 3 --lines 20             # read what it printed
 | `slat pane new [--split v\|h] [--cwd D] [--cmd C] [--target P] [--focus]` | split a pane |
 | `slat pane close PANE` | close a pane |
 | `slat send PANE TEXT... [--enter] [--key KEY]` | type into a pane (supports `--session`, `--workspace`, `--tab`, or `[SESSION:][WORKSPACE/[TAB/]]PANE`, e.g. `work:dev/active`) |
-| `slat focus left\|down\|up\|right` | move pane focus in a direction (used by seamless Neovim navigation) |
+| `slat focus TARGET\|left\|down\|up\|right` | focus a pane/workspace/tab (same syntax as `slat send`) or move in a direction |
+| `slat display MESSAGE [--duration 2s]` | show a temporary alert in the status bar (supports `{fg=...}` tags and `--session`) |
 | `slat run PANE COMMAND...` | send a command and press Enter |
 | `slat capture PANE [--lines N] [--history]` | read a pane's text |
 | `slat wait PANE --for idle\|input\|exit\|text=REGEX [--timeout 60s]` | block until something happens |

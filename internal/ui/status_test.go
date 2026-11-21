@@ -800,3 +800,21 @@ func TestStatusThemeColorTags(t *testing.T) {
 		t.Errorf("vice-city X style = %+v, want vice-city accent fg", fr2.Lines[0][xCol].Style)
 	}
 }
+
+func TestStatusMessageInlineColors(t *testing.T) {
+	themes["default"].Apply()
+	f, err := ParseStatusConfig(DefaultStatusConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fr := NewFrame(60, 1)
+	DrawStatusBar(fr, 0, Status{Message: "{fg=red,bold}ALERT{/} ok"}, f)
+	line := row(fr, 0)
+	if !strings.Contains(line, "ALERT ok") {
+		t.Fatalf("status message = %q, want 'ALERT ok'", line)
+	}
+	col := strings.Index(line, "ALERT")
+	if fr.Lines[0][col].Style.Fg != vt.Indexed(1) {
+		t.Errorf("ALERT fg = %+v, want red (indexed 1)", fr.Lines[0][col].Style.Fg)
+	}
+}

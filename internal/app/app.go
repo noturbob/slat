@@ -383,9 +383,24 @@ func (a *App) markDirty() {
 
 // notify shows msg in the status bar for a few seconds.
 func (a *App) notify(msg string) {
+	a.notifyFor(msg, messageTime)
+}
+
+func (a *App) notifyFor(msg string, dur time.Duration) {
 	a.message = msg
-	a.messageEnd = time.Now().Add(messageTime)
-	time.AfterFunc(messageTime, a.markDirty)
+	a.messageEnd = time.Now().Add(dur)
+	time.AfterFunc(dur, a.markDirty)
+}
+
+// Display shows msg in the status bar for dur (defaulting to 2s when <= 0).
+func (a *App) Display(msg string, dur time.Duration) {
+	if dur <= 0 {
+		dur = 2 * time.Second
+	}
+	a.mu.Lock()
+	a.notifyFor(msg, dur)
+	a.mu.Unlock()
+	a.markDirty()
 }
 
 // paneArea is the screen minus the status bar row.

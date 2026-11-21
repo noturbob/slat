@@ -42,6 +42,10 @@ func (s *Server) run(req control.Request) control.Response {
 	case "pop-switch":
 		return control.Response{Schema: control.Schema, SwitchTo: a.PopSwitchTarget()}
 
+	case "switch":
+		a.SwitchSession(req.Data)
+		return control.Response{Schema: control.Schema}
+
 	case "tree":
 		return control.Response{Schema: control.Schema, Tree: a.ExportTree()}
 
@@ -49,6 +53,16 @@ func (s *Server) run(req control.Request) control.Response {
 		if req.Direction != "" {
 			if err := a.FocusDirection(req.Direction); err != nil {
 				return control.Errorf(control.CodeError, "%v", err)
+			}
+			return control.Response{Schema: control.Schema}
+		}
+		if req.Pane != "" || req.TargetWorkspace != "" || req.TargetTab != "" {
+			if err := a.FocusPaneTarget(app.PaneTarget{
+				Pane:      pane,
+				Workspace: req.TargetWorkspace,
+				Tab:       req.TargetTab,
+			}); err != nil {
+				return paneErr(err)
 			}
 			return control.Response{Schema: control.Schema}
 		}
@@ -96,6 +110,21 @@ func (s *Server) run(req control.Request) control.Response {
 		if err := a.SendTarget(app.PaneTarget{Pane: pane, Workspace: req.TargetWorkspace, Tab: req.TargetTab}, []byte(req.Data)); err != nil {
 			return paneErr(err)
 		}
+		return control.Response{Schema: control.Schema}
+
+	case "display":
+		if req.Data == "" {
+			return control.Errorf(control.CodeError, "display needs a message")
+		}
+		dur := 2 * time.Second
+		if req.Timeout != "" {
+			d, err := time.ParseDuration(req.Timeout)
+			if err != nil || d <= 0 {
+				return control.Errorf(control.CodeError, "bad --duration %q", req.Timeout)
+			}
+			dur = d
+		}
+		a.Display(req.Data, dur)
 		return control.Response{Schema: control.Schema}
 
 	case "capture":

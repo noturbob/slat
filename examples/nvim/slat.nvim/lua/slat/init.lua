@@ -227,12 +227,12 @@ end
 function M.setup(opts)
 	M.config = vim.tbl_deep_extend("force", M.config, opts or {})
 
-	if opts and opts.mappings ~= false then
+	if opts == nil or opts.mappings ~= false then
 		local maps = (opts and opts.mappings) or {}
-		local line_key = maps.line or "<leader>sl"
-		local sel_key = maps.selection or "<leader>ss"
+		local line_key = maps.line or "<F3>"
+		local sel_key = maps.selection or "<F3>"
 		local op_key = maps.operator or "gs"
-		local insert_key = maps.insert or "<C-s><C-s>"
+		local insert_key = maps.insert or "<F3>"
 
 		vim.keymap.set("n", line_key, M.send_line, { desc = "Slat: send line(s)" })
 		vim.keymap.set("x", sel_key, M.send_selection, { desc = "Slat: send selection" })

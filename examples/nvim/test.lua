@@ -55,13 +55,13 @@ local ok, err = xpcall(function()
 		"alpha beta gamma",
 	})
 
-	-- Normal single line
+	-- Normal single line via <F3>
 	clear_calls()
 	vim.api.nvim_win_set_cursor(0, { 1, 0 })
-	slat.send_line()
+	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<F3>", true, false, true), "mx", false)
 	wait_for_calls(1)
 	local calls = read_calls()
-	assert(calls[1] == "send --enter work:2 -- echo one", "send_line got: " .. tostring(calls[1]))
+	assert(calls[1] == "send --enter work:2 -- echo one", "send_line <F3> got: " .. tostring(calls[1]))
 
 	-- Normal [count] lines via <Plug>(SlatSendLine)
 	clear_calls()
@@ -80,10 +80,10 @@ local ok, err = xpcall(function()
 	calls = read_calls()
 	assert(calls[1] == "send --enter work:2 -- alpha", "send_operator char got: " .. tostring(calls[1]))
 
-	-- Visual linewise selection
+	-- Visual linewise selection via <F3>
 	clear_calls()
 	vim.api.nvim_win_set_cursor(0, { 1, 0 })
-	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("Vj<Plug>(SlatSendSelection)", true, false, true), "mx", false)
+	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("Vj<F3>", true, false, true), "mx", false)
 	wait_for_calls(1)
 	calls = read_calls()
 	assert(calls[1] == "send --enter work:2 -- echo one" and calls[2] == "echo two", "visual line got: " .. vim.inspect(calls))

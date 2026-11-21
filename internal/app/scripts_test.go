@@ -215,3 +215,59 @@ func TestNavigationKeysAndFocusDirection(t *testing.T) {
 	}
 	a.mu.Unlock()
 }
+
+func TestDisplayAlertDuration(t *testing.T) {
+	a, _ := start(t)
+	a.Display("{fg=red}Saved!{/}", 80*time.Millisecond)
+
+	a.mu.Lock()
+	st := a.statusOfBar(time.Now())
+	a.mu.Unlock()
+	if st.Message != "{fg=red}Saved!{/}" {
+		t.Fatalf("initial status Message = %q, want {fg=red}Saved!{/}", st.Message)
+	}
+
+	time.Sleep(110 * time.Millisecond)
+	a.mu.Lock()
+	stAfter := a.statusOfBar(time.Now())
+	a.mu.Unlock()
+	if stAfter.Message != "" {
+		t.Errorf("status Message after duration = %q, want empty", stAfter.Message)
+	}
+}
+
+func TestFocusPaneTargetAcrossWorkspacesAndTabs(t *testing.T) {
+	a, _ := start(t)
+	a.FeedInput([]byte{prefix, 'c'}) // tab 2, pane 2
+	a.FeedInput([]byte{prefix, 'W'}) // ws-2, tab 1, pane 3
+
+	// Focus back to main/1/1 via FocusPaneTarget.
+	if err := a.FocusPaneTarget(PaneTarget{Pane: "1", Workspace: "main", Tab: "1"}); err != nil {
+		t.Fatalf("FocusPaneTarget(main/1/1): %v", err)
+	}
+	a.mu.Lock()
+	gotID := a.manager.ActivePane().ID
+	gotWS := a.manager.ActiveWorkspace().Name
+	a.mu.Unlock()
+	if gotID != 1 || gotWS != "main" {
+		t.Errorf("after FocusPaneTarget(main/1/1): ws=%q pane=%d, want main/1", gotWS, gotID)
+	}
+
+	// Focus active pane of ws-2.
+	if err := a.FocusPaneTarget(PaneTarget{Pane: "active", Workspace: "ws-2"}); err != nil {
+		t.Fatalf("FocusPaneTarget(ws-2/active): %v", err)
+	}
+	a.mu.Lock()
+	gotID = a.manager.ActivePane().ID
+	gotWS = a.manager.ActiveWorkspace().Name
+	a.mu.Unlock()
+	if gotID != 3 || gotWS != "ws-2" {
+		t.Errorf("after FocusPaneTarget(ws-2): ws=%q pane=%d, want ws-2/3", gotWS, gotID)
+	}
+
+	// SwitchSession sets PopSwitchTarget when attached.
+	a.SwitchSession("/tmp/other-session.sock")
+	if got := a.PopSwitchTarget(); got != "/tmp/other-session.sock" {
+		t.Errorf("PopSwitchTarget = %q, want /tmp/other-session.sock", got)
+	}
+}

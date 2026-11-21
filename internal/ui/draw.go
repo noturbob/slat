@@ -197,7 +197,7 @@ func DrawStatusBar(f *Frame, y int, st Status, format StatusFormat) {
 	leftSink := barSink{frame: f, x: 0, y: y, budget: w - rightW}
 	if st.Message != "" {
 		leftSink.emit(" ", styleBar)
-		leftSink.emit(st.Message, styleBar)
+		emitPlainParts(&leftSink, compileDynamicFormat(st.Message), styleBar, styleCtx{})
 	} else {
 		emitStatus(&leftSink, format.Left, st, format)
 	}

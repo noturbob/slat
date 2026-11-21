@@ -454,6 +454,29 @@ func (a *App) FocusDirection(dir string) error {
 	return nil
 }
 
+// FocusPaneTarget moves focus to a scoped pane target across workspaces/tabs.
+func (a *App) FocusPaneTarget(t PaneTarget) error {
+	r, err := a.refTarget(t)
+	if err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.zoomed = nil
+	a.manager.Focus(r.Pane)
+	a.mu.Unlock()
+	a.markDirty()
+	return nil
+}
+
+// SwitchSession asks an attached client of this session to switch to sock.
+func (a *App) SwitchSession(sock string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.attached && sock != "" {
+		a.requestSwitch(sock)
+	}
+}
+
 type errPaneGone struct{ id int }
 
 func (e errPaneGone) Error() string { return fmt.Sprintf("pane %d is gone", e.id) }

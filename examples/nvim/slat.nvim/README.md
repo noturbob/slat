@@ -25,10 +25,10 @@ Neovim extension for `slat` that provides:
         -- keys = "ctrl", -- switch to Ctrl+h/j/k/l (set [navigation] keys = "ctrl" in slat config)
       },
       mappings = {
-        line = "<leader>sl",
-        selection = "<leader>ss",
+        line = "<F3>",
+        selection = "<F3>",
         operator = "gs",
-        insert = "<C-s><C-s>",
+        insert = "<F3>",
       },
     })
   end,

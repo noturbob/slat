@@ -121,11 +121,39 @@ func TestResolveSessionSocket(t *testing.T) {
 }
 
 func TestParseCLIFocusDirection(t *testing.T) {
-	req, _, _, err := parseCLIWithSession([]string{"focus", "up"})
-	if err != nil || req.Cmd != "focus" || req.Direction != "up" {
-		t.Fatalf("focus up = (%+v, %v)", req, err)
+	req, sess, _, err := parseCLIWithSession([]string{"focus", "--session", "work", "up"})
+	if err != nil || req.Cmd != "focus" || req.Direction != "up" || sess != "work" {
+		t.Fatalf("focus up = (%+v, %q, %v)", req, sess, err)
 	}
-	if _, _, _, err := parseCLIWithSession([]string{"focus", "diagonal"}); err == nil {
-		t.Errorf("expected error for invalid focus direction")
+	req2, sess2, _, err := parseCLIWithSession([]string{"focus", "work:dev/editor/3"})
+	if err != nil || sess2 != "work" || req2.TargetWorkspace != "dev" || req2.TargetTab != "editor" || req2.Pane != "3" {
+		t.Fatalf("focus inline target = (%+v, %q, %v)", req2, sess2, err)
+	}
+	req3, _, _, err := parseCLIWithSession([]string{"focus", "--workspace", "dev", "--tab", "2"})
+	if err != nil || req3.TargetWorkspace != "dev" || req3.TargetTab != "2" || req3.Pane != "active" {
+		t.Fatalf("focus flags only = (%+v, %v)", req3, err)
+	}
+	req4, _, _, err := parseCLIWithSession([]string{"focus", "2"})
+	if err != nil || req4.Pane != "2" || req4.Direction != "" {
+		t.Fatalf("focus pane id = (%+v, %v)", req4, err)
+	}
+	if _, _, _, err := parseCLIWithSession([]string{"focus"}); err == nil {
+		t.Errorf("expected error for empty focus")
+	}
+	if _, _, _, err := parseCLIWithSession([]string{"focus", "2", "extra"}); err == nil {
+		t.Errorf("expected error for extra focus arg")
+	}
+}
+
+func TestParseCLIDisplay(t *testing.T) {
+	req, sess, _, err := parseCLIWithSession([]string{"display", "--duration", "5s", "--session", "work", "hello", "world"})
+	if err != nil {
+		t.Fatalf("display parse err: %v", err)
+	}
+	if req.Cmd != "display" || req.Data != "hello world" || req.Timeout != "5s" || sess != "work" {
+		t.Errorf("display got (%+v, %q)", req, sess)
+	}
+	if _, _, _, err := parseCLIWithSession([]string{"display"}); err == nil {
+		t.Errorf("expected error for empty display message")
 	}
 }

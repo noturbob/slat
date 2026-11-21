@@ -24,7 +24,8 @@ const cliUsage = `slat commands (for scripts and agents):
   slat pane close PANE
   slat send PANE TEXT... [--enter] [--key KEY]
   slat run PANE COMMAND...               send COMMAND and press Enter
-  slat focus left|down|up|right          move pane focus in a direction
+  slat focus TARGET|left|down|up|right   move focus to a pane or direction
+  slat display MESSAGE [--duration 2s]   show an alert in the status bar
   slat capture PANE [--lines N] [--history]
   slat wait PANE --for idle|input|exit|text=REGEX [--timeout 60s]
 
@@ -45,7 +46,7 @@ func runCLI(sock string, args []string) (handled bool, code int) {
 		return false, 0
 	}
 	switch args[0] {
-	case "ls", "status", "pane", "send", "run", "capture", "wait", "focus":
+	case "ls", "status", "pane", "send", "run", "capture", "wait", "focus", "display":
 	default:
 		return false, 0
 	}
@@ -73,6 +74,11 @@ func runCLI(sock string, args []string) (handled bool, code int) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "slat: %v\n", err)
 		return true, control.CodeError
+	}
+	if req.Cmd == "focus" && resp.Error == "" && targetSess != "" {
+		if curSock := os.Getenv("SLAT"); curSock != "" && curSock != sock {
+			_, _ = control.Do(curSock, control.Request{Cmd: "switch", Data: sock}, 2*time.Second)
+		}
 	}
 	print(resp, req, asJSON)
 	return true, resp.Code
@@ -117,28 +123,55 @@ func parseCLIWithSession(args []string) (control.Request, string, bool, error) {
 	fs.BoolVar(&req.History, "history", false, "capture: include the scrollback")
 	fs.StringVar(&req.For, "for", "", "wait: idle, input, exit or text=REGEX")
 	fs.StringVar(&req.Timeout, "timeout", "", "wait: give up after this long (default 60s)")
+	flagDuration := fs.String("duration", "", "display: how long to show the message (default 2s)")
 	flags, words := permute(rest)
 	if err := fs.Parse(flags); err != nil {
 		return req, "", false, err
 	}
 
 	// The first bare word is the pane for every command that takes one.
-	takesPane := req.Cmd != "ls" && req.Cmd != "pane-new" && req.Cmd != "focus"
+	takesPane := req.Cmd != "ls" && req.Cmd != "pane-new" && req.Cmd != "focus" && req.Cmd != "display"
 	if takesPane && len(words) > 0 {
 		req.Pane, words = words[0], words[1:]
 	}
 
-	if req.Cmd == "focus" {
-		if len(words) != 1 {
-			return req, "", false, fmt.Errorf("focus needs a direction: left, down, up, or right")
+	if req.Cmd == "display" {
+		if len(words) == 0 {
+			return req, "", false, fmt.Errorf("display needs a message")
 		}
-		switch words[0] {
-		case "left", "down", "up", "right":
-			req.Direction = words[0]
-		default:
-			return req, "", false, fmt.Errorf("focus: invalid direction %q (want left, down, up, right)", words[0])
+		req.Data = strings.Join(words, " ")
+		if *flagDuration != "" {
+			req.Timeout = *flagDuration
 		}
 		return req, *flagSession, *asJSON, nil
+	}
+
+	if req.Cmd == "focus" {
+		if len(words) > 1 {
+			return req, "", false, fmt.Errorf("focus takes at most one target or direction")
+		}
+		raw := ""
+		if len(words) == 1 {
+			raw = words[0]
+		}
+		if *flagWS == "" && *flagTab == "" && (raw == "left" || raw == "down" || raw == "up" || raw == "right") {
+			req.Direction = raw
+			return req, *flagSession, *asJSON, nil
+		}
+		sess, ws, tab, paneSpec, err := parseTarget(raw, *flagSession, *flagWS, *flagTab)
+		if err != nil {
+			return req, "", false, err
+		}
+		if paneSpec == "" && sess == "" && ws == "" && tab == "" {
+			return req, "", false, fmt.Errorf("focus needs a target or direction (left, down, up, right)")
+		}
+		if paneSpec == "" {
+			paneSpec = "active"
+		}
+		req.Pane = paneSpec
+		req.TargetWorkspace = ws
+		req.TargetTab = tab
+		return req, sess, *asJSON, nil
 	}
 
 	sess, ws, tab, paneSpec, err := parseTarget(req.Pane, *flagSession, *flagWS, *flagTab)
@@ -264,7 +297,7 @@ func resolveSessionSocket(defaultSock, spec string, sessions []app.SessionSummar
 // isn't a bare word.
 var valueFlags = map[string]bool{
 	"split": true, "cwd": true, "cmd": true, "target": true,
-	"lines": true, "for": true, "timeout": true, "key": true,
+	"lines": true, "for": true, "timeout": true, "duration": true, "key": true,
 	"session": true, "workspace": true, "tab": true,
 }
 
