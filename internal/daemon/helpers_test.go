@@ -34,6 +34,8 @@ func session(t *testing.T, tweak ...func(*config.Config)) string {
 	sock := filepath.Join(dir, "s.sock")
 
 	cfg := config.DefaultConfig()
+	cfg.Shell = "/bin/sh"
+	cfg.Splash.Enabled = false
 	cfg.StatusBar = false
 	cfg.Agent.InputAfter = config.Duration(400 * time.Millisecond)
 	for _, f := range tweak {

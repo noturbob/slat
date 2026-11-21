@@ -69,6 +69,7 @@ func start(t *testing.T, tweak ...func(*config.Config)) (*App, *terminal) {
 	t.Setenv("ENV", "") // keep sh from sourcing rc files that reset PS1
 	cfg := config.DefaultConfig()
 	cfg.Shell = "/bin/sh"
+	cfg.Splash.Enabled = false
 	for _, f := range tweak {
 		f(cfg)
 	}

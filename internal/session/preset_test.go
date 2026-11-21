@@ -14,20 +14,20 @@ func TestLoadExamplePreset(t *testing.T) {
 	if p.SessionName != "sample-session" {
 		t.Errorf("SessionName = %q, want %q", p.SessionName, "sample-session")
 	}
-	if len(p.Tabs) != 3 {
-		t.Fatalf("Tabs len = %d, want 3", len(p.Tabs))
+	if len(p.Tabs) != 2 {
+		t.Fatalf("Tabs len = %d, want 2", len(p.Tabs))
 	}
 	if p.Tabs[0].Name != "doc" || p.Tabs[0].Layout != "stack" {
 		t.Errorf("Tabs[0] = %+v, want name=doc layout=stack", p.Tabs[0])
 	}
-	if len(p.Tabs[0].Panes) != 1 || p.Tabs[0].Panes[0].Cmd != "nvim README.md commander.yml -p" {
+	if len(p.Tabs[0].Panes) != 1 || p.Tabs[0].Panes[0].Cmd != "nvim README.md" {
 		t.Errorf("Tabs[0].Panes = %+v", p.Tabs[0].Panes)
 	}
 	if p.Tabs[1].Name != "editor" || p.Tabs[1].Layout != "" {
 		t.Errorf("Tabs[1] = %+v", p.Tabs[1])
 	}
-	if p.Tabs[2].Name != "observe" || p.Tabs[2].Panes[0].Cmd != "com obs run" {
-		t.Errorf("Tabs[2] = %+v", p.Tabs[2])
+	if len(p.Tabs[1].Panes) != 1 || p.Tabs[1].Panes[0].Cmd != "nvim -S session.vim" {
+		t.Errorf("Tabs[1].Panes = %+v", p.Tabs[1].Panes)
 	}
 }
 
