@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 	"time"
@@ -37,7 +36,9 @@ func defaultAnimation() Animation {
 		Reveal: "curtain",
 		Glyph:  "░",
 	}
-	a.compile() // the built-in names are known good
+	if err := a.compile(); err != nil { // the built-in names are known good
+		panic(err)
+	}
 	return a
 }
 
@@ -47,10 +48,11 @@ func defaultAnimation() Animation {
 var easings = map[string]func(float64) float64{
 	"linear":    func(t float64) float64 { return t },
 	"out-quad":  func(t float64) float64 { return 1 - (1-t)*(1-t) },
-	"out-cubic": func(t float64) float64 { return 1 - math.Pow(1-t, 3) },
+	"out-cubic": func(t float64) float64 { return 1 - (1-t)*(1-t)*(1-t) },
 	"out-back": func(t float64) float64 {
 		const c = 1.70158
-		return 1 + (c+1)*math.Pow(t-1, 3) + c*math.Pow(t-1, 2)
+		u := t - 1
+		return 1 + (c+1)*u*u*u + c*u*u
 	},
 }
 

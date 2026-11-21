@@ -9,7 +9,9 @@ import (
 func screen(t *testing.T, cols, rows int, input string) *Terminal {
 	t.Helper()
 	term := New(cols, rows)
-	term.Write([]byte(input))
+	if _, err := term.Write([]byte(input)); err != nil {
+		t.Fatal(err)
+	}
 	return term
 }
 
@@ -101,7 +103,9 @@ func TestModesAndReplies(t *testing.T) {
 	if term.Replies() != nil {
 		t.Error("replies not cleared")
 	}
-	term.Write([]byte("\x1bc"))
+	if _, err := term.Write([]byte("\x1bc")); err != nil {
+		t.Fatal(err)
+	}
 	if term.AppCursor() || !term.CursorVisible() {
 		t.Error("RIS did not reset modes")
 	}
@@ -117,7 +121,9 @@ func TestResizeKeepsCursorLine(t *testing.T) {
 		t.Errorf("cursor at %d,%d", x, y)
 	}
 	term.Resize(8, 6)
-	term.Write([]byte("ok"))
+	if _, err := term.Write([]byte("ok")); err != nil {
+		t.Fatal(err)
+	}
 	if got := term.String(); got != "3\n4\n$ ok\n\n\n" {
 		t.Errorf("after grow: %q", got)
 	}
@@ -133,7 +139,9 @@ func TestFuzzDoesNotPanic(t *testing.T) {
 	alphabet := []byte("\x1b[;?0123456789HJKmrABCDLMP@X\r\n\b\thello世\xe4\xb8\x96()0Bc7")
 	term := New(7, 4)
 	for i := 0; i < 200000; i++ {
-		term.Write([]byte{alphabet[int(next())%len(alphabet)]})
+		if _, err := term.Write([]byte{alphabet[int(next())%len(alphabet)]}); err != nil {
+			t.Fatal(err)
+		}
 		if i%5000 == 0 {
 			term.Resize(1+int(next())%12, 1+int(next())%6)
 		}
@@ -156,7 +164,9 @@ func BenchmarkScrolling(b *testing.B) {
 		term := New(99, 49)
 		term.SetScrollback(2000)
 		for off := 0; off < len(data); off += 4096 {
-			term.Write(data[off:min(off+4096, len(data))])
+			if _, err := term.Write(data[off:min(off+4096, len(data))]); err != nil {
+				b.Fatal(err)
+			}
 		}
 	}
 }
@@ -172,7 +182,9 @@ func BenchmarkColoredText(b *testing.B) {
 		term := New(99, 49)
 		term.SetScrollback(2000)
 		for off := 0; off < len(data); off += 4096 {
-			term.Write(data[off:min(off+4096, len(data))])
+			if _, err := term.Write(data[off:min(off+4096, len(data))]); err != nil {
+				b.Fatal(err)
+			}
 		}
 	}
 }

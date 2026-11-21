@@ -140,7 +140,9 @@ func DefaultConfig() *Config {
 		Agent:      defaultAgent(),
 		Navigation: defaultNavigation(),
 	}
-	cfg.Agent.compile() // the built-in patterns are known good
+	if err := cfg.Agent.compile(); err != nil { // the built-in patterns are known good
+		panic(err)
+	}
 	return cfg
 }
 

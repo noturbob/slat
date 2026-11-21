@@ -1,6 +1,8 @@
 package app
 
 import (
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/noturbob/slat/internal/layout"
@@ -87,9 +89,14 @@ func (a *App) saveSession() {
 	}
 	lines := min(a.cfg.Scrollback, maxSavedLines)
 	st := a.manager.Snapshot(lines)
+	a.mu.Unlock()
+	if err := session.SaveState(a.statePath, st); err != nil {
+		fmt.Fprintf(os.Stderr, "slat: save state: %v\n", err)
+		return
+	}
+	a.mu.Lock()
 	a.lastSavedSig = sig
 	a.mu.Unlock()
-	session.SaveState(a.statePath, st)
 }
 
 func (a *App) currentSessionSig() sessionSig {
@@ -123,7 +130,9 @@ func (a *App) currentSessionSig() sessionSig {
 // feature.
 func (a *App) forgetSession() {
 	if a.statePath != "" {
-		session.ClearState(a.statePath)
+		if err := session.ClearState(a.statePath); err != nil {
+			fmt.Fprintf(os.Stderr, "slat: clear state: %v\n", err)
+		}
 	}
 }
 

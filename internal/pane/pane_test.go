@@ -38,7 +38,9 @@ func TestForegroundAndCapture(t *testing.T) {
 		return isShell && name == "sh"
 	})
 
-	p.Write([]byte("echo marker-line\n"))
+	if _, err := p.Write([]byte("echo marker-line\n")); err != nil {
+		t.Fatal(err)
+	}
 	waitFor(t, "output", func() bool {
 		return strings.Contains(strings.Join(p.Capture(0, false), "\n"), "marker-line")
 	})
@@ -46,22 +48,25 @@ func TestForegroundAndCapture(t *testing.T) {
 		t.Error("Activity did not move with the output")
 	}
 
-	p.Write([]byte("sleep 3\n"))
+	if _, err := p.Write([]byte("sleep 3\n")); err != nil {
+		t.Fatal(err)
+	}
 	waitFor(t, "sleep to take the terminal", func() bool {
 		_, name, isShell := p.Foreground()
 		return name == "sleep" && !isShell
 	})
 
 	// Capture: last line only, and scrollback beyond the screen.
-	for i := 0; i < 20; i++ {
-		p.Write([]byte("\003")) // Ctrl-C the sleep
-		break
+	if _, err := p.Write([]byte("\003")); err != nil { // Ctrl-C the sleep
+		t.Fatal(err)
 	}
 	waitFor(t, "the shell to come back", func() bool {
 		_, _, isShell := p.Foreground()
 		return isShell
 	})
-	p.Write([]byte("for i in 1 2 3 4 5 6 7 8 9; do echo line-$i; done\n"))
+	if _, err := p.Write([]byte("for i in 1 2 3 4 5 6 7 8 9; do echo line-$i; done\n")); err != nil {
+		t.Fatal(err)
+	}
 	waitFor(t, "9 lines", func() bool {
 		return strings.Contains(strings.Join(p.Capture(0, false), "\n"), "line-9")
 	})
@@ -81,7 +86,9 @@ func TestForegroundAndCapture(t *testing.T) {
 func BenchmarkPaneLastLine(b *testing.B) {
 	term := vt.New(120, 40)
 	for i := 0; i < 40; i++ {
-		term.Write([]byte("line of terminal output with some text\r\n"))
+		if _, err := term.Write([]byte("line of terminal output with some text\r\n")); err != nil {
+			b.Fatal(err)
+		}
 	}
 	p := &Pane{term: term}
 	b.ReportAllocs()
@@ -94,7 +101,9 @@ func BenchmarkPaneLastLine(b *testing.B) {
 func BenchmarkPaneCaptureScreen(b *testing.B) {
 	term := vt.New(120, 40)
 	for i := 0; i < 40; i++ {
-		term.Write([]byte("line of terminal output with some text\r\n"))
+		if _, err := term.Write([]byte("line of terminal output with some text\r\n")); err != nil {
+			b.Fatal(err)
+		}
 	}
 	p := &Pane{term: term}
 	b.ReportAllocs()

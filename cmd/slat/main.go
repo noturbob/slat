@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -172,7 +173,7 @@ func newCLIApp(deps cliDeps) (*mcli.App, *globalFlags) {
 	}
 
 	fail := func(code int, err error) {
-		fmt.Fprintf(deps.errOut, "slat: %v\n", err)
+		writef(deps.errOut, "slat: %v\n", err)
 		deps.exit(code)
 	}
 
@@ -190,7 +191,7 @@ func newCLIApp(deps cliDeps) (*mcli.App, *globalFlags) {
 			return false
 		}
 		if globals.Version {
-			fmt.Fprintln(deps.out, "slat", app.Version)
+			writeln(deps.out, "slat", app.Version)
 			deps.exit(0)
 			return false
 		}
@@ -232,12 +233,16 @@ func newCLIApp(deps cliDeps) (*mcli.App, *globalFlags) {
 		func(_ *mcli.Context, args *sessionsArgs) {
 			sessions := deps.listSessions()
 			if args.JSON {
-				b, _ := json.Marshal(control.Response{Schema: control.Schema, Sessions: sessions})
-				fmt.Fprintln(deps.out, string(b))
+				b, err := json.Marshal(control.Response{Schema: control.Schema, Sessions: sessions})
+				if err != nil {
+					fail(1, err)
+					return
+				}
+				writeln(deps.out, string(b))
 				return
 			}
 			if len(sessions) == 0 {
-				fmt.Fprintln(deps.out, "no active sessions")
+				writeln(deps.out, "no active sessions")
 				return
 			}
 			for _, s := range sessions {
@@ -245,7 +250,7 @@ func newCLIApp(deps cliDeps) (*mcli.App, *globalFlags) {
 				if s.Attached {
 					state = "attached"
 				}
-				fmt.Fprintf(deps.out, "%-14s  %d tabs  %d panes  %-8s  %s\n", s.Name, s.Tabs, s.Panes, state, s.Dir)
+				writef(deps.out, "%-14s  %d tabs  %d panes  %-8s  %s\n", s.Name, s.Tabs, s.Panes, state, s.Dir)
 			}
 		}, catSession)
 
@@ -267,7 +272,7 @@ func newCLIApp(deps cliDeps) (*mcli.App, *globalFlags) {
 	type versionArgs struct{}
 	addCmd(m, "version", "print the version", 0, checkCmd, parseOpts,
 		func(_ *mcli.Context, _ *versionArgs) {
-			fmt.Fprintln(deps.out, "slat", app.Version)
+			writeln(deps.out, "slat", app.Version)
 		})
 
 	type daemonArgs struct {
@@ -409,7 +414,9 @@ func daemonAlive(sock string) bool {
 	if err != nil {
 		return false
 	}
-	c.Close()
+	if err := c.Close(); err != nil {
+		log.Printf("slat: close probe socket: %v", err)
+	}
 	return true
 }
 
@@ -422,13 +429,21 @@ func spawnDaemon(sock, dir, presetPath, configPath string) error {
 	if err != nil {
 		return err
 	}
-	defer devnull.Close()
+	defer func() {
+		if err := devnull.Close(); err != nil {
+			log.Printf("slat: close %s: %v", os.DevNull, err)
+		}
+	}()
 	// The daemon has no terminal; its errors and any crash trace go here.
 	logf, err := os.OpenFile(sock+".log", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
-	defer logf.Close()
+	defer func() {
+		if err := logf.Close(); err != nil {
+			log.Printf("slat: close daemon log: %v", err)
+		}
+	}()
 	daemonArgs := []string{"__daemon"}
 	if presetPath != "" {
 		if abs, absErr := filepath.Abs(presetPath); absErr == nil {

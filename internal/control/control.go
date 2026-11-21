@@ -6,6 +6,7 @@ package control
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"path/filepath"
 	"time"
@@ -75,7 +76,11 @@ func Do(sock string, req Request, timeout time.Duration) (Response, error) {
 	if err != nil {
 		return Response{}, fmt.Errorf("no slat session (%w)", err)
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.Printf("slat: close control socket: %v", err)
+		}
+	}()
 
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -85,7 +90,9 @@ func Do(sock string, req Request, timeout time.Duration) (Response, error) {
 		return Response{}, err
 	}
 	if timeout > 0 {
-		conn.SetReadDeadline(time.Now().Add(timeout))
+		if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+			return Response{}, err
+		}
 	}
 	frame, err := proto.ReadFrame(conn)
 	if err != nil {

@@ -1,6 +1,7 @@
 package pane
 
 import (
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -84,12 +85,18 @@ func (p *Pane) seed(history []string) {
 		return
 	}
 	for _, line := range history {
-		p.term.Write([]byte(line))
-		p.term.Write([]byte("\r\n"))
+		if _, err := p.term.Write([]byte(line)); err != nil {
+			log.Printf("slat: seed pane %d: %v", p.ID, err)
+		}
+		if _, err := p.term.Write([]byte("\r\n")); err != nil {
+			log.Printf("slat: seed pane %d: %v", p.ID, err)
+		}
 	}
 	cols, _ := p.term.Size()
 	rule := strings.Repeat("\u2500", max(min(cols, 60)-12, 3))
-	p.term.Write([]byte("\x1b[2m" + rule + " restored \x1b[0m\r\n"))
+	if _, err := p.term.Write([]byte("\x1b[2m" + rule + " restored \x1b[0m\r\n")); err != nil {
+		log.Printf("slat: seed pane %d: %v", p.ID, err)
+	}
 	p.term.Replies() // the saved text cannot ask the terminal questions
 }
 
@@ -99,7 +106,9 @@ func (p *Pane) readLoop() {
 		n, err := p.proc.Read(buf)
 		if n > 0 {
 			p.mu.Lock()
-			p.term.Write(buf[:n])
+			if _, wErr := p.term.Write(buf[:n]); wErr != nil {
+				log.Printf("slat: pane %d vt write: %v", p.ID, wErr)
+			}
 			replies := p.term.Replies()
 			p.lastOut = time.Now()
 			// Output means something started or finished, so the cached
@@ -107,7 +116,9 @@ func (p *Pane) readLoop() {
 			p.fgAt = time.Time{}
 			p.mu.Unlock()
 			if len(replies) > 0 {
-				p.proc.Write(replies) // answers to cursor-position/device queries
+				if _, wErr := p.proc.Write(replies); wErr != nil { // answers to cursor-position/device queries
+					log.Printf("slat: pane %d reply write: %v", p.ID, wErr)
+				}
 			}
 			p.onChange()
 		}
@@ -130,7 +141,9 @@ func (p *Pane) markDead() {
 		p.mu.Lock()
 		p.dead = true
 		p.mu.Unlock()
-		p.proc.Close()
+		if err := p.proc.Close(); err != nil {
+			log.Printf("slat: close pane %d pty: %v", p.ID, err)
+		}
 		p.onChange()
 	})
 }
@@ -171,7 +184,9 @@ func (p *Pane) SetRect(row, col, rows, cols int) {
 		return
 	}
 	p.term.Resize(cols, rows)
-	p.proc.Resize(rows, cols)
+	if err := p.proc.Resize(rows, cols); err != nil {
+		log.Printf("slat: resize pane %d pty: %v", p.ID, err)
+	}
 }
 
 // Rect returns the pane's position (0-based) and size.

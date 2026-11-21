@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"sync"
@@ -28,7 +29,11 @@ func Run(sockPath string) (detached bool, err error) {
 	if err != nil {
 		return false, fmt.Errorf("connect to daemon: %w", err)
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.Printf("slat: close client socket: %v", err)
+		}
+	}()
 
 	fd := int(os.Stdin.Fd())
 	oldState, err := term.MakeRaw(fd)
@@ -36,11 +41,21 @@ func Run(sockPath string) (detached bool, err error) {
 		return false, fmt.Errorf("stdin is not a terminal: %w", err)
 	}
 	restoreOutput := prepareOutput()
-	os.Stdout.WriteString(enterScreen)
-	defer func() {
-		os.Stdout.WriteString(leaveScreen)
+	if _, err := os.Stdout.WriteString(enterScreen); err != nil {
 		restoreOutput()
-		term.Restore(fd, oldState)
+		if rErr := term.Restore(fd, oldState); rErr != nil {
+			log.Printf("slat: restore terminal: %v", rErr)
+		}
+		return false, fmt.Errorf("enter alternate screen: %w", err)
+	}
+	defer func() {
+		if _, err := os.Stdout.WriteString(leaveScreen); err != nil {
+			log.Printf("slat: leave alternate screen: %v", err)
+		}
+		restoreOutput()
+		if err := term.Restore(fd, oldState); err != nil {
+			log.Printf("slat: restore terminal: %v", err)
+		}
 	}()
 
 	// Frames come from two goroutines (stdin and the resize watcher); a
@@ -64,9 +79,17 @@ func Run(sockPath string) (detached bool, err error) {
 	}
 
 	stopWatching := watchTerminal(fd,
-		func() { send(proto.TypeResize, size()) },
+		func() {
+			if err := send(proto.TypeResize, size()); err != nil {
+				log.Printf("slat: send resize: %v", err)
+			}
+		},
 		// Unblocks the read loop below; the defers restore the terminal.
-		func() { conn.Close() })
+		func() {
+			if err := conn.Close(); err != nil {
+				log.Printf("slat: close client socket: %v", err)
+			}
+		})
 	defer stopWatching()
 
 	go func() {
@@ -77,7 +100,9 @@ func Run(sockPath string) (detached bool, err error) {
 				return
 			}
 			if err != nil {
-				conn.Close()
+				if cErr := conn.Close(); cErr != nil {
+					log.Printf("slat: close client socket: %v", cErr)
+				}
 				return
 			}
 		}
@@ -88,7 +113,10 @@ func Run(sockPath string) (detached bool, err error) {
 	for {
 		n, err := conn.Read(buf)
 		if n > 0 {
-			os.Stdout.Write(buf[:n])
+			if _, wErr := os.Stdout.Write(buf[:n]); wErr != nil {
+				log.Printf("slat: write stdout: %v", wErr)
+				break
+			}
 		}
 		if err != nil {
 			break
@@ -98,7 +126,9 @@ func Run(sockPath string) (detached bool, err error) {
 	// ends, so a socket that still answers means we were only detached.
 	c, err := net.Dial("unix", sockPath)
 	if err == nil {
-		c.Close()
+		if cErr := c.Close(); cErr != nil {
+			log.Printf("slat: close probe socket: %v", cErr)
+		}
 	}
 	return err == nil, nil
 }

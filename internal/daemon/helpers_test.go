@@ -30,7 +30,11 @@ func session(t *testing.T, tweak ...func(*config.Config)) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
+	t.Cleanup(func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Errorf("RemoveAll(%s): %v", dir, err)
+		}
+	})
 	sock := filepath.Join(dir, "s.sock")
 
 	cfg := config.DefaultConfig()
@@ -46,7 +50,12 @@ func session(t *testing.T, tweak ...func(*config.Config)) string {
 		t.Fatal(err)
 	}
 	done := make(chan struct{})
-	go func() { srv.Run(); close(done) }()
+	go func() {
+		if err := srv.Run(); err != nil {
+			t.Errorf("srv.Run: %v", err)
+		}
+		close(done)
+	}()
 	servers.Store(sock, &running{srv: srv, done: done})
 	t.Cleanup(func() {
 		srv.Stop()
@@ -60,7 +69,9 @@ func session(t *testing.T, tweak ...func(*config.Config)) string {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if c, err := net.Dial("unix", sock); err == nil {
-			c.Close()
+			if err := c.Close(); err != nil {
+				t.Fatal(err)
+			}
 			return sock
 		}
 		time.Sleep(20 * time.Millisecond)

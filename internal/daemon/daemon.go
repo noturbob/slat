@@ -1,7 +1,9 @@
 package daemon
 
 import (
+	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -37,7 +39,9 @@ type Server struct {
 // start the session or listen yet — call Run for that.
 func New(cfg *config.Config, sockPath string) (*Server, error) {
 	// Panes inherit this, so `slat` run inside a pane can refuse to nest.
-	os.Setenv("SLAT", sockPath)
+	if err := os.Setenv("SLAT", sockPath); err != nil {
+		return nil, err
+	}
 	a, err := app.New(cfg)
 	if err != nil {
 		return nil, err
@@ -80,17 +84,23 @@ func (s *Server) Run() error {
 	// Two clients starting at once can race to spawn two daemons; the
 	// loser must not delete the winner's socket and orphan its session.
 	if c, err := net.DialTimeout("unix", s.sockPath, 200*time.Millisecond); err == nil {
-		c.Close()
+		if cErr := c.Close(); cErr != nil {
+			log.Printf("slat: close probe socket: %v", cErr)
+		}
 		return fmt.Errorf("a slat daemon is already running on %s", s.sockPath)
 	}
-	os.Remove(s.sockPath) // stale socket from a crashed daemon
+	if err := os.Remove(s.sockPath); err != nil && !errors.Is(err, os.ErrNotExist) { // stale socket from a crashed daemon
+		return fmt.Errorf("remove stale socket %s: %w", s.sockPath, err)
+	}
 
 	ln, err := listenPrivate(s.sockPath) // only this user may attach
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", s.sockPath, err)
 	}
 	if err := s.app.Start(80, 24); err != nil {
-		ln.Close()
+		if cErr := ln.Close(); cErr != nil {
+			log.Printf("slat: close listener: %v", cErr)
+		}
 		return fmt.Errorf("failed to start session: %w", err)
 	}
 
@@ -113,7 +123,9 @@ func (s *Server) Run() error {
 					s.serve(c)
 				}()
 			default:
-				c.Close()
+				if err := c.Close(); err != nil {
+					log.Printf("slat: close rejected client: %v", err)
+				}
 			}
 		}
 	}()
@@ -129,8 +141,12 @@ func (s *Server) Run() error {
 		}
 		// Stop accepting and remove the socket before dropping the client,
 		// so the client can tell "session ended" from "detached".
-		ln.Close()
-		os.Remove(s.sockPath)
+		if err := ln.Close(); err != nil {
+			log.Printf("slat: close listener: %v", err)
+		}
+		if err := os.Remove(s.sockPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Printf("slat: remove socket %s: %v", s.sockPath, err)
+		}
 		s.kick()
 		s.app.Shutdown()
 		return nil
@@ -147,7 +163,9 @@ func (s *Server) kick() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.client != nil {
-		s.client.Close()
+		if err := s.client.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			log.Printf("slat: close client: %v", err)
+		}
 		s.client = nil
 		s.sink.Attach(nil)
 		s.app.Detach()
@@ -158,11 +176,17 @@ func (s *Server) kick() {
 // session until it disconnects. A new client replaces the current one,
 // like `tmux attach -d`.
 func (s *Server) serve(conn net.Conn) {
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			log.Printf("slat: close connection: %v", err)
+		}
+	}()
 
 	// Liveness probes connect and hang up without a hello; they must not
 	// kick the attached client.
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		return
+	}
 	hello, err := proto.ReadFrame(conn)
 	if err != nil {
 		return
@@ -170,19 +194,25 @@ func (s *Server) serve(conn net.Conn) {
 	if hello.Type == proto.TypeControl {
 		// The slat CLI: answer the command and hang up, leaving the
 		// attached client alone. `wait` can block for a long time.
-		conn.SetReadDeadline(time.Time{})
+		if err := conn.SetReadDeadline(time.Time{}); err != nil {
+			return
+		}
 		s.serveControl(conn, hello.Payload)
 		return
 	}
 	if hello.Type != proto.TypeHello {
 		return
 	}
-	conn.SetReadDeadline(time.Time{})
+	if err := conn.SetReadDeadline(time.Time{}); err != nil {
+		return
+	}
 	cols, rows := proto.DecodeSize(hello.Payload)
 
 	s.mu.Lock()
 	if s.client != nil {
-		s.client.Close()
+		if err := s.client.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			log.Printf("slat: close previous client: %v", err)
+		}
 	}
 	s.client = conn
 	s.sink.Attach(conn)

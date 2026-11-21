@@ -169,15 +169,6 @@ func matchesAny(res []*regexp.Regexp, line string) bool {
 	return false
 }
 
-func lastLine(lines []string) string {
-	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.TrimSpace(lines[i]) != "" {
-			return lines[i]
-		}
-	}
-	return ""
-}
-
 func round(d time.Duration) time.Duration { return d.Round(100 * time.Millisecond) }
 
 func trim(s string, n int) string {
@@ -269,11 +260,6 @@ func (a *App) scopedPanesLocked(wsSpec, tabSpec string) ([]session.PaneRef, erro
 		}
 	}
 	return out, nil
-}
-
-// ref resolves "active" or a pane id.
-func (a *App) ref(spec string) (session.PaneRef, error) {
-	return a.refTarget(PaneTarget{Pane: spec})
 }
 
 func (a *App) refTarget(t PaneTarget) (session.PaneRef, error) {
@@ -385,7 +371,9 @@ func (a *App) NewPane(o NewPaneOpts) (PaneInfo, error) {
 	}
 
 	if o.Cmd != "" {
-		created.Write([]byte(o.Cmd + "\n"))
+		if _, err := created.Write([]byte(o.Cmd + "\n")); err != nil {
+			return PaneInfo{}, err
+		}
 	}
 	return a.PaneInfo(fmt.Sprint(created.ID))
 }

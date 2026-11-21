@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"log"
 	"net"
 	"sync"
 	"time"
@@ -33,10 +34,14 @@ func (s *sink) Write(p []byte) (int, error) {
 	if c == nil {
 		return len(p), nil
 	}
-	c.SetWriteDeadline(time.Now().Add(writeTimeout))
+	if err := c.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+		log.Printf("slat: set write deadline: %v", err)
+	}
 	if _, err := c.Write(p); err != nil {
 		// Closing makes the client's serve loop exit and clean up.
-		c.Close()
+		if cErr := c.Close(); cErr != nil {
+			log.Printf("slat: close stalled client: %v", cErr)
+		}
 	}
 	return len(p), nil
 }

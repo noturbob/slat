@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/base64"
 	"fmt"
+	"log"
 	"strings"
 )
 
@@ -99,7 +100,9 @@ func (a *App) yank() {
 	}
 
 	if a.cfg.Copy.OSC52 {
-		a.screen.WriteRaw(osc52(text))
+		if err := a.screen.WriteRaw(osc52(text)); err != nil {
+			log.Printf("slat: write OSC 52: %v", err)
+		}
 	}
 	// A terminal that refuses OSC 52 (many do, for good reasons) can be
 	// worked around with a local command — wl-copy, xclip, pbcopy.
@@ -140,5 +143,9 @@ func (a *App) pipeTo(command, text string) {
 		a.notify("copy command: " + err.Error())
 		return
 	}
-	go c.Wait()
+	go func() {
+		if err := c.Wait(); err != nil {
+			log.Printf("slat: copy command %q: %v", command, err)
+		}
+	}()
 }

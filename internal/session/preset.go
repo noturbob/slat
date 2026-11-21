@@ -164,13 +164,21 @@ func SavePreset(path string, p Preset) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
+	defer func() {
+		if rErr := os.Remove(tmp.Name()); rErr != nil && !os.IsNotExist(rErr) {
+			fmt.Fprintf(os.Stderr, "slat: remove temp preset %s: %v\n", tmp.Name(), rErr)
+		}
+	}()
 	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
+		if cErr := tmp.Close(); cErr != nil {
+			return fmt.Errorf("%w (close: %v)", err, cErr)
+		}
 		return err
 	}
 	if _, err := tmp.Write(buf.Bytes()); err != nil {
-		tmp.Close()
+		if cErr := tmp.Close(); cErr != nil {
+			return fmt.Errorf("%w (close: %v)", err, cErr)
+		}
 		return err
 	}
 	if err := tmp.Close(); err != nil {

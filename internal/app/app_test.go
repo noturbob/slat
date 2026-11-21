@@ -222,7 +222,10 @@ func TestScrollMode(t *testing.T) {
 	a.mu.Lock()
 	// Already under the lock: the helpers below take it themselves, so
 	// calling one here would deadlock against this very line.
-	a.manager.ActivePane().Write([]byte("echo fresh-output\r"))
+	if _, err := a.manager.ActivePane().Write([]byte("echo fresh-output\r")); err != nil {
+		a.mu.Unlock()
+		t.Fatalf("Write: %v", err)
+	}
 	a.mu.Unlock()
 	time.Sleep(300 * time.Millisecond)
 	waitFor(t, term, "row-1\n", 1)

@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/noturbob/slat/internal/layout"
 	"github.com/noturbob/slat/internal/pane"
@@ -169,7 +170,9 @@ func (a *App) forwardMouse(p *pane.Pane, ev mouseEvent) bool {
 	}
 	row, col, _, _ := p.Rect()
 	if out := encodeMouse(ev, sgr, ev.x-col, ev.y-row); out != nil {
-		p.Write(out)
+		if _, err := p.Write(out); err != nil {
+			log.Printf("slat: write mouse to pane %d: %v", p.ID, err)
+		}
 	}
 	return true
 }

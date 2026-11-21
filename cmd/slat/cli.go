@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -359,22 +360,38 @@ func resolveSessionSocket(defaultSock, spec string, sessions []app.SessionSummar
 // printResponse writes the response: one JSON object, or a short human line.
 func printResponse(out, errOut io.Writer, resp control.Response, asJSON bool) {
 	if asJSON {
-		b, _ := json.Marshal(resp)
-		fmt.Fprintln(out, string(b))
+		b, err := json.Marshal(resp)
+		if err != nil {
+			log.Printf("slat: marshal response: %v", err)
+			return
+		}
+		writeln(out, string(b))
 		return
 	}
 	if resp.Error != "" {
-		fmt.Fprintf(errOut, "slat: %s\n", resp.Error)
+		writef(errOut, "slat: %s\n", resp.Error)
 	}
 	switch {
 	case resp.Lines != nil:
-		fmt.Fprintln(out, strings.Join(resp.Lines, "\n"))
+		writeln(out, strings.Join(resp.Lines, "\n"))
 	case resp.Panes != nil:
 		for _, p := range resp.Panes {
-			fmt.Fprintln(out, paneLine(p))
+			writeln(out, paneLine(p))
 		}
 	case resp.Pane != nil:
-		fmt.Fprintln(out, paneLine(*resp.Pane))
+		writeln(out, paneLine(*resp.Pane))
+	}
+}
+
+func writef(w io.Writer, format string, args ...any) {
+	if _, err := fmt.Fprintf(w, format, args...); err != nil {
+		log.Printf("slat: write output: %v", err)
+	}
+}
+
+func writeln(w io.Writer, args ...any) {
+	if _, err := fmt.Fprintln(w, args...); err != nil {
+		log.Printf("slat: write output: %v", err)
 	}
 }
 

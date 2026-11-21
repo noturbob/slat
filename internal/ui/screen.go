@@ -155,7 +155,7 @@ func (s *Screen) Render(frame *Frame, cur Cursor, modes Modes) error {
 			// Skip unchanged cells, unless the cursor is already here and
 			// something changes within a few cells: rewriting a short gap is
 			// cheaper than a cursor jump over it.
-			if !full && c == old[x] && !(cx == x && cy == y && changedWithin(line, old, x, 4)) {
+			if !full && c == old[x] && (cx != x || cy != y || !changedWithin(line, old, x, 4)) {
 				x += w
 				continue
 			}

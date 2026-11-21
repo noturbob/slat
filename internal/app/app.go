@@ -5,6 +5,7 @@ package app
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -468,7 +469,9 @@ func (a *App) render() {
 	now := time.Now()
 	if now.Before(a.bannerEnd) {
 		ui.DrawSplash(frame, a.splash)
-		a.screen.Render(frame, ui.Cursor{}, ui.Modes{})
+		if err := a.screen.Render(frame, ui.Cursor{}, ui.Modes{}); err != nil {
+			log.Printf("slat: render splash: %v", err)
+		}
 		return
 	}
 
@@ -536,7 +539,9 @@ func (a *App) render() {
 		x, y := a.drawTree(frame)
 		cur = ui.Cursor{X: x, Y: y, Visible: true}
 	}
-	a.screen.Render(frame, cur, modes)
+	if err := a.screen.Render(frame, cur, modes); err != nil {
+		log.Printf("slat: render frame: %v", err)
+	}
 }
 
 func (a *App) statusOfBar(now time.Time) ui.Status {
@@ -753,7 +758,9 @@ var arrowActions = map[byte]input.Action{
 
 func (a *App) forward(data []byte) {
 	if p := a.manager.ActivePane(); p != nil && len(data) > 0 {
-		p.Write(data)
+		if _, err := p.Write(data); err != nil {
+			log.Printf("slat: write pane %d: %v", p.ID, err)
+		}
 	}
 }
 

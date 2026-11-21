@@ -172,17 +172,3 @@ func (a *App) hook(cmd string, info PaneInfo) func() {
 		}()
 	}
 }
-
-// tabNeedsInput reports whether a pane in that tab is waiting for input,
-// so the status bar can mark it. Called with the lock held.
-func (a *App) tabNeedsInput(workspace string, tab int) bool {
-	if len(a.attention) == 0 {
-		return false
-	}
-	for _, r := range a.manager.AllPanes() {
-		if r.Workspace == workspace && r.TabIndex == tab && a.attention[r.Pane.ID] {
-			return true
-		}
-	}
-	return false
-}

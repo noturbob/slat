@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net"
 	"time"
 
@@ -193,6 +194,10 @@ func (s *Server) reply(conn net.Conn, resp control.Response) {
 	if err != nil {
 		body = []byte(`{"schema":1,"error":"could not encode response"}`)
 	}
-	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	proto.WriteFrame(conn, proto.TypeControl, body)
+	if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		log.Printf("slat: set control write deadline: %v", err)
+	}
+	if err := proto.WriteFrame(conn, proto.TypeControl, body); err != nil {
+		log.Printf("slat: write control response: %v", err)
+	}
 }

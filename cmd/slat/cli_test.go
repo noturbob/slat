@@ -170,6 +170,7 @@ func TestResolveSessionSocket(t *testing.T) {
 }
 
 func TestParseCLIFocusDirection(t *testing.T) {
+	t.Setenv("SLAT", "")
 	res := runTestCLI("focus", "--session", "work", "up")
 	if res.exitCode != 0 || res.req.Cmd != "focus" || res.req.Direction != "up" || res.sock != "/tmp/slat-work.sock" {
 		t.Fatalf("focus up = (%+v, %q, exit=%d, err=%s)", res.req, res.sock, res.exitCode, res.errOut)

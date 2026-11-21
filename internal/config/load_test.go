@@ -12,8 +12,12 @@ func load(t *testing.T, toml string) (*Config, error) {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
-	os.MkdirAll(filepath.Join(dir, "slat"), 0o755)
-	os.WriteFile(filepath.Join(dir, "slat", "config.toml"), []byte(toml), 0o644)
+	if err := os.MkdirAll(filepath.Join(dir, "slat"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "slat", "config.toml"), []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	return Load()
 }
 

@@ -64,7 +64,9 @@ func TestControlLifecycle(t *testing.T) {
 	// wait --for text: matches output that arrives later.
 	go func() {
 		time.Sleep(300 * time.Millisecond)
-		control.Do(sock, control.Request{Cmd: "send", Pane: first, Data: "echo the-marker\r"}, 5*time.Second)
+		if _, err := control.Do(sock, control.Request{Cmd: "send", Pane: first, Data: "echo the-marker\r"}, 5*time.Second); err != nil {
+			t.Errorf("send: %v", err)
+		}
 	}()
 	w = do(t, sock, control.Request{Cmd: "wait", Pane: first, For: "text=the-mark\\w+", Timeout: "15s"})
 	if w.Matched == nil || !*w.Matched {
