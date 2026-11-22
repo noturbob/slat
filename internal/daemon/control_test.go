@@ -208,3 +208,19 @@ func TestNewPaneThenWaitForIdle(t *testing.T) {
 		t.Errorf("the command's output is missing: %q", cap.Lines)
 	}
 }
+
+func TestShutdownControl(t *testing.T) {
+	sock := session(t, posixShell)
+	resp := do(t, sock, control.Request{Cmd: "shutdown"})
+	if resp.Error != "" || resp.Code != 0 {
+		t.Fatalf("shutdown returned error: %+v", resp)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(sock); os.IsNotExist(err) {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Errorf("socket %s still exists after shutdown", sock)
+}

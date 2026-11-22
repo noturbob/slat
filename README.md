@@ -390,6 +390,7 @@ $ slat capture 3 --lines 20             # read what it printed
 | `slat ls` | every pane, with what each one is doing |
 | `slat sessions [--json]` | list running directory-based sessions |
 | `slat attach [NAME\|DIR]` | attach to a session by name or directory |
+| `slat shutdown [--all] [--session NAME\|DIR] [--json]` | shut down the active session, or all running sessions with `--all` |
 | `slat status [PANE]` | one pane's status |
 | `slat pane new [--split v\|h] [--cwd D] [--cmd C] [--target P] [--focus]` | split a pane |
 | `slat pane close PANE` | close a pane |

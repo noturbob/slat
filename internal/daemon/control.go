@@ -137,6 +137,10 @@ func (s *Server) run(req control.Request) control.Response {
 
 	case "wait":
 		return s.wait(req, pane)
+
+	case "shutdown":
+		s.Stop()
+		return control.Response{Schema: control.Schema}
 	}
 	return control.Errorf(control.CodeError, "unknown command %q", req.Cmd)
 }

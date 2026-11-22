@@ -269,6 +269,109 @@ func newCLIApp(deps cliDeps) (*mcli.App, *globalFlags) {
 			}
 		}, catSession)
 
+	type shutdownArgs struct {
+		JSONFlag
+		All     bool   `cli:"-a, --all, shut down all running slat sessions"`
+		Session string `cli:"--session, target session name, dir, or socket"`
+	}
+	addCmd(m, "shutdown", "shut down the active session or all running sessions", 0, checkCmd, parseOpts,
+		func(_ *mcli.Context, args *shutdownArgs) {
+			if args.All && args.Session != "" {
+				fail(1, errors.New("cannot use --all with --session"))
+				return
+			}
+			if !args.All {
+				sock := deps.defaultSocket()
+				if args.Session != "" {
+					resolved, err := resolveSessionSocket(sock, args.Session, deps.listSessions())
+					if err != nil {
+						fail(1, err)
+						return
+					}
+					sock = resolved
+				}
+				resp, err := deps.doControl(sock, control.Request{Cmd: "shutdown"}, 2*time.Second)
+				if err != nil {
+					fail(1, err)
+					return
+				}
+				if resp.Error != "" {
+					fail(resp.Code, errors.New(resp.Error))
+					return
+				}
+				if args.JSON {
+					b, _ := json.Marshal(control.Response{Schema: control.Schema})
+					writeln(deps.out, string(b))
+					return
+				}
+				writeln(deps.out, "session shut down")
+				return
+			}
+
+			sessions := deps.listSessions()
+			if len(sessions) == 0 {
+				if args.JSON {
+					b, _ := json.Marshal(control.Response{Schema: control.Schema, Sessions: []app.SessionSummary{}})
+					writeln(deps.out, string(b))
+					return
+				}
+				writeln(deps.out, "no active sessions")
+				return
+			}
+			// If invoked from inside a slat session, shut down the current
+			// session last so the remaining sessions are stopped first.
+			if cur := os.Getenv("SLAT"); cur != "" {
+				ordered := make([]app.SessionSummary, 0, len(sessions))
+				var self *app.SessionSummary
+				for i := range sessions {
+					if sessions[i].Socket == cur {
+						s := sessions[i]
+						self = &s
+						continue
+					}
+					ordered = append(ordered, sessions[i])
+				}
+				if self != nil {
+					ordered = append(ordered, *self)
+				}
+				sessions = ordered
+			}
+
+			var stopped []app.SessionSummary
+			var errs []string
+			for _, s := range sessions {
+				resp, err := deps.doControl(s.Socket, control.Request{Cmd: "shutdown"}, 2*time.Second)
+				if err != nil {
+					errs = append(errs, fmt.Sprintf("%s: %v", s.Name, err))
+					continue
+				}
+				if resp.Error != "" {
+					errs = append(errs, fmt.Sprintf("%s: %s", s.Name, resp.Error))
+					continue
+				}
+				stopped = append(stopped, s)
+			}
+			if args.JSON {
+				resp := control.Response{Schema: control.Schema, Sessions: stopped}
+				if len(errs) > 0 {
+					resp.Code = control.CodeError
+					resp.Error = strings.Join(errs, "; ")
+				}
+				b, _ := json.Marshal(resp)
+				writeln(deps.out, string(b))
+				if len(errs) > 0 {
+					deps.exit(1)
+				}
+				return
+			}
+			for _, s := range stopped {
+				writef(deps.out, "shut down %-14s  %s\n", s.Name, s.Dir)
+			}
+			if len(errs) > 0 {
+				fail(1, errors.New(strings.Join(errs, "; ")))
+			}
+		}, catSession)
+
 	type versionArgs struct{}
 	addCmd(m, "version", "print the version", 0, checkCmd, parseOpts,
 		func(_ *mcli.Context, _ *versionArgs) {

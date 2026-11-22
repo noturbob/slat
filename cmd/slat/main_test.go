@@ -8,6 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/noturbob/slat/internal/app"
+	"github.com/noturbob/slat/internal/control"
 )
 
 // Unix only: $XDG_RUNTIME_DIR and the sun_path length limit are POSIX
@@ -207,5 +211,66 @@ func TestThemeSubcommands(t *testing.T) {
 	allItems := completeThemeName("", "")
 	if len(allItems) < 13 {
 		t.Errorf("completeThemeName(\"\") returned %d items, want >= 13", len(allItems))
+	}
+}
+
+func TestShutdownCommand(t *testing.T) {
+	runShutdown := func(sessions []app.SessionSummary, curSock string, args ...string) ([]string, string, string, int) {
+		t.Helper()
+		t.Setenv("SLAT", curSock)
+		var called []string
+		var outBuf, errBuf bytes.Buffer
+		var exitCode int
+		deps := defaultDeps()
+		deps.continueOnErr = true
+		deps.out = &outBuf
+		deps.errOut = &errBuf
+		deps.exit = func(code int) { exitCode = code }
+		deps.defaultSocket = func() string { return "/cur.sock" }
+		deps.listSessions = func() []app.SessionSummary { return sessions }
+		deps.doControl = func(sock string, req control.Request, _ time.Duration) (control.Response, error) {
+			if req.Cmd != "shutdown" {
+				t.Errorf("unexpected cmd %q", req.Cmd)
+			}
+			called = append(called, sock)
+			return control.Response{Schema: control.Schema}, nil
+		}
+		m, _ := newCLIApp(deps)
+		m.Run(args...)
+		return called, outBuf.String(), errBuf.String(), exitCode
+	}
+
+	// Default (no --all): targets defaultSocket().
+	called, out, errOut, code := runShutdown(nil, "", "shutdown")
+	if code != 0 || errOut != "" || len(called) != 1 || called[0] != "/cur.sock" || !strings.Contains(out, "shut down") {
+		t.Errorf("default shutdown = (%v, %q, %q, %d)", called, out, errOut, code)
+	}
+
+	// --all with no active sessions.
+	called, out, errOut, code = runShutdown(nil, "", "shutdown", "--all")
+	if code != 0 || errOut != "" || len(called) != 0 || !strings.Contains(out, "no active sessions") {
+		t.Errorf("shutdown --all empty = (%v, %q, %q, %d)", called, out, errOut, code)
+	}
+
+	// --all orders $SLAT last.
+	sessions := []app.SessionSummary{
+		{Name: "one", Dir: "/one", Socket: "/one.sock"},
+		{Name: "two", Dir: "/two", Socket: "/two.sock"},
+	}
+	called, out, errOut, code = runShutdown(sessions, "/one.sock", "shutdown", "--all")
+	if code != 0 || errOut != "" || len(called) != 2 || called[0] != "/two.sock" || called[1] != "/one.sock" {
+		t.Errorf("shutdown --all order = (%v, %q, %q, %d), want [/two.sock /one.sock]", called, out, errOut, code)
+	}
+
+	// --all --json.
+	called, out, errOut, code = runShutdown(sessions, "", "shutdown", "--all", "--json")
+	if code != 0 || errOut != "" || !strings.Contains(out, `"sessions"`) || len(called) != 2 {
+		t.Errorf("shutdown --all --json = (%v, %q, %q, %d)", called, out, errOut, code)
+	}
+
+	// --all and --session cannot be combined.
+	_, _, errOut, code = runShutdown(sessions, "", "shutdown", "--all", "--session", "one")
+	if code == 0 || !strings.Contains(errOut, "cannot use --all with --session") {
+		t.Errorf("expected mutual exclusion error, got code=%d err=%q", code, errOut)
 	}
 }

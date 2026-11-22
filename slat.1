@@ -108,6 +108,11 @@ or
 prints one JSON object. Exit status: 0 ok, 1 error, 2 timed out, 3 the pane is
 gone.
 .TP
+.B slat shutdown \fR[\fB--all\fR] [\fB--session \fITARGET\fR] [\fB--json\fR]
+Shut down the active session, or all running slat sessions when
+.B --all
+is given.
+.TP
 .B slat ls
 List every pane with its status: idle (the pane's shell is waiting), working
 (a program is running), input (a program is waiting for an answer) or exited.
