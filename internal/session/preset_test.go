@@ -1,9 +1,11 @@
-package session
+package session_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	. "github.com/noturbob/slat/internal/session"
 )
 
 func TestLoadExamplePreset(t *testing.T) {

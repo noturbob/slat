@@ -508,7 +508,7 @@ func (cfg *Config) mergeSplash(user Splash, md toml.MetaData) error {
 	}
 	if md.IsDefined("splash", "duration") {
 		if user.Duration.D() < 0 {
-			return fmt.Errorf("splash.duration must not be negative")
+			return errors.New("splash.duration must not be negative")
 		}
 		cfg.Splash.Duration = user.Duration
 	}
@@ -546,7 +546,7 @@ func (a *Agent) compile() error {
 		a.Patterns = append(a.Patterns, re)
 	}
 	if a.Settle.D() < 0 || a.InputAfter.D() < 0 {
-		return fmt.Errorf("agent.settle and agent.input_after must not be negative")
+		return errors.New("agent.settle and agent.input_after must not be negative")
 	}
 	return nil
 }

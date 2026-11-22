@@ -1,9 +1,11 @@
-package input
+package input_test
 
 import (
 	"bytes"
 	"strings"
 	"testing"
+
+	. "github.com/noturbob/slat/internal/input"
 )
 
 func TestParsePrefix(t *testing.T) {

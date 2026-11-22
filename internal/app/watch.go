@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -131,7 +132,7 @@ func (a *App) hook(cmd string, info PaneInfo) func() {
 	// substitution is shell-quoted: a last line containing a quote or a
 	// semicolon is text, not more command.
 	line := strings.NewReplacer(
-		"%p", quote(fmt.Sprint(info.Pane)),
+		"%p", quote(strconv.Itoa(info.Pane)),
 		"%t", quote(info.TabName),
 		"%s", quote(info.Status),
 		"%c", quote(info.Last),
@@ -142,7 +143,7 @@ func (a *App) hook(cmd string, info PaneInfo) func() {
 		// Also unquoted, for hooks that would rather read the environment
 		// than have values pasted into their command line.
 		c.Env = append(os.Environ(),
-			"SLAT_PANE="+fmt.Sprint(info.Pane),
+			"SLAT_PANE="+strconv.Itoa(info.Pane),
 			"SLAT_TAB="+info.TabName,
 			"SLAT_STATUS="+info.Status,
 			"SLAT_LINE="+info.Last)

@@ -1,6 +1,6 @@
 //go:build !windows
 
-package app
+package app_test
 
 import (
 	"os"
@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	. "github.com/noturbob/slat/internal/app"
 
 	"github.com/noturbob/slat/internal/config"
 	"github.com/noturbob/slat/internal/session"
@@ -53,7 +55,7 @@ func TestQuitForgetsTheSession(t *testing.T) {
 	a, term := start(t)
 	a.FeedInput([]byte("echo doomed\r"))
 	waitFor(t, term, "doomed", 1)
-	a.saveSession() // as the ticker would have
+	a.SaveSessionForTest() // as the ticker would have
 
 	path, _ := session.StatePath()
 	if _, err := os.Stat(path); err != nil {
@@ -163,11 +165,11 @@ func TestAgo(t *testing.T) {
 		{72 * time.Hour, "3 days ago"},
 	}
 	for _, c := range cases {
-		if got := ago(time.Now().Add(-c.d)); got != c.want {
+		if got := Ago(time.Now().Add(-c.d)); got != c.want {
 			t.Errorf("ago(%s) = %q, want %q", c.d, got, c.want)
 		}
 	}
-	if got := ago(time.Time{}); got != "an earlier session" {
+	if got := Ago(time.Time{}); got != "an earlier session" {
 		t.Errorf("ago(zero) = %q", got)
 	}
 }

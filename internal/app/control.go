@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -227,7 +228,7 @@ func (a *App) scopedPanesLocked(wsSpec, tabSpec string) ([]session.PaneRef, erro
 	} else if tabSpec != "" {
 		ws := a.manager.ActiveWorkspace()
 		if ws == nil {
-			return nil, fmt.Errorf("no active workspace")
+			return nil, errors.New("no active workspace")
 		}
 		workspaces = []*session.Workspace{ws}
 	} else {
@@ -277,7 +278,7 @@ func (a *App) refTarget(t PaneTarget) (session.PaneRef, error) {
 		// Ids are never reused, so one below the high-water mark named a pane
 		// that has since closed — worth its own exit code for agents.
 		if id, idErr := strconv.Atoi(spec); idErr == nil && id > 0 && id <= a.manager.Issued() {
-			return session.PaneRef{}, errPaneGone{id}
+			return session.PaneRef{}, paneGoneError{id}
 		}
 		return session.PaneRef{}, fmt.Errorf("no pane %q", spec)
 	}
@@ -310,11 +311,11 @@ func (a *App) refTarget(t PaneTarget) (session.PaneRef, error) {
 				}
 			}
 		}
-		return session.PaneRef{}, fmt.Errorf("no active pane in target")
+		return session.PaneRef{}, errors.New("no active pane in target")
 	}
 
 	for _, r := range refs {
-		if spec == fmt.Sprint(r.Pane.ID) {
+		if spec == strconv.Itoa(r.Pane.ID) {
 			return r, nil
 		}
 	}
@@ -322,7 +323,7 @@ func (a *App) refTarget(t PaneTarget) (session.PaneRef, error) {
 		if a.manager.PaneByID(id) != nil {
 			return session.PaneRef{}, fmt.Errorf("pane %d is not in the targeted workspace/tab", id)
 		}
-		return session.PaneRef{}, errPaneGone{id}
+		return session.PaneRef{}, paneGoneError{id}
 	}
 	return session.PaneRef{}, fmt.Errorf("no pane %q in target", spec)
 }
@@ -375,7 +376,7 @@ func (a *App) NewPane(o NewPaneOpts) (PaneInfo, error) {
 			return PaneInfo{}, writeErr
 		}
 	}
-	return a.PaneInfo(fmt.Sprint(created.ID))
+	return a.PaneInfo(strconv.Itoa(created.ID))
 }
 
 // ClosePane closes a pane, as the close-pane key does.
@@ -406,7 +407,7 @@ func (a *App) SendTarget(t PaneTarget, data []byte) error {
 		return err
 	}
 	if r.Pane.Dead() {
-		return errPaneGone{r.Pane.ID}
+		return paneGoneError{r.Pane.ID}
 	}
 	_, err = r.Pane.Write(data)
 	a.markDirty()
@@ -465,14 +466,14 @@ func (a *App) SwitchSession(sock string) {
 	}
 }
 
-type errPaneGone struct{ id int }
+type paneGoneError struct{ id int }
 
-func (e errPaneGone) Error() string { return fmt.Sprintf("pane %d is gone", e.id) }
+func (e paneGoneError) Error() string { return fmt.Sprintf("pane %d is gone", e.id) }
 
 // PaneGone reports whether err means the pane's program is no longer running.
 func PaneGone(err error) bool {
-	_, ok := err.(errPaneGone)
-	return ok
+	var gone paneGoneError
+	return errors.As(err, &gone)
 }
 
 func orActive(s string) string {
@@ -504,7 +505,7 @@ func ParseWaitFor(s string) (WaitFor, error) {
 	case strings.HasPrefix(s, "text="):
 		pat := strings.TrimPrefix(s, "text=")
 		if len(pat) > 4096 {
-			return WaitFor{}, fmt.Errorf("--for text=: pattern too long (max 4096 bytes)")
+			return WaitFor{}, errors.New("--for text=: pattern too long (max 4096 bytes)")
 		}
 		re, err := regexp.Compile(pat)
 		if err != nil {
@@ -542,14 +543,14 @@ func (a *App) WaitTarget(ctx context.Context, t PaneTarget, cond WaitFor) (PaneI
 			// The pane was removed from the session: that is an exit.
 			return PaneInfo{}, cond.Exit, err
 		}
-		if met, done := cond.met(a, fmt.Sprint(info.Pane), info); met || done {
+		if met, done := cond.met(a, strconv.Itoa(info.Pane), info); met || done {
 			return info, met, nil
 		}
 		select {
 		case <-ctx.Done():
 			return info, false, nil
 		case <-a.quit:
-			return info, false, fmt.Errorf("session ended")
+			return info, false, errors.New("session ended")
 		case <-tick.C:
 		}
 	}

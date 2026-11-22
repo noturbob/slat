@@ -1,4 +1,4 @@
-.PHONY: build install run test clean
+.PHONY: build install run test test-fast clean
 
 build:
 	go build -o bin/slat ./cmd/slat
@@ -13,6 +13,9 @@ run: build
 test:
 	go vet ./...
 	go test -race ./...
+
+test-fast:
+	go test -short ./...
 
 clean:
 	rm -rf bin

@@ -3,6 +3,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -105,7 +106,7 @@ type prompt struct {
 // New creates a new App from the given config.
 func New(cfg *config.Config) (*App, error) {
 	if cfg == nil {
-		return nil, fmt.Errorf("config must not be nil")
+		return nil, errors.New("config must not be nil")
 	}
 	theme, err := ui.ParseTheme(cfg.Theme)
 	if err != nil {

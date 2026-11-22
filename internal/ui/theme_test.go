@@ -1,8 +1,9 @@
-package ui
+package ui_test
 
 import (
 	"testing"
 
+	. "github.com/noturbob/slat/internal/ui"
 	"github.com/noturbob/slat/internal/vt"
 )
 
@@ -38,12 +39,12 @@ func TestParseTheme(t *testing.T) {
 	if got.Accent != vt.RGB(255, 0, 0) {
 		t.Errorf("accent = %v", got.Accent)
 	}
-	if got.Bg != themes["gruvbox"].Bg {
+	if got.Bg != Themes["gruvbox"].Bg {
 		t.Errorf("the rest of the preset was lost: %v", got.Bg)
 	}
 
 	// No settings at all is the default theme.
-	if defTheme, defErr := ParseTheme(nil); defErr != nil || defTheme != themes["default"] {
+	if defTheme, defErr := ParseTheme(nil); defErr != nil || defTheme != Themes["default"] {
 		t.Errorf("ParseTheme(nil) = %v, %v", defTheme, defErr)
 	}
 
@@ -74,8 +75,8 @@ func TestParseTheme(t *testing.T) {
 		t.Errorf("transparent bg = %+v", tr)
 	}
 	tr.Apply()
-	if styleBar.Bg != vt.DefaultColor || styleTab.Bg != vt.DefaultColor {
-		t.Errorf("applied transparent bg: bar=%v tab=%v", styleBar.Bg, styleTab.Bg)
+	if StyleBar.Bg != vt.DefaultColor || StyleTab.Bg != vt.DefaultColor {
+		t.Errorf("applied transparent bg: bar=%v tab=%v", StyleBar.Bg, StyleTab.Bg)
 	}
 
 	// Dialog colour overrides.
@@ -86,10 +87,10 @@ func TestParseTheme(t *testing.T) {
 		t.Fatal(err)
 	}
 	ds.Apply()
-	if styleBoxKey.Fg != vt.Indexed(15) || styleBoxText.Fg != vt.Indexed(248) ||
-		styleBoxHead.Fg != vt.RGB(0x89, 0xb4, 0xfa) || styleBox.Fg != vt.Indexed(6) ||
-		styleBox.Bg != vt.RGB(0x1e, 0x1e, 0x2e) {
-		t.Errorf("dialog styles = box:%+v head:%+v key:%+v text:%+v", styleBox, styleBoxHead, styleBoxKey, styleBoxText)
+	if StyleBoxKey.Fg != vt.Indexed(15) || StyleBoxText.Fg != vt.Indexed(248) ||
+		StyleBoxHead.Fg != vt.RGB(0x89, 0xb4, 0xfa) || StyleBox.Fg != vt.Indexed(6) ||
+		StyleBox.Bg != vt.RGB(0x1e, 0x1e, 0x2e) {
+		t.Errorf("dialog styles = box:%+v head:%+v key:%+v text:%+v", *StyleBox, *StyleBoxHead, *StyleBoxKey, *StyleBoxText)
 	}
 	if _, badErr := ParseDialogTheme(DialogTheme{Fg: "notacolor"}); badErr == nil {
 		t.Error("expected error for invalid dialog.fg")
@@ -102,8 +103,8 @@ func TestParseTheme(t *testing.T) {
 		t.Fatal(err)
 	}
 	fs.Apply()
-	if styleFinderKey.Fg != vt.Indexed(7) || styleFinderSel.Bg != vt.Indexed(3) || styleFinder.Bg != vt.RGB(0x1e, 0x1e, 0x2e) {
-		t.Errorf("finder styles = %+v %+v", styleFinder, styleFinderSel)
+	if StyleFinderKey.Fg != vt.Indexed(7) || StyleFinderSel.Bg != vt.Indexed(3) || StyleFinder.Bg != vt.RGB(0x1e, 0x1e, 0x2e) {
+		t.Errorf("finder styles = %+v %+v", *StyleFinder, *StyleFinderSel)
 	}
 
 	ss, err := ParseStackTheme(StackTheme{Fg: "250", Bg: "236", ActiveFg: "#1e1e2e", ActiveBg: "#89b4fa"})
@@ -111,10 +112,10 @@ func TestParseTheme(t *testing.T) {
 		t.Fatal(err)
 	}
 	ss.Apply()
-	if styleStack.Fg != vt.Indexed(250) || styleStackActive.Bg != vt.RGB(0x89, 0xb4, 0xfa) {
-		t.Errorf("stack styles = %+v %+v", styleStack, styleStackActive)
+	if StyleStack.Fg != vt.Indexed(250) || StyleStackActive.Bg != vt.RGB(0x89, 0xb4, 0xfa) {
+		t.Errorf("stack styles = %+v %+v", *StyleStack, *StyleStackActive)
 	}
-	themes["default"].Apply()
+	Themes["default"].Apply()
 
 	// Typos are errors, not surprises later.
 	for _, bad := range []map[string]string{
@@ -131,7 +132,7 @@ func TestParseTheme(t *testing.T) {
 // Every built-in theme must set every colour: a zero value would paint
 // with whatever the terminal's default happens to be.
 func TestBuiltInThemesAreComplete(t *testing.T) {
-	for name, th := range themes {
+	for name, th := range Themes {
 		for i, c := range []vt.Color{th.Bg, th.Fg, th.Dim, th.Accent, th.Border,
 			th.TabBg, th.TabFg, th.TabActiveBg, th.TabActiveFg} {
 			if c == 0 {

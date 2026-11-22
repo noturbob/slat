@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -451,7 +452,7 @@ func checkFormat(format string, allowed []string) error {
 			depth++
 		case partStylePop:
 			if depth == 0 {
-				return fmt.Errorf("unmatched {/}")
+				return errors.New("unmatched {/}")
 			}
 			depth--
 		case partField:

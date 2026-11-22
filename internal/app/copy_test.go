@@ -1,6 +1,6 @@
 //go:build !windows
 
-package app
+package app_test
 
 import (
 	"encoding/base64"
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+
 
 	"github.com/noturbob/slat/internal/config"
 )

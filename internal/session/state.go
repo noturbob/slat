@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -113,7 +114,7 @@ func (m *Manager) Restore(st State, area layout.Rect) (int, error) {
 		return 0, fmt.Errorf("saved session is version %d, this slat writes %d", st.Version, stateVersion)
 	}
 	if len(st.Workspaces) == 0 {
-		return 0, fmt.Errorf("saved session has no workspaces")
+		return 0, errors.New("saved session has no workspaces")
 	}
 	m.Workspaces = nil
 	m.nextPane = 0
@@ -152,7 +153,7 @@ func (m *Manager) Restore(st State, area layout.Rect) (int, error) {
 		m.Workspaces = append(m.Workspaces, ws)
 	}
 	if len(m.Workspaces) == 0 {
-		return count, fmt.Errorf("saved session held no tabs")
+		return count, errors.New("saved session held no tabs")
 	}
 	m.ActiveWorkspaceIdx = clampIdx(st.Active, len(m.Workspaces))
 	// Ids carry on from the old session so that a pane number a script
@@ -167,7 +168,7 @@ func (m *Manager) Restore(st State, area layout.Rect) (int, error) {
 // a resize a moment later.
 func (m *Manager) restoreNode(n *NodeState, area layout.Rect) (*layout.Node, *pane.Pane, int, error) {
 	if n == nil {
-		return nil, nil, 0, fmt.Errorf("saved layout has an empty node")
+		return nil, nil, 0, errors.New("saved layout has an empty node")
 	}
 	if n.Pane != nil {
 		m.nextPane++
@@ -287,13 +288,13 @@ func SaveState(path string, st State) error {
 	}()
 	if chmodErr := tmp.Chmod(0o600); chmodErr != nil {
 		if cErr := tmp.Close(); cErr != nil {
-			return fmt.Errorf("%w (close: %v)", chmodErr, cErr)
+			return errors.Join(chmodErr, fmt.Errorf("close: %w", cErr))
 		}
 		return chmodErr
 	}
 	if _, writeErr := tmp.Write(data); writeErr != nil {
 		if cErr := tmp.Close(); cErr != nil {
-			return fmt.Errorf("%w (close: %v)", writeErr, cErr)
+			return errors.Join(writeErr, fmt.Errorf("close: %w", cErr))
 		}
 		return writeErr
 	}

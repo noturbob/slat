@@ -1,4 +1,4 @@
-package config
+package config_test
 
 import (
 	"os"
@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/noturbob/slat/internal/config"
 	"github.com/noturbob/slat/internal/ui"
 )
 
@@ -118,7 +119,7 @@ func TestInvalidConfigsAreRejected(t *testing.T) {
 func TestMissingFileUsesDefaults(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	cfg, err := Load()
-	if err != nil || len(cfg.PrefixKey.Bytes) != 1 || cfg.PrefixKey.Bytes[0] != 0x13 || len(cfg.Keybinds) != len(defaultKeybinds()) {
+	if err != nil || len(cfg.PrefixKey.Bytes) != 1 || cfg.PrefixKey.Bytes[0] != 0x13 || len(cfg.Keybinds) != len(DefaultKeybinds()) {
 		t.Fatalf("got %+v, %v", cfg, err)
 	}
 }
@@ -175,7 +176,7 @@ on_idle = "notify-send done"
 
 	// Unset keys keep the defaults, and bad values are refused.
 	cfg, err = load(t, "[agent]\nsettle = \"1s\"\n")
-	if err != nil || len(cfg.Agent.Patterns) != len(defaultAgent().InputPatterns) {
+	if err != nil || len(cfg.Agent.Patterns) != len(DefaultAgent().InputPatterns) {
 		t.Errorf("defaults not kept: %v, %v", cfg.Agent, err)
 	}
 	if _, badErr := load(t, "[agent]\nsettle = \"-1s\"\n"); badErr == nil {

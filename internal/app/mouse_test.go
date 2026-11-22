@@ -1,11 +1,13 @@
 //go:build !windows
 
-package app
+package app_test
 
 import (
 	"strings"
 	"testing"
 	"time"
+
+	. "github.com/noturbob/slat/internal/app"
 
 	"github.com/noturbob/slat/internal/config"
 	"github.com/noturbob/slat/internal/pane"
@@ -34,16 +36,16 @@ func TestParseMouse(t *testing.T) {
 		{in: "\x1b[<0;x;5M", ok: false},   // not a number
 	}
 	for _, c := range cases {
-		ev, n, ok := parseMouse([]byte(c.in), 0)
+		button, x, y, press, motion, n, ok := ParseMouseForTest([]byte(c.in), 0)
 		if ok != c.ok {
 			t.Fatalf("parseMouse(%q): ok = %v, want %v", c.in, ok, c.ok)
 		}
 		if !ok {
 			continue
 		}
-		if ev.button != c.button || ev.x != c.x || ev.y != c.y || ev.press != c.press || ev.motion != c.motion || n != c.n {
-			t.Errorf("parseMouse(%q) = %+v, n=%d; want button=%d x=%d y=%d press=%v motion=%v n=%d",
-				c.in, ev, n, c.button, c.x, c.y, c.press, c.motion, c.n)
+		if button != c.button || x != c.x || y != c.y || press != c.press || motion != c.motion || n != c.n {
+			t.Errorf("parseMouse(%q) = button=%d x=%d y=%d press=%v motion=%v n=%d; want button=%d x=%d y=%d press=%v motion=%v n=%d",
+				c.in, button, x, y, press, motion, n, c.button, c.x, c.y, c.press, c.motion, c.n)
 		}
 	}
 }
@@ -52,41 +54,38 @@ func TestParseMouse(t *testing.T) {
 // arrives behind whatever else the user typed in the same read.
 func TestParseMouseAtOffset(t *testing.T) {
 	buf := []byte("abc\x1b[<2;4;9m")
-	if _, _, ok := parseMouse(buf, 0); ok {
+	if _, _, _, _, _, _, ok := ParseMouseForTest(buf, 0); ok {
 		t.Fatal("parsed a mouse report from plain text")
 	}
-	ev, n, ok := parseMouse(buf, 3)
-	if !ok || ev.button != 2 || ev.x != 4 || ev.y != 9 || ev.press || n != 9 {
-		t.Fatalf("got %+v n=%d ok=%v", ev, n, ok)
+	button, x, y, press, _, n, ok := ParseMouseForTest(buf, 3)
+	if !ok || button != 2 || x != 4 || y != 9 || press || n != 9 {
+		t.Fatalf("got button=%d x=%d y=%d press=%v n=%d ok=%v", button, x, y, press, n, ok)
 	}
 }
 
 func TestEncodeMouse(t *testing.T) {
-	press := mouseEvent{button: 0, press: true}
-	if got, want := string(encodeMouse(press, true, 3, 4)), "\x1b[<0;3;4M"; got != want {
+	if got, want := string(EncodeMouseForTest(0, true, false, false, true, 3, 4)), "\x1b[<0;3;4M"; got != want {
 		t.Errorf("SGR press = %q, want %q", got, want)
 	}
-	release := mouseEvent{button: 0}
-	if got, want := string(encodeMouse(release, true, 3, 4)), "\x1b[<0;3;4m"; got != want {
+	if got, want := string(EncodeMouseForTest(0, false, false, false, true, 3, 4)), "\x1b[<0;3;4m"; got != want {
 		t.Errorf("SGR release = %q, want %q", got, want)
 	}
 	// The original encoding offsets by 32 and reports any release as 3.
-	if got, want := string(encodeMouse(press, false, 3, 4)), "\x1b[M\x20\x23\x24"; got != want {
+	if got, want := string(EncodeMouseForTest(0, true, false, false, false, 3, 4)), "\x1b[M\x20\x23\x24"; got != want {
 		t.Errorf("legacy press = %q, want %q", got, want)
 	}
-	if got, want := string(encodeMouse(release, false, 3, 4)), "\x1b[M\x23\x23\x24"; got != want {
+	if got, want := string(EncodeMouseForTest(0, false, false, false, false, 3, 4)), "\x1b[M\x23\x23\x24"; got != want {
 		t.Errorf("legacy release = %q, want %q", got, want)
 	}
 	// Past column 223 the old encoding has no byte left to say it with.
-	if out := encodeMouse(press, false, 400, 4); out != nil {
+	if out := EncodeMouseForTest(0, true, false, false, false, 400, 4); out != nil {
 		t.Errorf("legacy encoding past 223 = %q, want nil", out)
 	}
-	if out := encodeMouse(press, true, 400, 4); out == nil {
+	if out := EncodeMouseForTest(0, true, false, false, true, 400, 4); out == nil {
 		t.Error("SGR encoding should have no column limit")
 	}
 	// Modifiers and drag ride in the button byte.
-	drag := mouseEvent{button: 0, press: true, motion: true, shift: true}
-	if got, want := string(encodeMouse(drag, true, 1, 1)), "\x1b[<36;1;1M"; got != want {
+	if got, want := string(EncodeMouseForTest(0, true, true, true, true, 1, 1)), "\x1b[<36;1;1M"; got != want {
 		t.Errorf("drag+shift = %q, want %q", got, want)
 	}
 }
@@ -250,9 +249,7 @@ func TestClickInsideAPaneIsNotADrag(t *testing.T) {
 }
 
 func dragging(a *App) bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.drag != nil
+	return a.DraggingForTest()
 }
 
 // waitCols waits for a pane to reach a width, since a ratio only becomes a

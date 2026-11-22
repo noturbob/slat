@@ -1,9 +1,10 @@
-package ui
+package ui_test
 
 import (
 	"math"
 	"testing"
 
+	. "github.com/noturbob/slat/internal/ui"
 	"github.com/noturbob/slat/internal/vt"
 )
 
@@ -19,7 +20,7 @@ const (
 
 func TestBuiltInThemesAreReadable(t *testing.T) {
 	for _, name := range ThemeNames() {
-		th := themes[name]
+		th := Themes[name]
 		for _, c := range []struct {
 			what string
 			a, b vt.Color

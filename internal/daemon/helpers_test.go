@@ -37,6 +37,9 @@ func session(t *testing.T, tweak ...func(*config.Config)) string {
 	})
 	sock := filepath.Join(dir, "s.sock")
 
+	if testing.Short() {
+		t.Skip("skipping slow daemon integration test in -short mode")
+	}
 	cfg := config.DefaultConfig()
 	cfg.Shell = "/bin/sh"
 	cfg.Splash.Enabled = false
@@ -74,7 +77,7 @@ func session(t *testing.T, tweak ...func(*config.Config)) string {
 			}
 			return sock
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("daemon did not start")
 	return ""
@@ -100,7 +103,7 @@ func statusEventually(t *testing.T, sock, pane, want string) control.Response {
 		if last.Pane != nil && last.Pane.Status == want {
 			return last
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
 	if last.Pane != nil {
 		t.Fatalf("pane %s: status %q (%s), want %q", pane, last.Pane.Status, last.Pane.Reason, want)
@@ -126,7 +129,10 @@ func stopSession(t *testing.T, sock string) {
 	if !ok {
 		t.Fatalf("no daemon for %s", sock)
 	}
-	r := v.(*running)
+	r, ok := v.(*running)
+	if !ok {
+		t.Fatalf("unexpected running entry type %T", v)
+	}
 	r.srv.Stop()
 	select {
 	case <-r.done:

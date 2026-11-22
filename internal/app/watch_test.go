@@ -1,6 +1,6 @@
 //go:build !windows
 
-package app
+package app_test
 
 import (
 	"os"
@@ -9,19 +9,25 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/noturbob/slat/internal/app"
+
 	"github.com/noturbob/slat/internal/config"
+	"github.com/noturbob/slat/internal/session"
 	"github.com/noturbob/slat/internal/ui"
 )
 
 // A pane's last line is output from whatever is running in it, so a hook
 // must treat it as text. If it reached /bin/sh unquoted, this would run.
 func TestHookQuotesPaneText(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow hook subprocess test in -short mode")
+	}
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "executed")
 	log := filepath.Join(dir, "log")
 
-	a := &App{cfg: config.DefaultConfig()}
-	a.hook("echo %p %c >> "+log, PaneInfo{
+	a := NewWithConfigForTest(config.DefaultConfig())
+	a.HookForTest("echo %p %c >> "+log, PaneInfo{
 		Pane: 7,
 		Last: `save it'; touch ` + marker + `; echo 'ok? [y/N]`,
 	})()
@@ -43,9 +49,9 @@ func TestHookQuotesPaneText(t *testing.T) {
 }
 
 func TestHookUnsetDoesNothing(t *testing.T) {
-	a := &App{cfg: config.DefaultConfig()}
-	a.hook("", PaneInfo{Pane: 1})() // must not panic or run a shell
-	a.hook("   ", PaneInfo{Pane: 1})()
+	a := NewWithConfigForTest(config.DefaultConfig())
+	a.HookForTest("", PaneInfo{Pane: 1})() // must not panic or run a shell
+	a.HookForTest("   ", PaneInfo{Pane: 1})()
 }
 
 // A pane waiting for input marks its tab in the status bar, so a human
@@ -136,7 +142,7 @@ func TestShellPrompt(t *testing.T) {
 		"~/src/slat ❯ ", "user in slat ?1 ❯", "PS1>", "λ ",
 	}
 	for _, p := range prompts {
-		if !shellPrompt(p) {
+		if !ShellPrompt(p) {
 			t.Errorf("shellPrompt(%q) = false, want true", p)
 		}
 	}
@@ -145,7 +151,7 @@ func TestShellPrompt(t *testing.T) {
 		"Press enter to continue", "Delete 3 files?", "",
 	}
 	for _, q := range questions {
-		if shellPrompt(q) {
+		if ShellPrompt(q) {
 			t.Errorf("shellPrompt(%q) = true, want false", q)
 		}
 	}
@@ -235,38 +241,45 @@ func TestMoveMode(t *testing.T) {
 
 func TestAutoRenameAndManualPrecedence(t *testing.T) {
 	a, _ := start(t)
-	a.mu.Lock()
-	tab := a.manager.ActiveTab()
-	id := tab.ActivePane.ID
-	a.mu.Unlock()
+	var (
+		tab *session.Tab
+		id  int
+	)
+	a.WithManagerForTest(func(m *session.Manager) {
+		tab = m.ActiveTab()
+		id = tab.ActivePane.ID
+	})
 
-	a.mu.Lock()
-	changed := a.syncTabNames([]PaneInfo{{Pane: id, Foreground: "nvim"}})
-	name := tab.Name
-	a.mu.Unlock()
+	changed := a.SyncTabNamesForTest([]PaneInfo{{Pane: id, Foreground: "nvim"}})
+	var name string
+	a.WithManagerForTest(func(*session.Manager) {
+		name = tab.Name
+	})
 	if !changed || name != "nvim" {
 		t.Errorf("autorename = %q (changed=%v), want nvim", name, changed)
 	}
 
 	// Manual rename takes precedence over autorename.
-	a.mu.Lock()
-	a.manager.RenameTab("custom")
-	changed = a.syncTabNames([]PaneInfo{{Pane: id, Foreground: "htop"}})
-	name = tab.Name
-	a.mu.Unlock()
+	a.WithManagerForTest(func(m *session.Manager) {
+		m.RenameTab("custom")
+	})
+	changed = a.SyncTabNamesForTest([]PaneInfo{{Pane: id, Foreground: "htop"}})
+	a.WithManagerForTest(func(*session.Manager) {
+		name = tab.Name
+	})
 	if changed || name != "custom" {
 		t.Errorf("manual rename overwritten: %q (changed=%v)", name, changed)
 	}
 
 	// auto_rename = false disables autorename globally.
-	a.mu.Lock()
-	tab.CustomName = false
-	a.cfg.AutoRename = false
-	a.mu.Unlock()
-	a.scanStatus()
-	a.mu.Lock()
-	name = tab.Name
-	a.mu.Unlock()
+	a.WithManagerForTest(func(*session.Manager) {
+		tab.CustomName = false
+	})
+	a.SetAutoRenameForTest(false)
+	a.ScanStatusForTest()
+	a.WithManagerForTest(func(*session.Manager) {
+		name = tab.Name
+	})
 	if name != "custom" {
 		t.Errorf("auto_rename=false still renamed tab to %q", name)
 	}

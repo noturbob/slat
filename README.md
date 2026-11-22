@@ -638,9 +638,11 @@ binaries, `.deb`, `.rpm` and Arch packages for Linux and macOS on amd64 and arm6
 The release then republishes the website and the apt repository to GitHub Pages
 ([`pages.yml`](.github/workflows/pages.yml)), signed with the `APT_GPG_PRIVATE_KEY` secret.
 
-`make test` runs `go vet` and the tests with the race detector. The tests in
-`internal/app` drive real shells through splits, closes, overlays and
-workspace changes and check what a terminal would display.
+`make test-fast` runs `go test -short ./...` (sub-second unit tests, skipping slow
+PTY and daemon integration tests). `make test` runs `go vet` and the full test
+suite with the race detector. The tests in `internal/app` drive real shells
+through splits, closes, overlays and workspace changes and check what a
+terminal would display.
 
 ## Limitations
 

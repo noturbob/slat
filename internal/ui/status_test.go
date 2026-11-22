@@ -1,10 +1,11 @@
-package ui
+package ui_test
 
 import (
 	"io"
 	"strings"
 	"testing"
 
+	. "github.com/noturbob/slat/internal/ui"
 	"github.com/noturbob/slat/internal/vt"
 )
 
@@ -114,7 +115,7 @@ func TestBordersParse(t *testing.T) {
 }
 
 func TestStatusInlineColorsAndGlyphs(t *testing.T) {
-	themes["default"].Apply()
+	Themes["default"].Apply()
 
 	cfg := DefaultStatusConfig()
 	cfg.Left = "{prefix} {workspace} │ {tabs}"
@@ -186,8 +187,8 @@ func TestStatusInlineColorsAndGlyphs(t *testing.T) {
 		t.Errorf("tab 3 fish fg = %v, want red (1)", fg)
 	}
 	// Tab 2 is active, so its fish glyph should inherit TabActiveBg.
-	if bg := fr.Lines[0][fishCols[1]].Style.Bg; bg != themes["default"].TabActiveBg {
-		t.Errorf("active tab fish bg = %v, want TabActiveBg %v", bg, themes["default"].TabActiveBg)
+	if bg := fr.Lines[0][fishCols[1]].Style.Bg; bg != Themes["default"].TabActiveBg {
+		t.Errorf("active tab fish bg = %v, want TabActiveBg %v", bg, Themes["default"].TabActiveBg)
 	}
 
 	// Verify pane glyph '②' is coloured with pane_colors[1] = 44.
@@ -224,7 +225,7 @@ func TestStatusStyleTagErrors(t *testing.T) {
 }
 
 func TestStatusZoomedTabAndBadge(t *testing.T) {
-	themes["default"].Apply()
+	Themes["default"].Apply()
 
 	cfg := DefaultStatusConfig()
 	cfg.Tab = " {tab_glyph} {index}:{name}{alert} "
@@ -284,7 +285,7 @@ func TestStatusZoomedTabAndBadge(t *testing.T) {
 }
 
 func TestStatusThreeGlyphTabs(t *testing.T) {
-	themes["default"].Apply()
+	Themes["default"].Apply()
 
 	cfg := DefaultStatusConfig()
 	cfg.Left = "{prefix} {workspace} │ {tabs}"
@@ -341,7 +342,7 @@ func TestStatusThreeGlyphTabs(t *testing.T) {
 }
 
 func TestStatusMultiDigitGlyphs(t *testing.T) {
-	themes["default"].Apply()
+	Themes["default"].Apply()
 
 	cfg := DefaultStatusConfig()
 	cfg.Left = "{tabs}"
@@ -389,7 +390,7 @@ func TestStatusMultiDigitGlyphs(t *testing.T) {
 }
 
 func TestStatusSessionAndDialog(t *testing.T) {
-	themes["default"].Apply()
+	Themes["default"].Apply()
 
 	cfg := DefaultStatusConfig()
 	cfg.Left = " {session} │ {tabs}"
@@ -408,30 +409,32 @@ func TestStatusSessionAndDialog(t *testing.T) {
 	if cy != 5 || cx <= 0 {
 		t.Errorf("dialog cursor = (%d, %d)", cx, cy)
 	}
-	joined := ""
+	var joined strings.Builder
 	for y := 0; y < dlg.H; y++ {
-		joined += row(dlg, y) + "\n"
+		joined.WriteString(row(dlg, y))
+		joined.WriteByte('\n')
 	}
-	if !strings.Contains(joined, "rename session") || !strings.Contains(joined, "> alpha") ||
-		!strings.Contains(joined, "Enter save · Esc cancel") {
-		t.Errorf("dialog rendering unexpected:\n%s", joined)
+	if !strings.Contains(joined.String(), "rename session") || !strings.Contains(joined.String(), "> alpha") ||
+		!strings.Contains(joined.String(), "Enter save · Esc cancel") {
+		t.Errorf("dialog rendering unexpected:\n%s", joined.String())
 	}
 }
 
 func TestDrawSplash(t *testing.T) {
-	themes["default"].Apply()
+	Themes["default"].Apply()
 	sp, err := ParseSplash([]string{"[SLAT]", " /\\ "}, "v1.0", "press ?", "cyan", "208", "#1e1e2e")
 	if err != nil {
 		t.Fatal(err)
 	}
 	fr := NewFrame(40, 10)
 	DrawSplash(fr, sp)
-	var out string
+	var out strings.Builder
 	for y := 0; y < fr.H; y++ {
-		out += row(fr, y) + "\n"
+		out.WriteString(row(fr, y))
+		out.WriteByte('\n')
 	}
-	if !strings.Contains(out, "[SLAT]") || !strings.Contains(out, "v1.0") || !strings.Contains(out, "press ?") {
-		t.Errorf("splash output = %q", out)
+	if !strings.Contains(out.String(), "[SLAT]") || !strings.Contains(out.String(), "v1.0") || !strings.Contains(out.String(), "press ?") {
+		t.Errorf("splash output = %q", out.String())
 	}
 	if fr.Lines[0][0].Style.Bg != vt.RGB(0x1e, 0x1e, 0x2e) {
 		t.Errorf("splash bg = %v, want #1e1e2e", fr.Lines[0][0].Style.Bg)
@@ -442,7 +445,7 @@ func TestDrawSplash(t *testing.T) {
 }
 
 func TestStatusPaneGlyphCurrent(t *testing.T) {
-	themes["default"].Apply()
+	Themes["default"].Apply()
 
 	cfg := DefaultStatusConfig()
 	cfg.Left = "{tabs}"
@@ -480,7 +483,7 @@ func TestStatusPaneGlyphCurrent(t *testing.T) {
 }
 
 func TestStatusTabActiveAndSeparator(t *testing.T) {
-	themes["default"].Apply()
+	Themes["default"].Apply()
 
 	// tab_sep = "" removes spacing between tabs; tab_active overrides tab for ActiveTab.
 	cfg := DefaultStatusConfig()
@@ -519,7 +522,7 @@ func TestStatusTabActiveAndSeparator(t *testing.T) {
 }
 
 func BenchmarkDrawStatusBar(b *testing.B) {
-	themes["default"].Apply()
+	Themes["default"].Apply()
 	cfg := DefaultStatusConfig()
 	cfg.Left = "{prefix} {workspace} │ {tabs}"
 	cfg.Right = "{badge}{workspaces} {pane}/{panes} "
@@ -555,7 +558,7 @@ func BenchmarkDrawStatusBar(b *testing.B) {
 }
 
 func BenchmarkDrawStatusBarUncompiled(b *testing.B) {
-	themes["default"].Apply()
+	Themes["default"].Apply()
 	cfg := DefaultStatusConfig()
 	cfg.Left = "{prefix} {workspace} │ {tabs}"
 	cfg.Right = "{badge}{workspaces} {pane}/{panes} "
@@ -573,7 +576,7 @@ func BenchmarkDrawStatusBarUncompiled(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	f.compiled = nil
+	ClearCompiledForBench(&f)
 	st := Status{
 		Workspace:    "main",
 		Tabs:         []string{"fish", "fish", "fish"},
@@ -625,7 +628,7 @@ func BenchmarkScreenRender(b *testing.B) {
 }
 
 func TestStatusScriptRenderingAndValidation(t *testing.T) {
-	themes["default"].Apply()
+	Themes["default"].Apply()
 	cfg := DefaultStatusConfig()
 	cfg.Right = "{bg=236}{script:git}{/} {pane}/{panes} "
 	fb := "{fg=red}err{/}"
@@ -702,7 +705,7 @@ func TestStatusScriptRenderingAndValidation(t *testing.T) {
 }
 
 func TestCurrentPaneAndIDGlyphsAndPaneIDBadge(t *testing.T) {
-	themes["default"].Apply()
+	Themes["default"].Apply()
 	cfg := DefaultStatusConfig()
 	cfg.Tab = " {index}:{current_pane_glyph}:{current_pane_id_glyph} "
 	cfg.PaneID = "{fg=cyan,bg=236} #{id} {/}"
@@ -792,7 +795,7 @@ func TestStatusThemeColorTags(t *testing.T) {
 		t.Fatalf("ParseStatusConfig: %v", err)
 	}
 
-	themes["cyberpunk"].Apply()
+	Themes["cyberpunk"].Apply()
 	fr := NewFrame(40, 1)
 	DrawStatusBar(fr, 0, Status{Workspace: "main", Tabs: []string{"sh"}}, f)
 	xCol, yCol := -1, -1
@@ -807,23 +810,23 @@ func TestStatusThemeColorTags(t *testing.T) {
 	if xCol < 0 || yCol < 0 {
 		t.Fatalf("missing X or Y in %q", row(fr, 0))
 	}
-	if fr.Lines[0][xCol].Style.Fg != themes["cyberpunk"].Accent || fr.Lines[0][xCol].Style.Bg != themes["cyberpunk"].TabBg {
+	if fr.Lines[0][xCol].Style.Fg != Themes["cyberpunk"].Accent || fr.Lines[0][xCol].Style.Bg != Themes["cyberpunk"].TabBg {
 		t.Errorf("cyberpunk X style = %+v, want accent fg & tab_bg", fr.Lines[0][xCol].Style)
 	}
-	if fr.Lines[0][yCol].Style.Fg != themes["cyberpunk"].Dim {
+	if fr.Lines[0][yCol].Style.Fg != Themes["cyberpunk"].Dim {
 		t.Errorf("cyberpunk Y style = %+v, want dim fg", fr.Lines[0][yCol].Style)
 	}
 
-	themes["vice-city"].Apply()
+	Themes["vice-city"].Apply()
 	fr2 := NewFrame(40, 1)
 	DrawStatusBar(fr2, 0, Status{Workspace: "main", Tabs: []string{"sh"}}, f)
-	if fr2.Lines[0][xCol].Style.Fg != themes["vice-city"].Accent {
+	if fr2.Lines[0][xCol].Style.Fg != Themes["vice-city"].Accent {
 		t.Errorf("vice-city X style = %+v, want vice-city accent fg", fr2.Lines[0][xCol].Style)
 	}
 }
 
 func TestStatusMessageInlineColors(t *testing.T) {
-	themes["default"].Apply()
+	Themes["default"].Apply()
 	f, err := ParseStatusConfig(DefaultStatusConfig())
 	if err != nil {
 		t.Fatal(err)
@@ -841,7 +844,7 @@ func TestStatusMessageInlineColors(t *testing.T) {
 }
 
 func TestStatusZoomGlyphsPerType(t *testing.T) {
-	themes["default"].Apply()
+	Themes["default"].Apply()
 
 	baseCfg := func() StatusConfig {
 		cfg := DefaultStatusConfig()
@@ -924,7 +927,7 @@ func TestStatusZoomGlyphsPerType(t *testing.T) {
 }
 
 func TestStatusProcessGlyphs(t *testing.T) {
-	themes["default"].Apply()
+	Themes["default"].Apply()
 
 	cfg := DefaultStatusConfig()
 	cfg.Left = "{tabs}"
@@ -964,7 +967,7 @@ func TestStatusProcessGlyphs(t *testing.T) {
 }
 
 func TestCurrentPaneGlyphsDoNotFallbackToPaneGlyphs(t *testing.T) {
-	themes["default"].Apply()
+	Themes["default"].Apply()
 
 	cfg := DefaultStatusConfig()
 	cfg.Left = "{tabs}"

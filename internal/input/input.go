@@ -2,6 +2,7 @@ package input
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -91,7 +92,7 @@ func unescapePrefix(s string) ([]byte, error) {
 			continue
 		}
 		if i+1 >= len(s) {
-			return nil, fmt.Errorf("trailing backslash")
+			return nil, errors.New("trailing backslash")
 		}
 		switch s[i+1] {
 		case 'e', 'E':
@@ -102,7 +103,7 @@ func unescapePrefix(s string) ([]byte, error) {
 			i++
 		case 'x', 'X':
 			if i+3 >= len(s) {
-				return nil, fmt.Errorf("incomplete hex escape")
+				return nil, errors.New("incomplete hex escape")
 			}
 			v, err := strconv.ParseUint(s[i+2:i+4], 16, 8)
 			if err != nil {
@@ -265,7 +266,7 @@ type Shortcut struct {
 func ParseShortcut(spec string) ([][]byte, string, error) {
 	s := strings.TrimSpace(spec)
 	if s == "" {
-		return nil, "", fmt.Errorf("empty shortcut")
+		return nil, "", errors.New("empty shortcut")
 	}
 	lower := strings.ToLower(s)
 	var rest string

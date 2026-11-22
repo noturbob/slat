@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -149,7 +150,7 @@ func registerAgentCommands(
 				text += "\r"
 			}
 			if text == "" {
-				fail(control.CodeError, fmt.Errorf("send needs text, --key or --enter"))
+				fail(control.CodeError, errors.New("send needs text, --key or --enter"))
 				return
 			}
 			execTargeted(control.Request{Cmd: "send", Data: text}, args.Pane, args.TargetFlags, args.JSON)
@@ -165,7 +166,7 @@ func registerAgentCommands(
 		func(_ *mcli.Context, args *runArgs) {
 			words := trimEndOfFlags(args.Command)
 			if len(words) == 0 {
-				fail(control.CodeError, fmt.Errorf("run needs a command"))
+				fail(control.CodeError, errors.New("run needs a command"))
 				return
 			}
 			req := control.Request{Cmd: "send", Data: strings.Join(words, " ") + "\r"}
@@ -192,7 +193,7 @@ func registerAgentCommands(
 				return
 			}
 			if paneSpec == "" && sess == "" && ws == "" && tab == "" {
-				fail(control.CodeError, fmt.Errorf("focus needs a target or direction (left, down, up, right)"))
+				fail(control.CodeError, errors.New("focus needs a target or direction (left, down, up, right)"))
 				return
 			}
 			if paneSpec == "" {
@@ -214,7 +215,7 @@ func registerAgentCommands(
 		func(_ *mcli.Context, args *displayArgs) {
 			words := trimEndOfFlags(args.Message)
 			if len(words) == 0 {
-				fail(control.CodeError, fmt.Errorf("display needs a message"))
+				fail(control.CodeError, errors.New("display needs a message"))
 				return
 			}
 			req := control.Request{

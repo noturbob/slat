@@ -3,9 +3,9 @@
 package daemon_test
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +25,7 @@ func TestControlLifecycle(t *testing.T) {
 	if len(ls.Panes) != 1 || !ls.Panes[0].Active {
 		t.Fatalf("ls returned %+v", ls.Panes)
 	}
-	first := fmt.Sprint(ls.Panes[0].Pane)
+	first := strconv.Itoa(ls.Panes[0].Pane)
 	statusEventually(t, sock, first, "idle")
 
 	// run: send a command and wait for it to finish.
@@ -44,7 +44,7 @@ func TestControlLifecycle(t *testing.T) {
 	if np.Pane == nil {
 		t.Fatalf("pane new failed: %v", np.Error)
 	}
-	second := fmt.Sprint(np.Pane.Pane)
+	second := strconv.Itoa(np.Pane.Pane)
 	// The reported program settles on sleep, not the sh that forked it.
 	fg := ""
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
@@ -52,7 +52,7 @@ func TestControlLifecycle(t *testing.T) {
 		if fg == "sleep" {
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
 	if fg != "sleep" {
 		t.Errorf("foreground = %q, want sleep", fg)
@@ -63,7 +63,7 @@ func TestControlLifecycle(t *testing.T) {
 
 	// wait --for text: matches output that arrives later.
 	go func() {
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		if _, err := control.Do(sock, control.Request{Cmd: "send", Pane: first, Data: "echo the-marker\r"}, 5*time.Second); err != nil {
 			t.Errorf("send: %v", err)
 		}
@@ -90,7 +90,7 @@ func TestControlLifecycle(t *testing.T) {
 		if len(do(t, sock, control.Request{Cmd: "ls"}).Panes) == 1 {
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
 	if resp := do(t, sock, control.Request{Cmd: "send", Pane: second, Data: "x"}); resp.Code != control.CodePaneGone {
 		t.Errorf("send to a closed pane: code %d, want %d (%+v)", resp.Code, control.CodePaneGone, resp)
@@ -125,7 +125,7 @@ func TestControlLifecycle(t *testing.T) {
 // the distinction agents need.
 func TestStatusInput(t *testing.T) {
 	sock := session(t, posixShell)
-	first := fmt.Sprint(do(t, sock, control.Request{Cmd: "ls"}).Panes[0].Pane)
+	first := strconv.Itoa(do(t, sock, control.Request{Cmd: "ls"}).Panes[0].Pane)
 	statusEventually(t, sock, first, "idle")
 
 	// A builtin asking a question: the pane's own shell is in the
@@ -165,7 +165,7 @@ func TestInputHookFires(t *testing.T) {
 	sock := session(t, posixShell, func(c *config.Config) {
 		c.Agent.OnInput = "echo pane %p %s >> " + log
 	})
-	first := fmt.Sprint(do(t, sock, control.Request{Cmd: "ls"}).Panes[0].Pane)
+	first := strconv.Itoa(do(t, sock, control.Request{Cmd: "ls"}).Panes[0].Pane)
 	statusEventually(t, sock, first, "idle")
 	do(t, sock, control.Request{Cmd: "send", Pane: first,
 		Data: `sh -c 'printf "Continue? [y/N] "; read a'` + "\r"})
@@ -193,7 +193,7 @@ func TestNewPaneThenWaitForIdle(t *testing.T) {
 	if np.Pane == nil {
 		t.Fatalf("pane new failed: %v", np.Error)
 	}
-	pane := fmt.Sprint(np.Pane.Pane)
+	pane := strconv.Itoa(np.Pane.Pane)
 
 	start := time.Now()
 	w := do(t, sock, control.Request{Cmd: "wait", Pane: pane, For: "idle", Timeout: "30s"})

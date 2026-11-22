@@ -1,8 +1,9 @@
-package layout
+package layout_test
 
 import (
 	"testing"
 
+	. "github.com/noturbob/slat/internal/layout"
 	"github.com/noturbob/slat/internal/pane"
 )
 

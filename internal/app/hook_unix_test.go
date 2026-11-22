@@ -1,11 +1,15 @@
 //go:build !windows
 
-package app
+package app_test
 
-import "testing"
+import (
+	"testing"
+
+	. "github.com/noturbob/slat/internal/app"
+)
 
 func TestQuoteEscapesSingleQuotes(t *testing.T) {
-	if got, want := quote(`it's; rm -rf /`), `'it'\''s; rm -rf /'`; got != want {
+	if got, want := Quote(`it's; rm -rf /`), `'it'\''s; rm -rf /'`; got != want {
 		t.Errorf("quote() = %s, want %s", got, want)
 	}
 }

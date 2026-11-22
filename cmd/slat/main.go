@@ -362,7 +362,7 @@ func runDaemon(presetPath, configPath string) error {
 
 func runClientWithConfig(sock, dir, presetPath, configPath string) error {
 	if os.Getenv("SLAT") != "" {
-		return fmt.Errorf("already inside a slat session (unset SLAT to force)")
+		return errors.New("already inside a slat session (unset SLAT to force)")
 	}
 	for {
 		if !daemonAlive(sock) {

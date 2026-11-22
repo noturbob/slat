@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -94,10 +95,10 @@ func (a *Animation) compile() error {
 		return fmt.Errorf("animation.glyph = %q: must be exactly one character", a.Glyph)
 	}
 	if a.Split.D() < 0 || a.Move.D() < 0 {
-		return fmt.Errorf("animation durations must not be negative")
+		return errors.New("animation durations must not be negative")
 	}
 	if a.Split.D() > time.Second || a.Move.D() > time.Second {
-		return fmt.Errorf("animation durations must be 1s or less: a pane you wait for isn't a feature")
+		return errors.New("animation durations must be 1s or less: a pane you wait for isn't a feature")
 	}
 	return nil
 }

@@ -1,9 +1,11 @@
-package vt
+package vt_test
 
 import (
 	"fmt"
 	"strings"
 	"testing"
+
+	. "github.com/noturbob/slat/internal/vt"
 )
 
 func screen(t *testing.T, cols, rows int, input string) *Terminal {

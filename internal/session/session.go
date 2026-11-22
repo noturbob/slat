@@ -5,6 +5,7 @@
 package session
 
 import (
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"slices"
@@ -297,7 +298,7 @@ func (m *Manager) SplitPane(dir pane.SplitDirection) error {
 func (m *Manager) AddPane(area layout.Rect) error {
 	tab := m.ActiveTab()
 	if tab == nil {
-		return fmt.Errorf("no active tab")
+		return errors.New("no active tab")
 	}
 	newP, err := m.newPane(max(area.Rows, 1), max(area.Cols, 1), m.activeDir())
 	if err != nil {
@@ -326,7 +327,7 @@ func (m *Manager) AddPane(area layout.Rect) error {
 // is empty.
 func (m *Manager) SplitAt(target *pane.Pane, d pane.SplitDirection, dir string) (*pane.Pane, error) {
 	if target == nil {
-		return nil, fmt.Errorf("no such pane")
+		return nil, errors.New("no such pane")
 	}
 	tab := m.tabOf(target)
 	if tab == nil {

@@ -1,6 +1,6 @@
 //go:build !windows
 
-package app
+package app_test
 
 import (
 	"os"
@@ -10,9 +10,12 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/noturbob/slat/internal/app"
+
 	"github.com/noturbob/slat/internal/config"
 	"github.com/noturbob/slat/internal/input"
 	"github.com/noturbob/slat/internal/pane"
+	"github.com/noturbob/slat/internal/session"
 	"github.com/noturbob/slat/internal/vt"
 )
 
@@ -59,6 +62,9 @@ const prefix = 0x13 // Ctrl-S
 
 func start(t *testing.T, tweak ...func(*config.Config)) (*App, *terminal) {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping slow PTY integration test in -short mode")
+	}
 	t.Setenv("PS1", "slat$ ")
 	// Never the real one: a test must not read, write or delete the
 	// session the user has running. A test that wants two runs to share a
@@ -70,6 +76,7 @@ func start(t *testing.T, tweak ...func(*config.Config)) (*App, *terminal) {
 	cfg := config.DefaultConfig()
 	cfg.Shell = "/bin/sh"
 	cfg.Splash.Enabled = false
+	cfg.Animations = false
 	for _, f := range tweak {
 		f(cfg)
 	}
@@ -96,7 +103,7 @@ func waitFor(t *testing.T, term *terminal, s string, n int) {
 		if strings.Count(term.String(), s) >= n {
 			return
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %d× %q; screen:\n%s", n, s, term.String())
 }
@@ -108,7 +115,7 @@ func waitGone(t *testing.T, term *terminal, s string) {
 		if !strings.Contains(term.String(), s) {
 			return
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("%q still on screen:\n%s", s, term.String())
 }
@@ -199,8 +206,12 @@ func TestOverlaysSwallowEscapeSequences(t *testing.T) {
 	waitFor(t, term, "rename session", 1)
 	a.FeedInput([]byte("\x15my-proj\r"))
 	waitGone(t, term, "rename session")
-	if got := a.manager.SessionName; got != "my-proj" {
-		t.Errorf("SessionName = %q, want my-proj", got)
+	var gotName string
+	a.WithManagerForTest(func(m *session.Manager) {
+		gotName = m.SessionName
+	})
+	if gotName != "my-proj" {
+		t.Errorf("SessionName = %q, want my-proj", gotName)
 	}
 
 	a.FeedInput([]byte("echo ok\r"))
@@ -219,14 +230,13 @@ func TestScrollMode(t *testing.T) {
 	waitGone(t, term, "row-200")
 
 	// New output doesn't move a scrolled-back view.
-	a.mu.Lock()
-	// Already under the lock: the helpers below take it themselves, so
-	// calling one here would deadlock against this very line.
-	if _, err := a.manager.ActivePane().Write([]byte("echo fresh-output\r")); err != nil {
-		a.mu.Unlock()
-		t.Fatalf("Write: %v", err)
+	var writeErr error
+	a.WithManagerForTest(func(m *session.Manager) {
+		_, writeErr = m.ActivePane().Write([]byte("echo fresh-output\r"))
+	})
+	if writeErr != nil {
+		t.Fatalf("Write: %v", writeErr)
 	}
-	a.mu.Unlock()
 	time.Sleep(300 * time.Millisecond)
 	waitFor(t, term, "row-1\n", 1)
 	waitGone(t, term, "fresh-output")
@@ -256,25 +266,24 @@ func TestScrollMode(t *testing.T) {
 // lock the race detector is right to complain, and intermittently does.
 
 func activePanes(a *App) []*pane.Pane {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.manager.ActivePanes()
+	var panes []*pane.Pane
+	a.WithManagerForTest(func(m *session.Manager) {
+		panes = m.ActivePanes()
+	})
+	return panes
 }
 
 func activePane(a *App) *pane.Pane {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.manager.ActivePane()
+	var p *pane.Pane
+	a.WithManagerForTest(func(m *session.Manager) {
+		p = m.ActivePane()
+	})
+	return p
 }
 
 // scrollState reports whether scroll mode is open and where its view sits.
 func scrollState(a *App) (bool, int) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.scroll == nil {
-		return false, 0
-	}
-	return true, a.scroll.top
+	return a.ScrollStateForTest()
 }
 
 func TestStackedMode(t *testing.T) {
@@ -352,14 +361,14 @@ func TestToggleStatusBar(t *testing.T) {
 	// Toggle status bar off (<prefix> b).
 	a.FeedInput([]byte{prefix, 'b'})
 	waitGone(t, term, "pane 1/1")
-	if area := a.paneArea(); area.Rows != 30 {
+	if area := a.PaneAreaForTest(); area.Rows != 30 {
 		t.Fatalf("paneArea.Rows = %d, want 30 when status bar hidden", area.Rows)
 	}
 
 	// Toggle status bar back on (<prefix> b).
 	a.FeedInput([]byte{prefix, 'b'})
 	waitFor(t, term, "pane 1/1", 1)
-	if area := a.paneArea(); area.Rows != 29 {
+	if area := a.PaneAreaForTest(); area.Rows != 29 {
 		t.Fatalf("paneArea.Rows = %d, want 29 when status bar shown", area.Rows)
 	}
 }
@@ -377,9 +386,10 @@ func TestLayoutPicker(t *testing.T) {
 	a.FeedInput([]byte{'\r'})
 	waitGone(t, term, "layouts (")
 
-	a.mu.Lock()
-	mode := a.manager.ActiveTab().LayoutMode
-	a.mu.Unlock()
+	var mode string
+	a.WithManagerForTest(func(m *session.Manager) {
+		mode = string(m.ActiveTab().LayoutMode)
+	})
 	if mode != "master-right" {
 		t.Fatalf("LayoutMode = %q, want %q", mode, "master-right")
 	}
@@ -430,21 +440,26 @@ func TestAddPaneHonorsLayout(t *testing.T) {
 	waitFor(t, term, "pane 1/1", 1)
 
 	// Switch to master-left layout, then add two panes with <prefix> a.
-	a.mu.Lock()
-	a.manager.ApplyLayout("master-left")
-	a.mu.Unlock()
+	a.WithManagerForTest(func(m *session.Manager) {
+		m.ApplyLayout("master-left")
+	})
 
 	a.FeedInput([]byte{prefix, 'a'})
 	waitFor(t, term, "pane 2/2", 1)
 	a.FeedInput([]byte{prefix, 'a'})
 	waitFor(t, term, "pane 3/3", 1)
 
-	a.mu.Lock()
-	tab := a.manager.ActiveTab()
-	mode := tab.LayoutMode
-	split := tab.Layout.Split
-	rightSplit := tab.Layout.Children[1].Split
-	a.mu.Unlock()
+	var (
+		mode       string
+		split      pane.SplitDirection
+		rightSplit pane.SplitDirection
+	)
+	a.WithManagerForTest(func(m *session.Manager) {
+		tab := m.ActiveTab()
+		mode = string(tab.LayoutMode)
+		split = tab.Layout.Split
+		rightSplit = tab.Layout.Children[1].Split
+	})
 
 	if mode != "master-left" {
 		t.Fatalf("LayoutMode = %q, want master-left", mode)

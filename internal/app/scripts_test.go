@@ -1,6 +1,6 @@
 //go:build !windows
 
-package app
+package app_test
 
 import (
 	"encoding/json"
@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/noturbob/slat/internal/app"
 	"github.com/noturbob/slat/internal/config"
+	"github.com/noturbob/slat/internal/session"
 	"github.com/noturbob/slat/internal/ui"
 )
 
@@ -18,7 +20,7 @@ func TestShortcutExecutionAndEnv(t *testing.T) {
 	outFile := filepath.Join(t.TempDir(), "env.txt")
 	script := filepath.Join(t.TempDir(), "save.sh")
 	body := "#!/bin/sh\n" +
-		"printf '%s|%s|%s|%s|%s\\n' \"$SLAT_SESSION\" \"$SLAT_WORKSPACE\" \"$SLAT_TAB_INDEX\" \"$SLAT_PANE\" \"$SLAT_STATE_JSON\" > " + quote(outFile) + "\n"
+		"printf '%s|%s|%s|%s|%s\\n' \"$SLAT_SESSION\" \"$SLAT_WORKSPACE\" \"$SLAT_TAB_INDEX\" \"$SLAT_PANE\" \"$SLAT_STATE_JSON\" > " + Quote(outFile) + "\n"
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +55,7 @@ func TestShortcutExecutionAndEnv(t *testing.T) {
 	if parts[0] == "" || parts[1] != "main" || parts[2] != "1" || parts[3] != "1" {
 		t.Errorf("unexpected SLAT_* values: %v", parts[:4])
 	}
-	var st scriptState
+	var st ScriptState
 	if jsonErr := json.Unmarshal([]byte(parts[4]), &st); jsonErr != nil {
 		t.Fatalf("invalid SLAT_STATE_JSON: %v (%q)", jsonErr, parts[4])
 	}
@@ -65,10 +67,7 @@ func TestShortcutExecutionAndEnv(t *testing.T) {
 	a.FeedInput([]byte("\x1b2"))
 	deadline = time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		a.mu.Lock()
-		msg := a.message
-		a.mu.Unlock()
-		if strings.Contains(msg, "shortcut failed") {
+		if strings.Contains(a.MessageForTest(), "shortcut failed") {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -89,19 +88,13 @@ func TestStatusScriptsExecutionAndErrors(t *testing.T) {
 
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		a.mu.Lock()
-		okOut := a.scriptOutputs["ok"]
-		failOut := a.scriptOutputs["fail"]
-		slowOut := a.scriptOutputs["slow"]
-		a.mu.Unlock()
-		if okOut == "{fg=red}VAL{/}" && failOut == "{fg=yellow}FB{/}" && slowOut == "{fg=red}[err]{/}" {
+		outs := a.ScriptOutputsForTest()
+		if outs["ok"] == "{fg=red}VAL{/}" && outs["fail"] == "{fg=yellow}FB{/}" && outs["slow"] == "{fg=red}[err]{/}" {
 			return
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	t.Fatalf("unexpected scriptOutputs: %+v", a.scriptOutputs)
+	t.Fatalf("unexpected scriptOutputs: %+v", a.ScriptOutputsForTest())
 }
 
 func TestIdentifyPanesToggleAndTabActivePaneID(t *testing.T) {
@@ -126,19 +119,14 @@ func TestIdentifyPanesToggleAndTabActivePaneID(t *testing.T) {
 		t.Fatalf("expected both #1 and #2 pane badges on screen, got:\n%s", screen)
 	}
 
-	a.mu.Lock()
-	st := a.statusOfBar(time.Now())
-	a.mu.Unlock()
+	st := a.StatusOfBarForTest(time.Now())
 	if st.PaneID != 2 || len(st.TabActivePaneID) != 1 || st.TabActivePaneID[0] != 2 {
 		t.Errorf("statusOfBar PaneID=%d TabActivePaneID=%v, want 2 and [2]", st.PaneID, st.TabActivePaneID)
 	}
 
 	// Toggle off.
 	a.FeedInput([]byte{prefix, 'i'})
-	a.mu.Lock()
-	shown := a.showPaneIDs
-	a.mu.Unlock()
-	if shown {
+	if a.ShowPaneIDsForTest() {
 		t.Errorf("expected showPaneIDs=false after second prefix+i")
 	}
 }
@@ -175,62 +163,57 @@ func TestNavigationKeysAndFocusDirection(t *testing.T) {
 
 	// Split vertically -> pane 1 (left) and pane 2 (right, active).
 	a.FeedInput([]byte{prefix, 'v'})
-	a.mu.Lock()
-	a.render()
-	if a.manager.ActivePane().ID != 2 {
-		a.mu.Unlock()
-		t.Fatalf("expected pane 2 active after split, got %d", a.manager.ActivePane().ID)
+	a.RenderForTest()
+	var activeID int
+	a.WithManagerForTest(func(m *session.Manager) {
+		activeID = m.ActivePane().ID
+	})
+	if activeID != 2 {
+		t.Fatalf("expected pane 2 active after split, got %d", activeID)
 	}
-	a.mu.Unlock()
 
 	// Default navigation.keys = "alt": Alt+h (\x1bh) switches to pane 1.
 	a.FeedInput([]byte("\x1bh"))
-	a.mu.Lock()
-	if a.manager.ActivePane().ID != 1 {
-		a.mu.Unlock()
-		t.Fatalf("expected pane 1 active after Alt+h, got %d", a.manager.ActivePane().ID)
+	a.WithManagerForTest(func(m *session.Manager) {
+		activeID = m.ActivePane().ID
+	})
+	if activeID != 1 {
+		t.Fatalf("expected pane 1 active after Alt+h, got %d", activeID)
 	}
-	a.mu.Unlock()
 
 	// FocusDirection("right") moves back to pane 2.
 	if err := a.FocusDirection("right"); err != nil {
 		t.Fatalf("FocusDirection(right): %v", err)
 	}
-	a.mu.Lock()
-	if a.manager.ActivePane().ID != 2 {
-		a.mu.Unlock()
-		t.Fatalf("expected pane 2 active after FocusDirection(right), got %d", a.manager.ActivePane().ID)
+	a.WithManagerForTest(func(m *session.Manager) {
+		activeID = m.ActivePane().ID
+	})
+	if activeID != 2 {
+		t.Fatalf("expected pane 2 active after FocusDirection(right), got %d", activeID)
 	}
-	a.mu.Unlock()
 
 	// Ctrl mode (0x08 = Ctrl-H) when configured.
-	a.mu.Lock()
-	a.cfg.Navigation.Keys = "ctrl"
-	a.mu.Unlock()
+	a.SetNavKeysForTest("ctrl")
 	a.FeedInput([]byte{0x08})
-	a.mu.Lock()
-	if a.manager.ActivePane().ID != 1 {
-		a.mu.Unlock()
-		t.Fatalf("expected pane 1 active after Ctrl-H, got %d", a.manager.ActivePane().ID)
+	a.WithManagerForTest(func(m *session.Manager) {
+		activeID = m.ActivePane().ID
+	})
+	if activeID != 1 {
+		t.Fatalf("expected pane 1 active after Ctrl-H, got %d", activeID)
 	}
-	a.mu.Unlock()
 }
 
 func TestDisplayAlertDuration(t *testing.T) {
 	a, _ := start(t)
 	a.Display("{fg=red}Saved!{/}", 80*time.Millisecond)
 
-	a.mu.Lock()
-	st := a.statusOfBar(time.Now())
-	a.mu.Unlock()
+	st := a.StatusOfBarForTest(time.Now())
 	if st.Message != "{fg=red}Saved!{/}" {
 		t.Fatalf("initial status Message = %q, want {fg=red}Saved!{/}", st.Message)
 	}
 
 	time.Sleep(110 * time.Millisecond)
-	a.mu.Lock()
-	stAfter := a.statusOfBar(time.Now())
-	a.mu.Unlock()
+	stAfter := a.StatusOfBarForTest(time.Now())
 	if stAfter.Message != "" {
 		t.Errorf("status Message after duration = %q, want empty", stAfter.Message)
 	}
@@ -245,10 +228,14 @@ func TestFocusPaneTargetAcrossWorkspacesAndTabs(t *testing.T) {
 	if err := a.FocusPaneTarget(PaneTarget{Pane: "1", Workspace: "main", Tab: "1"}); err != nil {
 		t.Fatalf("FocusPaneTarget(main/1/1): %v", err)
 	}
-	a.mu.Lock()
-	gotID := a.manager.ActivePane().ID
-	gotWS := a.manager.ActiveWorkspace().Name
-	a.mu.Unlock()
+	var (
+		gotID int
+		gotWS string
+	)
+	a.WithManagerForTest(func(m *session.Manager) {
+		gotID = m.ActivePane().ID
+		gotWS = m.ActiveWorkspace().Name
+	})
 	if gotID != 1 || gotWS != "main" {
 		t.Errorf("after FocusPaneTarget(main/1/1): ws=%q pane=%d, want main/1", gotWS, gotID)
 	}
@@ -257,10 +244,10 @@ func TestFocusPaneTargetAcrossWorkspacesAndTabs(t *testing.T) {
 	if err := a.FocusPaneTarget(PaneTarget{Pane: "active", Workspace: "ws-2"}); err != nil {
 		t.Fatalf("FocusPaneTarget(ws-2/active): %v", err)
 	}
-	a.mu.Lock()
-	gotID = a.manager.ActivePane().ID
-	gotWS = a.manager.ActiveWorkspace().Name
-	a.mu.Unlock()
+	a.WithManagerForTest(func(m *session.Manager) {
+		gotID = m.ActivePane().ID
+		gotWS = m.ActiveWorkspace().Name
+	})
 	if gotID != 3 || gotWS != "ws-2" {
 		t.Errorf("after FocusPaneTarget(ws-2): ws=%q pane=%d, want ws-2/3", gotWS, gotID)
 	}

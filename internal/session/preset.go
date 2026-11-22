@@ -2,6 +2,7 @@ package session
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -57,7 +58,7 @@ func (p *PresetPane) UnmarshalTOML(v any) error {
 		}
 		return nil
 	default:
-		return fmt.Errorf("pane must be a command string or {cmd, cwd} table")
+		return errors.New("pane must be a command string or {cmd, cwd} table")
 	}
 }
 
@@ -93,7 +94,7 @@ func ExpandPath(p string) string {
 func ResolvePresetPath(nameOrPath string) (string, error) {
 	expanded := ExpandPath(strings.TrimSpace(nameOrPath))
 	if expanded == "" {
-		return "", fmt.Errorf("session name or path cannot be empty")
+		return "", errors.New("session name or path cannot be empty")
 	}
 	if fi, err := os.Stat(expanded); err == nil && !fi.IsDir() {
 		return expanded, nil
@@ -171,13 +172,13 @@ func SavePreset(path string, p Preset) error {
 	}()
 	if chmodErr := tmp.Chmod(0o600); chmodErr != nil {
 		if cErr := tmp.Close(); cErr != nil {
-			return fmt.Errorf("%w (close: %v)", chmodErr, cErr)
+			return errors.Join(chmodErr, fmt.Errorf("close: %w", cErr))
 		}
 		return chmodErr
 	}
 	if _, writeErr := tmp.Write(buf.Bytes()); writeErr != nil {
 		if cErr := tmp.Close(); cErr != nil {
-			return fmt.Errorf("%w (close: %v)", writeErr, cErr)
+			return errors.Join(writeErr, fmt.Errorf("close: %w", cErr))
 		}
 		return writeErr
 	}

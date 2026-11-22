@@ -1,17 +1,19 @@
-package app
+package app_test
 
 import (
 	"strings"
 	"testing"
 	"time"
 
+	. "github.com/noturbob/slat/internal/app"
+
 	"github.com/noturbob/slat/internal/session"
 )
 
 func TestFuzzyMatchV2(t *testing.T) {
 	// Consecutive boundary match outranks scattered match.
-	sGood, ok1 := fuzzyMatch("fish", "slat main 1:fish pane 1")
-	sWeak, ok2 := fuzzyMatch("fish", "slat f_i_s_h_x")
+	sGood, ok1 := FuzzyMatch("fish", "slat main 1:fish pane 1")
+	sWeak, ok2 := FuzzyMatch("fish", "slat f_i_s_h_x")
 	if !ok1 || !ok2 {
 		t.Fatalf("expected both to match: ok1=%v ok2=%v", ok1, ok2)
 	}
@@ -20,18 +22,18 @@ func TestFuzzyMatchV2(t *testing.T) {
 	}
 
 	// Smart-case: uppercase token requires uppercase match.
-	if _, ok := fuzzyMatch("Fish", "slat main 1:fish"); ok {
+	if _, ok := FuzzyMatch("Fish", "slat main 1:fish"); ok {
 		t.Error("uppercase query should be case-sensitive")
 	}
-	if _, ok := fuzzyMatch("Fish", "slat main 1:Fish"); !ok {
+	if _, ok := FuzzyMatch("Fish", "slat main 1:Fish"); !ok {
 		t.Error("uppercase query should match uppercase text")
 	}
 
 	// Multi-token query matches across different parts of the path.
-	if _, ok := fuzzyMatch("work 2", "slat work 2:nvim pane 1"); !ok {
+	if _, ok := FuzzyMatch("work 2", "slat work 2:nvim pane 1"); !ok {
 		t.Error("multi-token query should match")
 	}
-	if _, ok := fuzzyMatch("work missing", "slat work 2:nvim pane 1"); ok {
+	if _, ok := FuzzyMatch("work missing", "slat work 2:nvim pane 1"); ok {
 		t.Error("multi-token query with missing token should not match")
 	}
 }
@@ -57,10 +59,11 @@ func TestTreePickerJump(t *testing.T) {
 	a.FeedInput([]byte("work logs\r"))
 	waitGone(t, term, "session tree")
 
-	a.mu.Lock()
-	wsName := a.manager.ActiveWorkspace().Name
-	tabName := a.manager.ActiveTab().Name
-	a.mu.Unlock()
+	var wsName, tabName string
+	a.WithManagerForTest(func(m *session.Manager) {
+		wsName = m.ActiveWorkspace().Name
+		tabName = m.ActiveTab().Name
+	})
 	if wsName != "work" || tabName != "logs" {
 		t.Errorf("jumped to (%q, %q), want (work, logs)", wsName, tabName)
 	}
@@ -187,13 +190,11 @@ func TestBuildTreeSingleLine(t *testing.T) {
 	a, term := start(t)
 	waitFor(t, term, "pane 1/1", 1)
 
-	a.mu.Lock()
-	nodes := a.buildTree()
-	a.mu.Unlock()
-	if len(nodes) != 1 {
-		t.Fatalf("buildTree len = %d, want 1", len(nodes))
+	labels := a.BuildTreeLabelsForTest()
+	if len(labels) != 1 {
+		t.Fatalf("buildTree len = %d, want 1", len(labels))
 	}
-	lbl := nodes[0].label
+	lbl := labels[0]
 	if !strings.Contains(lbl, "1:") || !strings.Contains(lbl, "pane 1") {
 		t.Errorf("expected window and pane on one line, got %q", lbl)
 	}

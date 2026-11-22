@@ -1,12 +1,13 @@
 //go:build !windows
 
-package pane
+package pane_test
 
 import (
 	"strings"
 	"testing"
 	"time"
 
+	. "github.com/noturbob/slat/internal/pane"
 	"github.com/noturbob/slat/internal/vt"
 )
 
@@ -25,6 +26,9 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 // The pane can tell "the shell is waiting" from "a program is running",
 // which is what pane status and `slat wait` are built on.
 func TestForegroundAndCapture(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow PTY pane test in -short mode")
+	}
 	t.Setenv("PS1", "$ ")
 	t.Setenv("ENV", "")
 	p, err := New(1, 10, 40, "/bin/sh", "", 100, nil)
@@ -90,7 +94,7 @@ func BenchmarkPaneLastLine(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
-	p := &Pane{term: term}
+	p := NewForBench(term)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -105,7 +109,7 @@ func BenchmarkPaneCaptureScreen(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
-	p := &Pane{term: term}
+	p := NewForBench(term)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

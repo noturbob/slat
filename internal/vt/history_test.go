@@ -1,9 +1,11 @@
-package vt
+package vt_test
 
 import (
 	"fmt"
 	"strings"
 	"testing"
+
+	. "github.com/noturbob/slat/internal/vt"
 )
 
 func lineText(l []Cell) string {
@@ -117,12 +119,12 @@ func BenchmarkHistoryPush1M(b *testing.B) {
 	}
 	// Fill the 1M ring once so we measure steady-state ring overwrite.
 	for i := 0; i < 1_000_000; i++ {
-		term.pushHistory(line)
+		PushHistoryForBench(term, line)
 	}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		term.pushHistory(line)
+		PushHistoryForBench(term, line)
 	}
 }
 
@@ -134,7 +136,7 @@ func BenchmarkHistorySearch1M(b *testing.B) {
 		line[i] = Cell{R: 'a'}
 	}
 	for i := 0; i < 1_000_000; i++ {
-		term.pushHistory(line)
+		PushHistoryForBench(term, line)
 	}
 	from := term.Pushed() + 2
 	b.ReportAllocs()
