@@ -98,17 +98,17 @@ func SplitNode(n *Node, dir pane.SplitDirection, newPane *pane.Pane) {
 
 // splitSizes divides total cells between two children and a 1-cell border.
 // Each side gets at least 1 cell whenever total leaves room for it.
-func splitSizes(total int, ratio float64) (first, second int) {
-	first = int(float64(total) * ratio)
+func splitSizes(total int, ratio float64) (int, int) {
+	first := int(float64(total) * ratio)
 	first = min(max(first, 1), total-2)
 	first = max(first, 1)
-	second = max(total-first-1, 0)
+	second := max(total-first-1, 0)
 	return first, second
 }
 
 // Split returns the rects of the two children of a split of area, plus the
 // 1-cell-wide border between them.
-func Split(area Rect, dir pane.SplitDirection, ratio float64) (a, b, border Rect) {
+func Split(area Rect, dir pane.SplitDirection, ratio float64) (Rect, Rect, Rect) {
 	if dir == pane.SplitVertical {
 		l, r := splitSizes(area.Cols, ratio)
 		return Rect{area.Row, area.Col, area.Rows, l},
@@ -123,7 +123,7 @@ func Split(area Rect, dir pane.SplitDirection, ratio float64) (a, b, border Rect
 
 // Apply assigns positions and sizes to every pane in the tree and returns
 // the border segments separating them.
-func Apply(n *Node, area Rect) (borders []Rect) {
+func Apply(n *Node, area Rect) []Rect {
 	if n == nil {
 		return nil
 	}
@@ -132,7 +132,7 @@ func Apply(n *Node, area Rect) (borders []Rect) {
 		return nil
 	}
 	a, b, border := Split(area, n.Split, n.Ratio)
-	borders = append(borders, border)
+	borders := []Rect{border}
 	borders = append(borders, Apply(n.Children[0], a)...)
 	return append(borders, Apply(n.Children[1], b)...)
 }
@@ -208,7 +208,7 @@ func FindParent(n *Node, p *pane.Pane) (*Node, int) {
 // sibling takes over the freed space. It returns the new root (nil when the
 // tree is now empty) and the pane that should receive focus if the removed
 // pane had it: the nearest pane in the sibling's subtree.
-func RemovePane(root *Node, p *pane.Pane) (newRoot *Node, heir *pane.Pane) {
+func RemovePane(root *Node, p *pane.Pane) (*Node, *pane.Pane) {
 	if root == nil || root.Pane == p {
 		return nil, nil
 	}
@@ -267,7 +267,7 @@ func PaneIndex(n *Node, target *pane.Pane) int {
 	return idx
 }
 
-func paneIndex(n *Node, target *pane.Pane, cur int) (found, next int) {
+func paneIndex(n *Node, target *pane.Pane, cur int) (int, int) {
 	if n == nil {
 		return -1, cur
 	}

@@ -293,7 +293,7 @@ func newCLIApp(deps cliDeps) (*mcli.App, *globalFlags) {
 	return m, &globals
 }
 
-func resolveAttach(target string) (sock, dir string, err error) {
+func resolveAttach(target string) (string, string, error) {
 	if target == "" {
 		return socketPath(), "", nil
 	}
@@ -314,8 +314,8 @@ func resolveAttach(target string) (sock, dir string, err error) {
 	return "", "", fmt.Errorf("no session %q (run 'slat sessions' to list)", target)
 }
 
-func resolveSessionPreset(target string) (sock, dir, presetPath string, err error) {
-	presetPath, err = session.ResolvePresetPath(target)
+func resolveSessionPreset(target string) (string, string, string, error) {
+	presetPath, err := session.ResolvePresetPath(target)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -323,7 +323,7 @@ func resolveSessionPreset(target string) (sock, dir, presetPath string, err erro
 	if err != nil {
 		return "", "", "", err
 	}
-	dir = session.ExpandPath(preset.StartDirectory)
+	dir := session.ExpandPath(preset.StartDirectory)
 	if dir == "" {
 		dir = session.CanonicalDir("")
 	} else {

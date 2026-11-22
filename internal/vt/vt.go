@@ -285,7 +285,7 @@ func (t *Terminal) clearLines(lines [][]Cell, blank Cell) {
 // ─── Accessors ──────────────────────────────────────────────────────────────
 
 // Size returns the terminal's dimensions.
-func (t *Terminal) Size() (cols, rows int) { return t.cols, t.rows }
+func (t *Terminal) Size() (int, int) { return t.cols, t.rows }
 
 // Cell returns the cell at column x, row y.
 func (t *Terminal) Cell(x, y int) Cell { return t.lines[y][x] }
@@ -294,7 +294,7 @@ func (t *Terminal) Cell(x, y int) Cell { return t.lines[y][x] }
 func (t *Terminal) Line(y int) []Cell { return t.lines[y] }
 
 // Cursor returns the cursor position.
-func (t *Terminal) Cursor() (x, y int) { return t.cur.x, t.cur.y }
+func (t *Terminal) Cursor() (int, int) { return t.cur.x, t.cur.y }
 
 // CursorVisible reports whether the program wants the cursor shown.
 func (t *Terminal) CursorVisible() bool { return !t.cursorHidden }
@@ -310,7 +310,7 @@ func (t *Terminal) BracketedPaste() bool { return t.bracketedPaste }
 
 // Mouse reports what mouse tracking the program turned on: the DECSET
 // mode (0 when it wants none) and whether it asked for SGR coordinates.
-func (t *Terminal) Mouse() (mode int, sgr bool) { return t.mouseMode, t.mouseSGR }
+func (t *Terminal) Mouse() (int, bool) { return t.mouseMode, t.mouseSGR }
 
 // AltScreen reports whether the alternate screen is active.
 func (t *Terminal) AltScreen() bool { return t.altScreen }

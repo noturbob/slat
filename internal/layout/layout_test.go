@@ -158,7 +158,7 @@ func TestParseMode(t *testing.T) {
 	}
 }
 
-func collectRects(n *Node, area Rect) (rects, borders []Rect) {
+func collectRects(n *Node, area Rect) ([]Rect, []Rect) {
 	if n == nil {
 		return nil, nil
 	}
@@ -166,10 +166,10 @@ func collectRects(n *Node, area Rect) (rects, borders []Rect) {
 		return []Rect{area}, nil
 	}
 	a, b, border := Split(area, n.Split, n.Ratio)
-	borders = append(borders, border)
+	borders := []Rect{border}
 	ra, ba := collectRects(n.Children[0], a)
 	rb, bb := collectRects(n.Children[1], b)
-	rects = append(ra, rb...)
+	rects := append(ra, rb...)
 	borders = append(borders, ba...)
 	borders = append(borders, bb...)
 	return rects, borders

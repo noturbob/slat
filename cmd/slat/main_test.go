@@ -75,7 +75,9 @@ func TestResolveSessionPreset(t *testing.T) {
 }
 
 func TestGlobalConfigFlag(t *testing.T) {
-	runWithArgs := func(args ...string) (gotCfg string, exitCode int, errText string) {
+	runWithArgs := func(args ...string) (string, int, string) {
+		var gotCfg string
+		var exitCode int
 		var outBuf, errBuf bytes.Buffer
 		deps := defaultDeps()
 		deps.continueOnErr = true

@@ -75,11 +75,11 @@ func EncodeSize(cols, rows int) []byte {
 	return b
 }
 
-func DecodeSize(b []byte) (cols, rows int) {
+func DecodeSize(b []byte) (int, int) {
 	if len(b) < 4 {
 		return 80, 24
 	}
-	cols = int(binary.BigEndian.Uint16(b[0:2]))
-	rows = int(binary.BigEndian.Uint16(b[2:4]))
-	return
+	cols := int(binary.BigEndian.Uint16(b[0:2]))
+	rows := int(binary.BigEndian.Uint16(b[2:4]))
+	return cols, rows
 }

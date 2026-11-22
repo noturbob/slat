@@ -61,7 +61,7 @@ func luminance(c vt.Color) float64 {
 
 // channels turns a colour into 0-255 components, resolving palette indexes
 // through the xterm-256 table the way a terminal would.
-func channels(c vt.Color) (r, g, b float64) {
+func channels(c vt.Color) (float64, float64, float64) {
 	if c>>24 == 2 { // 24-bit
 		v := uint32(c)
 		return float64((v >> 16) & 0xff), float64((v >> 8) & 0xff), float64(v & 0xff)

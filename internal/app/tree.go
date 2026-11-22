@@ -168,9 +168,9 @@ func (a *App) FocusTarget(wsIdx, tabIdx, paneID int) {
 	}
 }
 
-func (a *App) allSessionsLocked() (cur SessionSummary, sessions []SessionSummary) {
-	cur = a.sessionInfoLocked()
-	sessions = []SessionSummary{cur}
+func (a *App) allSessionsLocked() (SessionSummary, []SessionSummary) {
+	cur := a.sessionInfoLocked()
+	sessions := []SessionSummary{cur}
 	if a.listSessions != nil {
 		for _, s := range a.listSessions() {
 			if s.Dir == cur.Dir && s.Name == cur.Name {

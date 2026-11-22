@@ -114,7 +114,7 @@ func (a *App) infoFor(r session.PaneRef, includeCwd bool) PaneInfo {
 // statusOf applies the rules from the design: a pane is idle when its own
 // shell has the terminal and it has been quiet; working while a program
 // runs; and input when that program has gone quiet on a question.
-func (a *App) statusOf(p *pane.Pane, fg string, isShell bool, last string) (status, reason string) {
+func (a *App) statusOf(p *pane.Pane, fg string, isShell bool, last string) (string, string) {
 	if p.Dead() {
 		return StatusExited, "process exited"
 	}
@@ -557,7 +557,7 @@ func (a *App) WaitTarget(ctx context.Context, t PaneTarget, cond WaitFor) (PaneI
 
 // met reports whether the condition holds, and whether waiting further is
 // pointless (the pane exited while waiting for something else).
-func (c WaitFor) met(a *App, spec string, info PaneInfo) (met, done bool) {
+func (c WaitFor) met(a *App, spec string, info PaneInfo) (bool, bool) {
 	switch {
 	case c.Exit:
 		return info.Status == StatusExited, false

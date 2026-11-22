@@ -268,7 +268,7 @@ func activePane(a *App) *pane.Pane {
 }
 
 // scrollState reports whether scroll mode is open and where its view sits.
-func scrollState(a *App) (open bool, top int) {
+func scrollState(a *App) (bool, int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.scroll == nil {

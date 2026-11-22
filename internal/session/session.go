@@ -515,7 +515,7 @@ func (m *Manager) SelectPaneInDirection(direction string) {
 // side, so a pane can be walked around the layout the way a tiling window
 // manager moves a window. Focus stays on the moved pane. It reports the
 // two panes it exchanged, and false when there is no neighbour that way.
-func (m *Manager) MovePaneInDirection(direction string) (moved, other *pane.Pane, ok bool) {
+func (m *Manager) MovePaneInDirection(direction string) (*pane.Pane, *pane.Pane, bool) {
 	tab := m.ActiveTab()
 	if tab == nil || tab.ActivePane == nil {
 		return nil, nil, false
