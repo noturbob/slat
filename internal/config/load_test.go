@@ -409,3 +409,54 @@ func TestExampleConfigsLoad(t *testing.T) {
 		t.Errorf("LoadFrom on missing file should have failed")
 	}
 }
+
+func TestExternalThemesAndThemeVarsInConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	themesDir := filepath.Join(dir, "slat", "themes")
+	if err := os.MkdirAll(themesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	themeTOML := `
+background = "#181825"
+foreground = "#cdd6f4"
+accent     = "theme.peach"
+
+[vars]
+peach = "#fab387"
+`
+	if err := os.WriteFile(filepath.Join(themesDir, "mytheme.toml"), []byte(themeTOML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfgTOML := `
+[theme]
+name = "mytheme"
+tab_active_fg = "theme.background"
+
+[theme.vars]
+extra = "#94e2d5"
+
+[dialog]
+head_fg = "theme.extra"
+bg      = "theme.background"
+
+[splash]
+fg = "theme.peach"
+
+[status]
+left = "{fg=theme.background,bg=theme.peach}{workspace}{/} {tabs}"
+`
+	if err := os.WriteFile(filepath.Join(dir, "slat", "config.toml"), []byte(cfgTOML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Theme["name"] != "mytheme" || cfg.ThemeVars["extra"] != "#94e2d5" {
+		t.Errorf("unexpected theme config: theme=%v vars=%v", cfg.Theme, cfg.ThemeVars)
+	}
+	if _, ok := cfg.UserThemes["mytheme"]; !ok {
+		t.Errorf("expected mytheme in UserThemes, got %v", cfg.UserThemes)
+	}
+}

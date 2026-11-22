@@ -1,0 +1,10 @@
+# Catppuccin Mocha
+bg            = "#313244"
+fg            = "#cdd6f4"
+dim           = "#a6adc8"
+accent        = "#cba6f7"
+border        = "#45475a"
+tab_bg        = "#181825"
+tab_fg        = "#bac2de"
+tab_active_bg = "#89b4fa"
+tab_active_fg = "#1e1e2e"

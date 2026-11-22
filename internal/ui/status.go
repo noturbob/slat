@@ -208,9 +208,16 @@ func ParseStatusFormat(settings map[string]string) (StatusFormat, error) {
 	return ParseStatusConfig(cfg)
 }
 
-// ParseStatusConfig validates a StatusConfig, checking placeholders, inline
-// style tags, and indexed colour lists.
+// ParseStatusConfig validates a StatusConfig against the active theme, checking
+// placeholders, inline style tags, and indexed colour lists.
 func ParseStatusConfig(cfg StatusConfig) (StatusFormat, error) {
+	return ParseStatusConfigIn(cfg, activeTheme)
+}
+
+// ParseStatusConfigIn validates a StatusConfig against t, checking
+// placeholders, inline style tags (including theme.* variables), and indexed
+// colour lists.
+func ParseStatusConfigIn(cfg StatusConfig, t Theme) (StatusFormat, error) {
 	f := StatusFormat{
 		Left:           cfg.Left,
 		Right:          cfg.Right,
@@ -240,7 +247,7 @@ func ParseStatusConfig(cfg StatusConfig) (StatusFormat, error) {
 	if len(cfg.Scripts) > 0 {
 		f.Scripts = make(map[string]StatusScriptSpec, len(cfg.Scripts))
 		for name, sc := range cfg.Scripts {
-			spec, err := parseStatusScript(name, sc)
+			spec, err := parseStatusScriptIn(name, sc, &t)
 			if err != nil {
 				return f, err
 			}
@@ -276,13 +283,13 @@ func ParseStatusConfig(cfg StatusConfig) (StatusFormat, error) {
 		{"pane_id_active", f.PaneIDActive, paneIDFields, &f.paneIDActParts},
 	}
 	for _, c := range checks {
-		if err := checkFormat(c.value, c.allowed); err != nil {
+		if err := checkFormatIn(c.value, c.allowed, &t); err != nil {
 			if strings.Contains(err.Error(), "unknown placeholder {script:") {
 				return f, fmt.Errorf("status.%s: %w (define it under [status.scripts.<name>])", c.name, err)
 			}
 			return f, fmt.Errorf("status.%s: %w", c.name, err)
 		}
-		cp := compileFormat(c.value)
+		cp := compileFormatIn(c.value, &t)
 		*c.dst = cp
 		f.compiled[c.value] = cp
 	}
@@ -301,23 +308,23 @@ func ParseStatusConfig(cfg StatusConfig) (StatusFormat, error) {
 		{"current_pane_id_zoom_glyphs", f.CurrentPaneIDZoomGlyphs},
 	} {
 		for i, g := range list.vals {
-			if err := checkFormat(g, nil); err != nil {
+			if err := checkFormatIn(g, nil, &t); err != nil {
 				return f, fmt.Errorf("status.%s[%d]: %w", list.name, i, err)
 			}
-			f.compiled[g] = compileFormat(g)
+			f.compiled[g] = compileFormatIn(g, &t)
 		}
 	}
 	for proc, g := range f.ProcessGlyphs {
-		if err := checkFormat(g, nil); err != nil {
+		if err := checkFormatIn(g, nil, &t); err != nil {
 			return f, fmt.Errorf("status.process_glyphs.%s: %w", proc, err)
 		}
-		f.compiled[g] = compileFormat(g)
+		f.compiled[g] = compileFormatIn(g, &t)
 	}
 	var err error
-	if f.TabColors, err = parseColorList("status.tab_colors", cfg.TabColors); err != nil {
+	if f.TabColors, err = parseColorListIn("status.tab_colors", cfg.TabColors, t); err != nil {
 		return f, err
 	}
-	if f.PaneColors, err = parseColorList("status.pane_colors", cfg.PaneColors); err != nil {
+	if f.PaneColors, err = parseColorListIn("status.pane_colors", cfg.PaneColors, t); err != nil {
 		return f, err
 	}
 	return f, nil
@@ -328,7 +335,7 @@ const (
 	defaultScriptTimeout  = 2 * time.Second
 )
 
-func parseStatusScript(name string, sc StatusScriptConfig) (StatusScriptSpec, error) {
+func parseStatusScriptIn(name string, sc StatusScriptConfig, t *Theme) (StatusScriptSpec, error) {
 	var spec StatusScriptSpec
 	if name == "" || strings.ContainsAny(name, " \t\r\n{}:") {
 		return spec, fmt.Errorf("status.scripts.%q: invalid script name", name)
@@ -362,7 +369,7 @@ func parseStatusScript(name string, sc StatusScriptConfig) (StatusScriptSpec, er
 	fallback := "{fg=red}[err]{/}"
 	if sc.Fallback != nil {
 		if *sc.Fallback != "" {
-			if err := checkFormat(*sc.Fallback, nil); err != nil {
+			if err := checkFormatIn(*sc.Fallback, nil, t); err != nil {
 				return spec, fmt.Errorf("status.scripts.%s.fallback: %w", name, err)
 			}
 		}
@@ -376,13 +383,13 @@ func parseStatusScript(name string, sc StatusScriptConfig) (StatusScriptSpec, er
 	}, nil
 }
 
-func parseColorList(field string, raw []string) ([]vt.Color, error) {
+func parseColorListIn(field string, raw []string, t Theme) ([]vt.Color, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
 	colors := make([]vt.Color, len(raw))
 	for i, s := range raw {
-		c, err := ParseColor(s)
+		c, err := ParseColorInTheme(s, t)
 		if err != nil {
 			return nil, fmt.Errorf("%s[%d]: %w", field, i, err)
 		}
@@ -442,11 +449,15 @@ func (f StatusFormat) paneColor(idx int) vt.Color {
 }
 
 func checkFormat(format string, allowed []string) error {
+	return checkFormatIn(format, allowed, nil)
+}
+
+func checkFormatIn(format string, allowed []string, t *Theme) error {
 	depth := 0
 	for _, part := range splitFormat(format) {
 		switch part.kind {
 		case partStylePush:
-			if _, err := parseStyleTag(part.text); err != nil {
+			if _, err := parseStyleTagIn(part.text, t); err != nil {
 				return err
 			}
 			depth++
@@ -539,6 +550,10 @@ type styleSpec struct {
 }
 
 func parseStyleTag(inner string) (styleSpec, error) {
+	return parseStyleTagIn(inner, nil)
+}
+
+func parseStyleTagIn(inner string, t *Theme) (styleSpec, error) {
 	var spec styleSpec
 	for _, raw := range strings.Split(inner, ",") {
 		tok := strings.TrimSpace(raw)
@@ -554,8 +569,16 @@ func parseStyleTag(inner string) (styleSpec, error) {
 				ref = colorRef{set: true, dynamic: v}
 			default:
 				norm := strings.TrimPrefix(v, "theme.")
-				if _, hasTheme := themeColor(norm); hasTheme {
-					ref = colorRef{set: true, dynamic: norm}
+				var hasTheme bool
+				if t != nil {
+					_, hasTheme = t.ResolveColor(norm)
+				} else {
+					_, hasTheme = themeColor(norm)
+				}
+				if hasTheme {
+					ref = colorRef{set: true, dynamic: normalizeThemeKey(norm)}
+				} else if strings.HasPrefix(v, "theme.") {
+					return spec, fmt.Errorf("{%s}: unknown theme variable %q", inner, v)
 				} else {
 					c, err := ParseColor(v)
 					if err != nil {
@@ -640,12 +663,16 @@ type compiledPart struct {
 }
 
 func compileFormat(format string) []compiledPart {
+	return compileFormatIn(format, nil)
+}
+
+func compileFormatIn(format string, t *Theme) []compiledPart {
 	raw := splitFormat(format)
 	out := make([]compiledPart, len(raw))
 	for i, p := range raw {
 		out[i] = compiledPart{kind: p.kind, text: p.text}
 		if p.kind == partStylePush {
-			if spec, err := parseStyleTag(p.text); err == nil {
+			if spec, err := parseStyleTagIn(p.text, t); err == nil {
 				out[i].spec = spec
 			}
 		}

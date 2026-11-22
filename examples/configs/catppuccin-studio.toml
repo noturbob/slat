@@ -29,16 +29,16 @@ name = "catppuccin"
 style = "rounded"
 
 [status]
-left           = "{prefix} {fg=bg,bg=accent,bold} {workspace} {/} {tabs}"
-right          = "{script:git} {badge}{workspaces} {fg=dim}pane {pane}/{panes}{/} {fg=accent}{time}{/} "
+left           = "{prefix} {fg=theme.background,bg=theme.accent,bold} {workspace} {/} {tabs}"
+right          = "{script:git} {badge}{workspaces} {fg=theme.dim}pane {pane}/{panes}{/} {fg=theme.accent}{time}{/} "
 tab            = " {tab_glyph} {index}:{name} {current_pane_glyph}{alert} "
-tab_active     = "{fg=tab_active_fg,bg=tab_active_bg,bold} {tab_glyph} {index}:{name} {current_pane_id_glyph}{alert} {/}"
+tab_active     = "{fg=theme.tab_active_fg,bg=theme.tab_active_bg,bold} {tab_glyph} {index}:{name} {current_pane_id_glyph}{alert} {/}"
 tab_sep        = " "
 alert          = "{fg=red,bold} ●{/}"
-prefix         = "{fg=dim,bg=tab_bg}  {/}"
-prefix_active  = "{fg=bg,bg=accent,bold} ⌘ {/}"
-pane_id        = "{fg=tab_fg,bg=tab_bg} #{id} {/}"
-pane_id_active = "{fg=bg,bg=accent,bold} #{id} {/}"
+prefix         = "{fg=theme.dim,bg=theme.tab_bg}  {/}"
+prefix_active  = "{fg=theme.background,bg=theme.accent,bold} ⌘ {/}"
+pane_id        = "{fg=theme.tab_fg,bg=theme.tab_bg} #{id} {/}"
+pane_id_active = "{fg=theme.background,bg=theme.accent,bold} #{id} {/}"
 tab_glyphs               = ["◆"]
 tab_zoom_glyph           = "▣"
 current_pane_glyphs         = ["₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"]

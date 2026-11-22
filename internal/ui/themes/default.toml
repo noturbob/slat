@@ -1,0 +1,10 @@
+# Default slat palette (xterm-256 indices).
+bg            = "235"
+fg            = "252"
+dim           = "248"
+accent        = "44"
+border        = "240"
+tab_bg        = "236"
+tab_fg        = "250"
+tab_active_bg = "25"
+tab_active_fg = "231"

@@ -1,0 +1,10 @@
+# Catppuccin Latte (light terminal)
+bg            = "#e6e9ef"
+fg            = "#4c4f69"
+dim           = "#6c6f85"
+accent        = "#8839ef"
+border        = "#bcc0cc"
+tab_bg        = "#dce0e8"
+tab_fg        = "#5c5f77"
+tab_active_bg = "#1e66f5"
+tab_active_fg = "#eff1f5"

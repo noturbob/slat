@@ -428,9 +428,14 @@ type Splash struct {
 	Bg       vt.Color
 }
 
-// ParseSplash builds and validates a Splash from config strings. Empty fg/subFg
-// keep the active theme's banner colours; bg accepts ""/"transparent" for default.
+// ParseSplash builds and validates a Splash from config strings against the active theme.
 func ParseSplash(art []string, subtitle, hint, fg, subFg, bg string) (Splash, error) {
+	return ParseSplashIn(art, subtitle, hint, fg, subFg, bg, activeTheme)
+}
+
+// ParseSplashIn builds and validates a Splash from config strings against t.
+// Empty fg/subFg keep the active theme's banner colours; bg accepts ""/"transparent" for default.
+func ParseSplashIn(art []string, subtitle, hint, fg, subFg, bg string, t Theme) (Splash, error) {
 	sp := Splash{
 		Art:      art,
 		Subtitle: subtitle,
@@ -442,21 +447,21 @@ func ParseSplash(art []string, subtitle, hint, fg, subFg, bg string) (Splash, er
 		sp.Art = bannerArt
 	}
 	if fg != "" {
-		c, err := ParseColor(fg)
+		c, err := ParseColorInTheme(fg, t)
 		if err != nil {
 			return sp, fmt.Errorf("splash.fg: %w", err)
 		}
 		sp.Style.Fg = c
 	}
 	if subFg != "" {
-		c, err := ParseColor(subFg)
+		c, err := ParseColorInTheme(subFg, t)
 		if err != nil {
 			return sp, fmt.Errorf("splash.sub_fg: %w", err)
 		}
 		sp.SubStyle.Fg = c
 	}
 	if bg != "" && !isTransparent(bg) {
-		c, err := ParseColor(bg)
+		c, err := ParseColorInTheme(bg, t)
 		if err != nil {
 			return sp, fmt.Errorf("splash.bg: %w", err)
 		}

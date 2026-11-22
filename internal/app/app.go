@@ -108,22 +108,22 @@ func New(cfg *config.Config) (*App, error) {
 	if cfg == nil {
 		return nil, errors.New("config must not be nil")
 	}
-	theme, err := ui.ParseTheme(cfg.Theme)
+	theme, err := ui.ParseThemeWith(cfg.Theme, cfg.ThemeVars, cfg.UserThemes)
 	if err != nil {
 		return nil, err
 	}
 	theme.Apply()
-	dlg, err := ui.ParseDialogTheme(cfg.Dialog)
+	dlg, err := ui.ParseDialogThemeIn(cfg.Dialog, theme)
 	if err != nil {
 		return nil, err
 	}
 	dlg.Apply()
-	fnd, err := ui.ParseFinderTheme(cfg.Finder)
+	fnd, err := ui.ParseFinderThemeIn(cfg.Finder, theme)
 	if err != nil {
 		return nil, err
 	}
 	fnd.Apply()
-	stk, err := ui.ParseStackTheme(cfg.Stack)
+	stk, err := ui.ParseStackThemeIn(cfg.Stack, theme)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +133,7 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 	borders.Apply()
-	status, err := ui.ParseStatusConfig(cfg.Status)
+	status, err := ui.ParseStatusConfigIn(cfg.Status, theme)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +146,7 @@ func New(cfg *config.Config) (*App, error) {
 	if cfg.Splash.HasHint {
 		hint = strings.ReplaceAll(cfg.Splash.Hint, "{prefix}", prefixName)
 	}
-	splash, err := ui.ParseSplash(cfg.Splash.Art, subtitle, hint, cfg.Splash.Fg, cfg.Splash.SubFg, cfg.Splash.Bg)
+	splash, err := ui.ParseSplashIn(cfg.Splash.Art, subtitle, hint, cfg.Splash.Fg, cfg.Splash.SubFg, cfg.Splash.Bg, theme)
 	if err != nil {
 		return nil, err
 	}

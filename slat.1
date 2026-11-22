@@ -140,6 +140,19 @@ Send a command and press Enter.
 .B slat capture \fIPANE\fR [\fB--lines \fIN\fR] [\fB--history\fR]
 Print a pane's text: the visible screen, or the scrollback too.
 .TP
+.B slat theme ls \fR[\fB--json\fR]
+List built-in and user-defined themes.
+.TP
+.B slat theme show \fR[\fINAME\fR]
+Print a theme's TOML definition to stdout (defaults to the active theme).
+.TP
+.B slat theme export \fR[\fINAME\fR] [\fB-o \fIPATH\fR] [\fB-f\fR]
+Export a theme as a TOML file (defaults to the active theme and
+.IR <name>.toml )
+and print the path in
+.I ~/.config/slat/themes/
+where it can be placed for customization.
+.TP
 .B slat wait \fIPANE\fB --for \fIidle\fR|\fIinput\fR|\fIexit\fR|\fBtext=\fIREGEX\fR [\fB--timeout \fI60s\fR]
 Block until the condition holds.
 .B --for idle
@@ -226,32 +239,52 @@ them is the terminal emulator's business.
 .SH THEMES
 The status bar, pane borders and overlays take their colours from the
 .B [theme]
-table:
+table, and custom themes can be placed in
+.IR ~/.config/slat/themes/<name>.toml :
 .PP
 .RS
 .EX
 [theme]
 name   = "gruvbox"
-accent = "#fabd2f"
+accent = "theme.peach"
+
+[theme.vars]
+peach = "#fab387"
 .EE
 .RE
 .PP
-.B name
-is one of
+Built-in palettes include
 .IR default ,
+.IR catppuccin ,
+.IR cyberpunk ,
+.IR dracula ,
 .IR gruvbox ,
+.IR latte ,
+.IR mono ,
 .IR nord ,
-.I rose-pine
-or
-.IR mono .
-The individual colours are
-.BR bg ", " fg ", " dim ", " accent ", " border ", " tab_bg ", " tab_fg ", "
-.B tab_active_bg
+.IR rose-pine ,
+.IR solarized ,
+.IR tokyo-night ,
+.I tokyonight-storm
 and
-.BR tab_active_fg ,
-each a colour name, a palette index 0-255, or
-.IR #rrggbb .
-Programs running in panes keep their own colours.
+.IR vice-city .
+The individual colours are
+.BR bg " (" background "), " fg " (" foreground "), " dim ", " accent ", "
+.BR border ", " status_bg ", " tab_bg ", " tab_fg ", " tab_active_bg ", "
+.BR tab_active_fg ", " prefix_fg ", " prefix_bg ", " prefix_active_fg
+and
+.BR prefix_active_bg ,
+each a colour name, a palette index 0-255,
+.IR #rrggbb ,
+or a
+.BI theme. var
+reference (such as
+.B theme.background
+or a custom key from
+.BR [theme.vars] ).
+Status format strings also accept
+.BI {fg=theme. var }
+inline tags. Programs running in panes keep their own colours.
 .SH NOTIFICATIONS
 A pane waiting for input marks its tab in the status bar
 .RI ( 2:shell\ ? ).

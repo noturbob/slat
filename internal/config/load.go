@@ -36,7 +36,9 @@ type Config struct {
 	Stack      ui.StackTheme     `toml:"stack"`
 	Keybinds   map[string]string `toml:"keybinds"`
 	Shortcuts  map[string]string `toml:"shortcuts"`
-	Theme      map[string]string `toml:"theme"`
+	Theme      map[string]string `toml:"-"`
+	ThemeVars  map[string]string `toml:"-"`
+	UserThemes map[string]ui.Theme `toml:"-"`
 	Borders    map[string]string `toml:"borders"`
 	Status     ui.StatusConfig   `toml:"status"`
 	Copy       Copy              `toml:"copy"`
@@ -235,8 +237,7 @@ func defaultShell() string {
 	return "/bin/sh"
 }
 
-// Path returns the config file location, honoring $XDG_CONFIG_HOME.
-func Path() string {
+func configDir() string {
 	dir := os.Getenv("XDG_CONFIG_HOME")
 	if dir == "" {
 		home, err := os.UserHomeDir()
@@ -245,7 +246,25 @@ func Path() string {
 		}
 		dir = filepath.Join(home, ".config")
 	}
-	return filepath.Join(dir, "slat", "config.toml")
+	return filepath.Join(dir, "slat")
+}
+
+// Path returns the config file location, honoring $XDG_CONFIG_HOME.
+func Path() string {
+	dir := configDir()
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "config.toml")
+}
+
+// ThemesDir returns the directory for user-defined *.toml themes.
+func ThemesDir() string {
+	dir := configDir()
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "themes")
 }
 
 // Load reads the default config file, falling back to defaults if it does
@@ -263,12 +282,43 @@ func LoadFrom(path string) (*Config, error) {
 	return loadFile(path, false)
 }
 
+type decodeConfig struct {
+	Config
+	RawTheme map[string]toml.Primitive `toml:"theme"`
+}
+
+func unpackThemeTable(md toml.MetaData, raw map[string]toml.Primitive) (settings, vars map[string]string, err error) {
+	if len(raw) == 0 {
+		return nil, nil, nil
+	}
+	settings = make(map[string]string, len(raw))
+	for k, prim := range raw {
+		if k == "vars" {
+			if err := md.PrimitiveDecode(prim, &vars); err != nil {
+				return nil, nil, fmt.Errorf("theme.vars: %w", err)
+			}
+			continue
+		}
+		var s string
+		if err := md.PrimitiveDecode(prim, &s); err != nil {
+			return nil, nil, fmt.Errorf("theme.%s: %w", k, err)
+		}
+		settings[k] = s
+	}
+	return settings, vars, nil
+}
+
 func loadFile(path string, allowMissing bool) (*Config, error) {
 	cfg := DefaultConfig()
+	userThemes, err := ui.LoadThemesFromDir(ThemesDir())
+	if err != nil {
+		return nil, err
+	}
+	cfg.UserThemes = userThemes
 	if path == "" {
 		return cfg, nil
 	}
-	user := &Config{StatusBar: true, Animations: true, AutoRename: true}
+	user := &decodeConfig{Config: Config{StatusBar: true, Animations: true, AutoRename: true}}
 	md, err := toml.DecodeFile(path, user)
 	if allowMissing && errors.Is(err, os.ErrNotExist) {
 		return cfg, nil
@@ -276,7 +326,13 @@ func loadFile(path string, allowMissing bool) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	if mergeErr := cfg.merge(user, md); mergeErr != nil {
+	settings, vars, err := unpackThemeTable(md, user.RawTheme)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	user.Config.Theme = settings
+	user.Config.ThemeVars = vars
+	if mergeErr := cfg.merge(&user.Config, md); mergeErr != nil {
 		return nil, fmt.Errorf("%s: %w", path, mergeErr)
 	}
 	return cfg, nil
@@ -304,10 +360,14 @@ func (cfg *Config) merge(user *Config, md toml.MetaData) error {
 	// Parsed here rather than at draw time, so a bad colour is reported
 	// when the user runs slat instead of painting something odd.
 	if len(user.Theme) > 0 {
-		if _, err := ui.ParseTheme(user.Theme); err != nil {
-			return err
-		}
 		cfg.Theme = user.Theme
+	}
+	if len(user.ThemeVars) > 0 {
+		cfg.ThemeVars = user.ThemeVars
+	}
+	theme, err := ui.ParseThemeWith(cfg.Theme, cfg.ThemeVars, cfg.UserThemes)
+	if err != nil {
+		return err
 	}
 	if len(user.Borders) > 0 {
 		if _, err := ui.ParseBorders(user.Borders); err != nil {
@@ -315,24 +375,24 @@ func (cfg *Config) merge(user *Config, md toml.MetaData) error {
 		}
 		cfg.Borders = user.Borders
 	}
-	if err := cfg.mergeStatus(user.Status, md); err != nil {
+	if err := cfg.mergeStatus(user.Status, md, theme); err != nil {
 		return err
 	}
 	if err := cfg.mergeAnimation(user, md); err != nil {
 		return err
 	}
-	if err := cfg.mergeSplash(user.Splash, md); err != nil {
+	if err := cfg.mergeSplash(user.Splash, md, theme); err != nil {
 		return err
 	}
-	if _, err := ui.ParseDialogTheme(user.Dialog); err != nil {
+	if _, err := ui.ParseDialogThemeIn(user.Dialog, theme); err != nil {
 		return err
 	}
 	cfg.Dialog = user.Dialog
-	if _, err := ui.ParseFinderTheme(user.Finder); err != nil {
+	if _, err := ui.ParseFinderThemeIn(user.Finder, theme); err != nil {
 		return err
 	}
 	cfg.Finder = user.Finder
-	if _, err := ui.ParseStackTheme(user.Stack); err != nil {
+	if _, err := ui.ParseStackThemeIn(user.Stack, theme); err != nil {
 		return err
 	}
 	cfg.Stack = user.Stack
@@ -430,7 +490,7 @@ func (cfg *Config) mergeAgent(user Agent, md toml.MetaData) error {
 	return cfg.Agent.compile()
 }
 
-func (cfg *Config) mergeStatus(user ui.StatusConfig, md toml.MetaData) error {
+func (cfg *Config) mergeStatus(user ui.StatusConfig, md toml.MetaData, theme ui.Theme) error {
 	strings := []struct {
 		key string
 		dst *string
@@ -498,11 +558,11 @@ func (cfg *Config) mergeStatus(user ui.StatusConfig, md toml.MetaData) error {
 	if md.IsDefined("status", "scripts") {
 		cfg.Status.Scripts = user.Scripts
 	}
-	_, err := ui.ParseStatusConfig(cfg.Status)
+	_, err := ui.ParseStatusConfigIn(cfg.Status, theme)
 	return err
 }
 
-func (cfg *Config) mergeSplash(user Splash, md toml.MetaData) error {
+func (cfg *Config) mergeSplash(user Splash, md toml.MetaData, theme ui.Theme) error {
 	if md.IsDefined("splash", "enabled") {
 		cfg.Splash.Enabled = user.Enabled
 	}
@@ -532,7 +592,7 @@ func (cfg *Config) mergeSplash(user Splash, md toml.MetaData) error {
 	if md.IsDefined("splash", "bg") {
 		cfg.Splash.Bg = user.Bg
 	}
-	_, err := ui.ParseSplash(cfg.Splash.Art, cfg.Splash.Subtitle, cfg.Splash.Hint, cfg.Splash.Fg, cfg.Splash.SubFg, cfg.Splash.Bg)
+	_, err := ui.ParseSplashIn(cfg.Splash.Art, cfg.Splash.Subtitle, cfg.Splash.Hint, cfg.Splash.Fg, cfg.Splash.SubFg, cfg.Splash.Bg, theme)
 	return err
 }
 

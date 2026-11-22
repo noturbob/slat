@@ -123,8 +123,6 @@ func main() {
 		app.Version = info.Main.Version
 	}
 	m, _ := newCLIApp(defaultDeps())
-	m.EnableFlagCompletionForAllCommands = true
-	m.AddCompletion()
 	m.Run(os.Args[1:]...)
 }
 
@@ -157,11 +155,12 @@ func addCmd[T any](
 func newCLIApp(deps cliDeps) (*mcli.App, *globalFlags) {
 	m := mcli.NewApp()
 	m.Description = "slat — a terminal multiplexer"
+	userThemes, _ := ui.LoadThemesFromDir(config.ThemesDir())
 	m.Options = mcli.Options{
 		KeepCommandOrder: true,
 		HelpFooter: fmt.Sprintf(
-			"Inside slat, press the prefix (Ctrl-S by default) then ? for keybindings.\nConfig: %s\nThemes: %s (set theme.name; any colour can be overridden)",
-			config.Path(), strings.Join(ui.ThemeNames(), ", "),
+			"Inside slat, press the prefix (Ctrl-S by default) then ? for keybindings.\nConfig: %s\nThemes dir: %s\nThemes: %s (set theme.name; any colour can be overridden)",
+			config.Path(), config.ThemesDir(), strings.Join(ui.ThemeNamesFrom(userThemes), ", "),
 		),
 	}
 
@@ -290,6 +289,9 @@ func newCLIApp(deps cliDeps) (*mcli.App, *globalFlags) {
 	}, parseOpts...), "run the background daemon")
 
 	registerAgentCommands(m, deps, checkCmd, fail, parseOpts)
+	registerThemeCommands(m, deps, checkCmd, fail, parseOpts, &globals)
+	m.EnableFlagCompletionForAllCommands = true
+	m.AddCompletion()
 	m.AddHelp()
 	return m, &globals
 }

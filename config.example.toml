@@ -26,23 +26,30 @@ animations  = true        # false disables all animations
 
 # ── 2. Appearance ────────────────────────────────────────────────────────────
 [theme]
-# Built-in palettes:
+# Built-in palettes (embedded TOML themes):
 #   catppuccin, cyberpunk, default, dracula, gruvbox, latte, mono, nord,
 #   rose-pine, solarized, tokyo-night, tokyonight-storm, vice-city
 # ("latte" and "mono" are designed for light terminals.)
+#
+# Custom or overridden themes can also be placed in:
+#   ~/.config/slat/themes/<name>.toml
 name = "default"
 
-# Override any individual colour (name, 0-255 index, or "#rrggbb"):
-# bg            = 235
+# Override any individual colour (name, 0-255 index, "#rrggbb", or "theme.<var>"):
+# bg            = 235         # alias: background
 # status_bg     = ""          # "" or "transparent" uses terminal default bg
-# fg            = 252
+# fg            = 252         # alias: foreground
 # dim           = 248
 # accent        = "#00d7d7"
 # border        = 240
 # tab_bg        = 236
 # tab_fg        = 250
 # tab_active_bg = 25
-# tab_active_fg = 231
+# tab_active_fg = "theme.background"
+
+# Custom palette variables usable anywhere as "theme.<name>" or "{fg=theme.<name>}":
+# [theme.vars]
+# highlight = "#f9e2af"
 
 [borders]
 style = "sharp"           # sharp, rounded, heavy, double, dashed, none
@@ -59,24 +66,32 @@ enabled  = true
 duration = "700ms"        # "0s" skips the startup banner
 # subtitle = "terminal multiplexer {version}"
 # hint     = "press {prefix} then ? for help"
+# fg       = "theme.accent"
+# sub_fg   = "theme.dim"
+# bg       = "theme.background"
 
-# Optional modal/finder/stack colour overrides (inherit from [theme] when unset):
+# Optional modal/finder/stack colour overrides (inherit from [theme] when unset;
+# accept colour names, 0-255, #rrggbb, or theme.<var> references):
 [dialog]
-# fg = 252
-# head_fg = "#00d7d7"
+# fg      = "theme.foreground"
+# head_fg = "theme.accent"
+# bg      = "theme.background"
 [finder]
-# sel_bg = 25
+# sel_bg  = "theme.tab_active_bg"
 [stack]
-# active_bg = 25
+# active_bg = "theme.accent"
 
 # ── 3. Status Bar & Theme Colours ────────────────────────────────────────────
 # Inline style tags work in any status string and status script output:
-#   {fg=accent,bg=tab_bg,bold}TEXT{/}
+#   {fg=theme.background,bg=theme.accent,bold}TEXT{/}
 # Colours accept:
 #   - Standard names / 0-255 / #rrggbb: red, bright-cyan, 208, #f9e2af
-#   - Active [theme] names: bg, fg, dim, accent, border, status_bg,
-#     tab_bg, tab_fg, tab_active_bg, tab_active_fg, prefix_fg, prefix_bg,
-#     prefix_active_fg, prefix_active_bg
+#   - Active [theme] variables (with or without the "theme." prefix):
+#     theme.background (bg), theme.foreground (fg), theme.dim, theme.accent,
+#     theme.border, theme.status_bg, theme.tab_bg, theme.tab_fg,
+#     theme.tab_active_bg, theme.tab_active_fg, theme.prefix_fg,
+#     theme.prefix_bg, theme.prefix_active_fg, theme.prefix_active_bg,
+#     plus any custom keys from [theme.vars] / [vars]
 #   - Dynamic indices: tab, pane, default
 #
 # Common placeholders for left/right:
@@ -86,17 +101,17 @@ duration = "700ms"        # "0s" skips the startup banner
 #   {index} {name} {alert} {tab_glyph} {tab_index_glyph}
 #   {pane_glyph} {current_pane_glyph} {current_pane_id_glyph} {zoom}
 [status]
-left           = " {fg=accent,bold}{workspace}{/} │ {tabs}"
-right          = "{badge}{workspaces} {fg=dim}pane {pane}/{panes}{/} "
+left           = " {fg=theme.accent,bold}{workspace}{/} │ {tabs}"
+right          = "{badge}{workspaces} {fg=theme.dim}pane {pane}/{panes}{/} "
 tab            = " {index}:{name}{alert} "
-# tab_active   = "{fg=tab_active_fg,bg=tab_active_bg,bold} {index}:{name}{alert} {/}"
+# tab_active   = "{fg=theme.tab_active_fg,bg=theme.tab_active_bg,bold} {index}:{name}{alert} {/}"
 # tab_sep      = " "
 alert          = "{fg=red,bold} ?{/}"
-# prefix       = "{fg=dim,bg=tab_bg}  {/}"
-# prefix_active= "{fg=bg,bg=accent,bold} ⌘ {/}"
+# prefix       = "{fg=theme.dim,bg=theme.tab_bg}  {/}"
+# prefix_active= "{fg=theme.background,bg=theme.accent,bold} ⌘ {/}"
 # zoom         = " ▣"
-# pane_id      = "{fg=tab_fg,bg=tab_bg} {id} {/}"           # toggled with <prefix> i
-# pane_id_active = "{fg=bg,bg=accent,bold} {id} {/}"
+# pane_id      = "{fg=theme.tab_fg,bg=theme.tab_bg} {id} {/}"   # toggled with <prefix> i
+# pane_id_active = "{fg=theme.background,bg=theme.accent,bold} {id} {/}"
 
 # Optional glyph arrays (provide 10 entries 0-9 for multi-digit numbers):
 # tab_index_glyphs            = ["⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"]

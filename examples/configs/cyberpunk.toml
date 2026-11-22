@@ -26,16 +26,16 @@ name = "cyberpunk"
 style = "sharp"
 
 [status]
-left           = "{prefix} {fg=bg,bg=accent,bold} {workspace} {/} {tabs}"
-right          = "{script:git} {badge}{workspaces} {fg=accent}#{pane}/{panes}{/} {fg=dim}{seconds}{/} "
+left           = "{prefix} {fg=theme.background,bg=theme.accent,bold} {workspace} {/} {tabs}"
+right          = "{script:git} {badge}{workspaces} {fg=theme.accent}#{pane}/{panes}{/} {fg=theme.dim}{seconds}{/} "
 tab            = " {index}:{name} {current_pane_glyph}{alert} "
-tab_active     = "{fg=tab_active_fg,bg=tab_active_bg,bold} {index}:{name} {current_pane_id_glyph}{alert} {/}"
-tab_sep        = "{fg=border}╱{/}"
-alert          = "{fg=accent,bold} ⚡{/}"
-prefix         = "{fg=tab_fg,bg=tab_bg} // {/}"
-prefix_active  = "{fg=bg,bg=accent,bold} >> {/}"
-pane_id        = "{fg=tab_fg,bg=tab_bg} [{id}] {/}"
-pane_id_active = "{fg=bg,bg=accent,bold} [{id}] {/}"
+tab_active     = "{fg=theme.tab_active_fg,bg=theme.tab_active_bg,bold} {index}:{name} {current_pane_id_glyph}{alert} {/}"
+tab_sep        = "{fg=theme.border}╱{/}"
+alert          = "{fg=theme.accent,bold} ⚡{/}"
+prefix         = "{fg=theme.tab_fg,bg=theme.tab_bg} // {/}"
+prefix_active  = "{fg=theme.background,bg=theme.accent,bold} >> {/}"
+pane_id        = "{fg=theme.tab_fg,bg=theme.tab_bg} [{id}] {/}"
+pane_id_active = "{fg=theme.background,bg=theme.accent,bold} [{id}] {/}"
 current_pane_glyphs         = ["𝟶", "𝟷", "𝟸", "𝟹", "𝟺", "𝟻", "𝟼", "𝟽", "𝟾", "𝟿"]
 current_pane_zoom_glyphs    = ["𝟬", "𝟭", "𝟮", "𝟯", "𝟰", "𝟱", "𝟲", "𝟳", "𝟴", "𝟵"]
 current_pane_id_glyphs      = ["𝟘", "𝟙", "𝟚", "𝟛", "𝟜", "𝟝", "𝟞", "𝟟", "𝟠", "𝟡"]

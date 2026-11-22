@@ -399,6 +399,9 @@ $ slat capture 3 --lines 20             # read what it printed
 | `slat run PANE COMMAND...` | send a command and press Enter |
 | `slat capture PANE [--lines N] [--history]` | read a pane's text |
 | `slat wait PANE --for idle\|input\|exit\|text=REGEX [--timeout 60s]` | block until something happens |
+| `slat theme ls [--json]` | list built-in and user themes |
+| `slat theme show [NAME]` | print a theme's TOML definition to stdout |
+| `slat theme export [NAME] [-o PATH] [-f]` | export a theme TOML file for customization (and show where to place it) |
 
 `PANE` is an id from `slat ls`, or `active` (the default). `--json` on any
 command prints one object with a `schema` field. Exit codes: **0** ok,
@@ -514,13 +517,20 @@ resize-shrink    = "_"    # "-" was given away above
 zoom             = ""     # "" unbinds a command
 ```
 
-- `[theme]` colours are `bg`, `status_bg`, `fg`, `dim`, `accent`, `border`,
-  `tab_bg`, `tab_fg`, `tab_active_bg`, `tab_active_fg`, `prefix_fg`,
-  `prefix_bg`, `prefix_active_fg` and `prefix_active_bg`, written as a colour
-  name, a palette index (0-255) or `#rrggbb` (`status_bg` and `*_bg` also
-  accept `""` or `"transparent"` for the terminal's default background). Only
-  what slat draws is themed — pane contents keep whatever colours the programs
-  in them use.
+- `[theme]` picks a built-in palette (loaded from externalized theme TOML files)
+  or a custom theme file from `~/.config/slat/themes/<name>.toml` (which can
+  add new themes or override built-in ones). Colours are `bg` (alias
+  `background`), `status_bg`, `fg` (alias `foreground`), `dim`, `accent`,
+  `border`, `tab_bg`, `tab_fg`, `tab_active_bg`, `tab_active_fg`, `prefix_fg`,
+  `prefix_bg`, `prefix_active_fg`, and `prefix_active_bg`, written as a colour
+  name, a palette index (0-255), `#rrggbb`, or a `theme.<var>` reference
+  (`status_bg` and `*_bg` also accept `""` or `"transparent"` for the
+  terminal's default background). You can also define custom palette variables
+  under `[theme.vars]` (or `[vars]` in a `~/.config/slat/themes/<name>.toml`
+  file) and reference them anywhere as `theme.<name>` — including in `[dialog]`,
+  `[finder]`, `[stack]`, `[splash]`, `status.tab_colors`/`pane_colors`, and
+  status tags like `{fg=theme.background,bg=theme.accent}`. Only what slat draws
+  is themed — pane contents keep whatever colours the programs in them use.
 - `[status]` takes `left`, `right`, `tab`, `tab_active`, `tab_sep`, `alert`,
   `prefix`, `prefix_active`, `zoom`, `tab_zoom_glyph`, `pane_id`,
   `pane_id_active`, `tab_colors`, `pane_colors`, `tab_glyphs`,
@@ -544,8 +554,8 @@ zoom             = ""     # "" unbinds a command
   in the top-right corner of each pane with `identify-panes`, default `prefix`
   + `i`) accept `{id}` `{index}` `{pane_glyph}` `{current_pane_id_glyph}`; and
   `tab_sep` (default `" "`, set to `""` to remove space between tabs) is drawn
-  between tabs. Inline style tags like `{fg=cyan,bg=236,bold}🐟{/}` or `{fg=accent,bg=tab_bg}●{/}` colour any Unicode glyph or span (using a colour name, 0–255 index, `#rrggbb`
-  hex, an active `[theme]` key such as `accent`, `bg`, `fg`, `dim`, `status_bg`, `tab_bg`, `tab_fg`, `tab_active_bg`, `tab_active_fg`, or `tab`/`pane` to pick from `tab_colors`/`pane_colors` by index). When
+  between tabs. Inline style tags like `{fg=cyan,bg=236,bold}🐟{/}` or `{fg=theme.background,bg=theme.accent}●{/}` colour any Unicode glyph or span (using a colour name, 0–255 index, `#rrggbb`
+  hex, an active `[theme]` variable such as `theme.background` / `bg`, `theme.foreground` / `fg`, `theme.accent`, `theme.dim`, `theme.status_bg`, `theme.tab_bg`, `theme.tab_fg`, `theme.tab_active_bg`, `theme.tab_active_fg`, any `[theme.vars]` key, or `tab`/`pane` to pick from `tab_colors`/`pane_colors` by index). When
   `{prefix}` is used, `{badge}` omits `"PREFIX"`; when `{zoom}` or an enabled
   `[status.zoom_glyphs]` override is active, `{badge}` omits `"ZOOM"`.
 - `[status.scripts.<name>]` runs a shell command on an `interval` (default
