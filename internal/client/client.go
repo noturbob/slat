@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -26,7 +27,7 @@ const (
 // Run attaches this terminal to the daemon at sockPath and returns once the
 // client is detached or the session ends. The terminal is always restored.
 func Run(sockPath string) (detached bool, err error) {
-	conn, err := net.Dial("unix", sockPath)
+	conn, err := (&net.Dialer{}).DialContext(context.Background(), "unix", sockPath)
 	if err != nil {
 		return false, fmt.Errorf("connect to daemon: %w", err)
 	}
@@ -125,7 +126,7 @@ func Run(sockPath string) (detached bool, err error) {
 	}
 	// The daemon removes its socket before hanging up when the session
 	// ends, so a socket that still answers means we were only detached.
-	c, err := net.Dial("unix", sockPath)
+	c, err := (&net.Dialer{}).DialContext(context.Background(), "unix", sockPath)
 	if err == nil {
 		if cErr := c.Close(); cErr != nil {
 			log.Printf("slat: close probe socket: %v", cErr)

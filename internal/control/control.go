@@ -4,6 +4,7 @@
 package control
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -72,7 +73,7 @@ func Errorf(code int, format string, args ...any) Response {
 // Control connections never attach to the session, so they don't disturb
 // whoever is using it.
 func Do(sock string, req Request, timeout time.Duration) (Response, error) {
-	conn, err := net.Dial("unix", sock)
+	conn, err := (&net.Dialer{}).DialContext(context.Background(), "unix", sock)
 	if err != nil {
 		return Response{}, fmt.Errorf("no slat session (%w)", err)
 	}

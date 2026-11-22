@@ -3,6 +3,7 @@
 package pane
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -31,7 +32,7 @@ func startPTY(shell, dir string, rows, cols int) (ptyProcess, error) {
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	cmd := exec.Command(shell)
+	cmd := exec.CommandContext(context.Background(), shell)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 	cmd.Dir = dir
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})

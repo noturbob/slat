@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -410,7 +411,7 @@ func runClientWithConfig(sock, dir, presetPath, configPath string) error {
 }
 
 func daemonAlive(sock string) bool {
-	c, err := net.DialTimeout("unix", sock, 200*time.Millisecond)
+	c, err := (&net.Dialer{Timeout: 200 * time.Millisecond}).DialContext(context.Background(), "unix", sock)
 	if err != nil {
 		return false
 	}
@@ -454,7 +455,7 @@ func spawnDaemon(sock, dir, presetPath, configPath string) error {
 	if configPath != "" {
 		daemonArgs = append(daemonArgs, "--config", configPath)
 	}
-	cmd := exec.Command(exe, daemonArgs...)
+	cmd := exec.CommandContext(context.Background(), exe, daemonArgs...)
 	if dir != "" {
 		cmd.Dir = dir
 	}

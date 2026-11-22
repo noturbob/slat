@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -83,7 +84,7 @@ func (s *Server) SetPreset(p session.Preset) {
 func (s *Server) Run() error {
 	// Two clients starting at once can race to spawn two daemons; the
 	// loser must not delete the winner's socket and orphan its session.
-	if c, err := net.DialTimeout("unix", s.sockPath, 200*time.Millisecond); err == nil {
+	if c, err := (&net.Dialer{Timeout: 200 * time.Millisecond}).DialContext(context.Background(), "unix", s.sockPath); err == nil {
 		if cErr := c.Close(); cErr != nil {
 			log.Printf("slat: close probe socket: %v", cErr)
 		}
