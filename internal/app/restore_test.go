@@ -32,8 +32,8 @@ func TestSessionSurvivesTheDaemon(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("no session was saved: %v", err)
+	if _, statErr := os.Stat(path); statErr != nil {
+		t.Fatalf("no session was saved: %v", statErr)
 	}
 
 	b, term2 := start(t)
@@ -99,12 +99,12 @@ func TestUnreadableStateStartsCleanly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
+	if mkdirErr := os.MkdirAll(filepath.Dir(path), 0o700); mkdirErr != nil {
+		t.Fatal(mkdirErr)
 	}
 	for _, content := range []string{`{"version":99,"workspaces":[{}]}`, `not json at all`, `{}`} {
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
+		if writeErr := os.WriteFile(path, []byte(content), 0o600); writeErr != nil {
+			t.Fatal(writeErr)
 		}
 		a, _ := start(t)
 		if n := len(activePanes(a)); n != 1 {

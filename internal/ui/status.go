@@ -553,7 +553,7 @@ func parseStyleTag(inner string) (styleSpec, error) {
 				ref = colorRef{set: true, dynamic: v}
 			default:
 				norm := strings.TrimPrefix(v, "theme.")
-				if _, ok := themeColor(norm); ok {
+				if _, hasTheme := themeColor(norm); hasTheme {
 					ref = colorRef{set: true, dynamic: norm}
 				} else {
 					c, err := ParseColor(v)

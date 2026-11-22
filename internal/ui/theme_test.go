@@ -43,8 +43,8 @@ func TestParseTheme(t *testing.T) {
 	}
 
 	// No settings at all is the default theme.
-	if got, err := ParseTheme(nil); err != nil || got != themes["default"] {
-		t.Errorf("ParseTheme(nil) = %v, %v", got, err)
+	if defTheme, defErr := ParseTheme(nil); defErr != nil || defTheme != themes["default"] {
+		t.Errorf("ParseTheme(nil) = %v, %v", defTheme, defErr)
 	}
 
 	// Prefix indicator colours can be customised via name, 0-255, or hex.
@@ -91,7 +91,7 @@ func TestParseTheme(t *testing.T) {
 		styleBox.Bg != vt.RGB(0x1e, 0x1e, 0x2e) {
 		t.Errorf("dialog styles = box:%+v head:%+v key:%+v text:%+v", styleBox, styleBoxHead, styleBoxKey, styleBoxText)
 	}
-	if _, err := ParseDialogTheme(DialogTheme{Fg: "notacolor"}); err == nil {
+	if _, badErr := ParseDialogTheme(DialogTheme{Fg: "notacolor"}); badErr == nil {
 		t.Error("expected error for invalid dialog.fg")
 	}
 
@@ -122,7 +122,7 @@ func TestParseTheme(t *testing.T) {
 		{"accnet": "red"},
 		{"border": "mauve"},
 	} {
-		if _, err := ParseTheme(bad); err == nil {
+		if _, badErr := ParseTheme(bad); badErr == nil {
 			t.Errorf("ParseTheme(%v) should have failed", bad)
 		}
 	}

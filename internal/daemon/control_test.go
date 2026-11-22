@@ -57,8 +57,8 @@ func TestControlLifecycle(t *testing.T) {
 	if fg != "sleep" {
 		t.Errorf("foreground = %q, want sleep", fg)
 	}
-	if ls := do(t, sock, control.Request{Cmd: "ls"}); len(ls.Panes) != 2 || !ls.Panes[0].Active {
-		t.Errorf("pane new stole focus or miscounted: %+v", ls.Panes)
+	if lsAfter := do(t, sock, control.Request{Cmd: "ls"}); len(lsAfter.Panes) != 2 || !lsAfter.Panes[0].Active {
+		t.Errorf("pane new stole focus or miscounted: %+v", lsAfter.Panes)
 	}
 
 	// wait --for text: matches output that arrives later.

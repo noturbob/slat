@@ -32,8 +32,8 @@ func TestDaemonRestoresTheSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("the daemon saved nothing on the way out: %v", err)
+	if _, statErr := os.Stat(path); statErr != nil {
+		t.Fatalf("the daemon saved nothing on the way out: %v", statErr)
 	}
 
 	// A second daemon, as the next boot would start.

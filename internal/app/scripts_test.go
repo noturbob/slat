@@ -54,8 +54,8 @@ func TestShortcutExecutionAndEnv(t *testing.T) {
 		t.Errorf("unexpected SLAT_* values: %v", parts[:4])
 	}
 	var st scriptState
-	if err := json.Unmarshal([]byte(parts[4]), &st); err != nil {
-		t.Fatalf("invalid SLAT_STATE_JSON: %v (%q)", err, parts[4])
+	if jsonErr := json.Unmarshal([]byte(parts[4]), &st); jsonErr != nil {
+		t.Fatalf("invalid SLAT_STATE_JSON: %v (%q)", jsonErr, parts[4])
 	}
 	if len(st.Workspaces) != 1 || len(st.Workspaces[0].Tabs) != 1 || len(st.Workspaces[0].Tabs[0].Panes) != 1 {
 		t.Errorf("unexpected SLAT_STATE_JSON tree: %+v", st)

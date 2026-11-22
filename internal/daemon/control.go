@@ -148,8 +148,8 @@ func (s *Server) wait(req control.Request, pane string) control.Response {
 	}
 	timeout := time.Minute
 	if req.Timeout != "" {
-		d, err := time.ParseDuration(req.Timeout)
-		if err != nil || d < 0 {
+		d, durErr := time.ParseDuration(req.Timeout)
+		if durErr != nil || d < 0 {
 			return control.Errorf(control.CodeError, "bad --timeout %q", req.Timeout)
 		}
 		timeout = d
@@ -194,10 +194,10 @@ func (s *Server) reply(conn net.Conn, resp control.Response) {
 	if err != nil {
 		body = []byte(`{"schema":1,"error":"could not encode response"}`)
 	}
-	if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
-		log.Printf("slat: set control write deadline: %v", err)
+	if deadlineErr := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); deadlineErr != nil {
+		log.Printf("slat: set control write deadline: %v", deadlineErr)
 	}
-	if err := proto.WriteFrame(conn, proto.TypeControl, body); err != nil {
-		log.Printf("slat: write control response: %v", err)
+	if writeErr := proto.WriteFrame(conn, proto.TypeControl, body); writeErr != nil {
+		log.Printf("slat: write control response: %v", writeErr)
 	}
 }

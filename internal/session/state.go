@@ -285,20 +285,20 @@ func SaveState(path string, st State) error {
 			fmt.Fprintf(os.Stderr, "slat: remove temp state %s: %v\n", tmp.Name(), rErr)
 		}
 	}()
-	if err := tmp.Chmod(0o600); err != nil {
+	if chmodErr := tmp.Chmod(0o600); chmodErr != nil {
 		if cErr := tmp.Close(); cErr != nil {
-			return fmt.Errorf("%w (close: %v)", err, cErr)
+			return fmt.Errorf("%w (close: %v)", chmodErr, cErr)
 		}
-		return err
+		return chmodErr
 	}
-	if _, err := tmp.Write(data); err != nil {
+	if _, writeErr := tmp.Write(data); writeErr != nil {
 		if cErr := tmp.Close(); cErr != nil {
-			return fmt.Errorf("%w (close: %v)", err, cErr)
+			return fmt.Errorf("%w (close: %v)", writeErr, cErr)
 		}
-		return err
+		return writeErr
 	}
-	if err := tmp.Close(); err != nil {
-		return err
+	if closeErr := tmp.Close(); closeErr != nil {
+		return closeErr
 	}
 	return os.Rename(tmp.Name(), path)
 }
@@ -326,8 +326,8 @@ func LoadState(path string) (State, bool, error) {
 		return State{}, false, err
 	}
 	var st State
-	if err := json.Unmarshal(data, &st); err != nil {
-		return State{}, false, err
+	if jsonErr := json.Unmarshal(data, &st); jsonErr != nil {
+		return State{}, false, jsonErr
 	}
 	return st, st.Version == stateVersion && len(st.Workspaces) > 0, nil
 }

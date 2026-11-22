@@ -220,8 +220,8 @@ func newCLIApp(deps cliDeps) (*mcli.App, *globalFlags) {
 				fail(1, err)
 				return
 			}
-			if err := deps.runClient(sock, dir, "", resolveConfigPath(globals.Config)); err != nil {
-				fail(1, err)
+			if clientErr := deps.runClient(sock, dir, "", resolveConfigPath(globals.Config)); clientErr != nil {
+				fail(1, clientErr)
 			}
 		}, catSession)
 
@@ -264,8 +264,8 @@ func newCLIApp(deps cliDeps) (*mcli.App, *globalFlags) {
 				fail(1, err)
 				return
 			}
-			if err := deps.runClient(sock, dir, presetPath, resolveConfigPath(globals.Config)); err != nil {
-				fail(1, err)
+			if clientErr := deps.runClient(sock, dir, presetPath, resolveConfigPath(globals.Config)); clientErr != nil {
+				fail(1, clientErr)
 			}
 		}, catSession)
 
@@ -350,9 +350,9 @@ func runDaemon(presetPath, configPath string) error {
 		return err
 	}
 	if presetPath != "" {
-		p, err := session.LoadPreset(presetPath)
-		if err != nil {
-			return err
+		p, presetErr := session.LoadPreset(presetPath)
+		if presetErr != nil {
+			return presetErr
 		}
 		srv.SetPreset(p)
 	}
@@ -379,11 +379,11 @@ func runClientWithConfig(sock, dir, presetPath, configPath string) error {
 			if err != nil {
 				return err
 			}
-			if err := spawnDaemon(sock, dir, presetPath, configPath); err != nil {
-				return fmt.Errorf("failed to start daemon: %w", err)
+			if spawnErr := spawnDaemon(sock, dir, presetPath, configPath); spawnErr != nil {
+				return fmt.Errorf("failed to start daemon: %w", spawnErr)
 			}
-			if err := waitForSocket(sock, 3*time.Second); err != nil {
-				return fmt.Errorf("%w (see %s.log)", err, sock)
+			if waitErr := waitForSocket(sock, 3*time.Second); waitErr != nil {
+				return fmt.Errorf("%w (see %s.log)", waitErr, sock)
 			}
 		}
 		detached, err := client.Run(sock)
@@ -393,8 +393,8 @@ func runClientWithConfig(sock, dir, presetPath, configPath string) error {
 		if detached {
 			if resp, popErr := control.Do(sock, control.Request{Cmd: "pop-switch"}, 500*time.Millisecond); popErr == nil && resp.SwitchTo != "" {
 				if exe, exErr := os.Executable(); exErr == nil {
-					if err := execAttach(exe, resp.SwitchTo); err != nil {
-						return err
+					if execErr := execAttach(exe, resp.SwitchTo); execErr != nil {
+						return execErr
 					}
 				}
 				sock = resp.SwitchTo
@@ -414,8 +414,8 @@ func daemonAlive(sock string) bool {
 	if err != nil {
 		return false
 	}
-	if err := c.Close(); err != nil {
-		log.Printf("slat: close probe socket: %v", err)
+	if closeErr := c.Close(); closeErr != nil {
+		log.Printf("slat: close probe socket: %v", closeErr)
 	}
 	return true
 }
@@ -430,8 +430,8 @@ func spawnDaemon(sock, dir, presetPath, configPath string) error {
 		return err
 	}
 	defer func() {
-		if err := devnull.Close(); err != nil {
-			log.Printf("slat: close %s: %v", os.DevNull, err)
+		if closeErr := devnull.Close(); closeErr != nil {
+			log.Printf("slat: close %s: %v", os.DevNull, closeErr)
 		}
 	}()
 	// The daemon has no terminal; its errors and any crash trace go here.
@@ -440,8 +440,8 @@ func spawnDaemon(sock, dir, presetPath, configPath string) error {
 		return err
 	}
 	defer func() {
-		if err := logf.Close(); err != nil {
-			log.Printf("slat: close daemon log: %v", err)
+		if closeErr := logf.Close(); closeErr != nil {
+			log.Printf("slat: close daemon log: %v", closeErr)
 		}
 	}()
 	daemonArgs := []string{"__daemon"}
@@ -460,8 +460,8 @@ func spawnDaemon(sock, dir, presetPath, configPath string) error {
 	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = devnull, logf, logf
 	cmd.SysProcAttr = detachAttrs()
-	if err := cmd.Start(); err != nil {
-		return err
+	if startErr := cmd.Start(); startErr != nil {
+		return startErr
 	}
 	return cmd.Process.Release()
 }

@@ -68,10 +68,10 @@ bg       = "transparent"
 		!spCfg.Splash.HasHint || len(spCfg.Splash.Art) != 2 {
 		t.Errorf("unexpected splash config: %+v", spCfg.Splash)
 	}
-	if _, err := load(t, "[splash]\nduration = \"-1s\"\n"); err == nil {
+	if _, badErr := load(t, "[splash]\nduration = \"-1s\"\n"); badErr == nil {
 		t.Error("negative splash.duration should fail")
 	}
-	if _, err := load(t, "[splash]\nfg = \"nope\"\n"); err == nil {
+	if _, badErr := load(t, "[splash]\nfg = \"nope\"\n"); badErr == nil {
 		t.Error("invalid splash.fg should fail")
 	}
 	dlgCfg, err := load(t, "[dialog]\nfg = \"white\"\nsub_fg = \"248\"\nhead_fg = \"cyan\"\nborder_fg = \"blue\"\nbg = \"#1e1e2e\"\n")
@@ -81,7 +81,7 @@ bg       = "transparent"
 	if dlgCfg.Dialog.Fg != "white" || dlgCfg.Dialog.Bg != "#1e1e2e" {
 		t.Errorf("unexpected dialog config: %+v", dlgCfg.Dialog)
 	}
-	if _, err := load(t, "[dialog]\nbg = \"nope\"\n"); err == nil {
+	if _, badErr := load(t, "[dialog]\nbg = \"nope\"\n"); badErr == nil {
 		t.Error("invalid dialog.bg should fail")
 	}
 	fsCfg, err := load(t, "[finder]\nsel_bg = \"cyan\"\n[stack]\nactive_fg = \"yellow\"\n")
@@ -91,10 +91,10 @@ bg       = "transparent"
 	if fsCfg.Finder.SelBg != "cyan" || fsCfg.Stack.ActiveFg != "yellow" {
 		t.Errorf("unexpected finder/stack config: %+v %+v", fsCfg.Finder, fsCfg.Stack)
 	}
-	if _, err := load(t, "[finder]\nsel_fg = \"nope\"\n"); err == nil {
+	if _, badErr := load(t, "[finder]\nsel_fg = \"nope\"\n"); badErr == nil {
 		t.Error("invalid finder.sel_fg should fail")
 	}
-	if _, err := load(t, "[stack]\nactive_bg = \"nope\"\n"); err == nil {
+	if _, badErr := load(t, "[stack]\nactive_bg = \"nope\"\n"); badErr == nil {
 		t.Error("invalid stack.active_bg should fail")
 	}
 }
@@ -146,8 +146,8 @@ func TestExampleConfigLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := load(t, string(example)); err != nil {
-		t.Fatalf("config.example.toml: %v", err)
+	if _, loadErr := load(t, string(example)); loadErr != nil {
+		t.Fatalf("config.example.toml: %v", loadErr)
 	}
 }
 
@@ -178,13 +178,13 @@ on_idle = "notify-send done"
 	if err != nil || len(cfg.Agent.Patterns) != len(defaultAgent().InputPatterns) {
 		t.Errorf("defaults not kept: %v, %v", cfg.Agent, err)
 	}
-	if _, err := load(t, "[agent]\nsettle = \"-1s\"\n"); err == nil {
+	if _, badErr := load(t, "[agent]\nsettle = \"-1s\"\n"); badErr == nil {
 		t.Error("a negative settle should be an error")
 	}
-	if _, err := load(t, "[agent]\ninput_patterns = ['(']\n"); err == nil {
+	if _, badErr := load(t, "[agent]\ninput_patterns = ['(']\n"); badErr == nil {
 		t.Error("a bad pattern should be an error")
 	}
-	if _, err := load(t, "[agent]\nsettle_time = \"1s\"\n"); err == nil {
+	if _, badErr := load(t, "[agent]\nsettle_time = \"1s\"\n"); badErr == nil {
 		t.Error("an unknown agent setting should be an error")
 	}
 }
@@ -217,13 +217,13 @@ glyph  = "▓"
 	}
 
 	// The old single knob still works, and one switch turns everything off.
-	if cfg, err := load(t, `animate = "300ms"`); err != nil ||
-		cfg.Animation.Split.D() != 300*time.Millisecond || cfg.Animation.Move.D() != 300*time.Millisecond {
-		t.Errorf("animate shorthand: %+v, %v", cfg.Animation, err)
+	if animCfg, animErr := load(t, `animate = "300ms"`); animErr != nil ||
+		animCfg.Animation.Split.D() != 300*time.Millisecond || animCfg.Animation.Move.D() != 300*time.Millisecond {
+		t.Errorf("animate shorthand: %+v, %v", animCfg.Animation, animErr)
 	}
-	if cfg, err := load(t, "animations = false"); err != nil ||
-		cfg.Animation.Split != 0 || cfg.Animation.Move != 0 {
-		t.Errorf("animations = false: %+v, %v", cfg.Animation, err)
+	if offCfg, offErr := load(t, "animations = false"); offErr != nil ||
+		offCfg.Animation.Split != 0 || offCfg.Animation.Move != 0 {
+		t.Errorf("animations = false: %+v, %v", offCfg.Animation, offErr)
 	}
 
 	for _, bad := range []string{
@@ -234,7 +234,7 @@ glyph  = "▓"
 		"[animation]\nsplit = \"5s\"\n", // long enough to be in the way
 		"[animation]\nspin = \"1s\"\n",  // unknown setting
 	} {
-		if _, err := load(t, bad); err == nil {
+		if _, badErr := load(t, bad); badErr == nil {
 			t.Errorf("%q should have been refused", bad)
 		}
 	}
@@ -298,7 +298,7 @@ pane_zoom_glyphs = ["⓿", "❶", "❷"]
 		"[shortcuts]\n\"bad\" = \"echo hi\"\n",
 		"[shortcuts]\n\"Alt+1\" = \"\"\n",
 	} {
-		if _, err := load(t, bad); err == nil {
+		if _, badErr := load(t, bad); badErr == nil {
 			t.Errorf("%q should have been refused", bad)
 		}
 	}
@@ -355,7 +355,7 @@ fallback = "{fg=red}err{/}"
 	if err != nil || cfgNav.Navigation.Keys != "ctrl" || len(cfgNav.Navigation.Apps) != 1 {
 		t.Errorf("custom navigation = (%+v, %v)", cfgNav.Navigation, err)
 	}
-	if _, err := load(t, "[navigation]\nkeys = \"bad\"\n"); err == nil {
+	if _, badErr := load(t, "[navigation]\nkeys = \"bad\"\n"); badErr == nil {
 		t.Errorf("expected error for invalid navigation.keys")
 	}
 }
@@ -370,12 +370,12 @@ func TestGalleryRicesLoad(t *testing.T) {
 		t.Fatal("no rices found: did docs/rices move?")
 	}
 	for _, path := range rices {
-		body, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
+		body, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatal(readErr)
 		}
-		if _, err := load(t, string(body)); err != nil {
-			t.Errorf("%s: %v", filepath.Base(path), err)
+		if _, loadErr := load(t, string(body)); loadErr != nil {
+			t.Errorf("%s: %v", filepath.Base(path), loadErr)
 		}
 	}
 }
@@ -390,21 +390,21 @@ func TestExampleConfigsLoad(t *testing.T) {
 	}
 	paths = append(paths, "../../config.example.toml")
 	for _, path := range paths {
-		body, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
+		body, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatal(readErr)
 		}
-		if _, err := load(t, string(body)); err != nil {
-			t.Errorf("%s: %v", path, err)
+		if _, loadErr := load(t, string(body)); loadErr != nil {
+			t.Errorf("%s: %v", path, loadErr)
 		}
-		if _, err := LoadFrom(path); err != nil {
-			t.Errorf("LoadFrom(%s): %v", path, err)
+		if _, loadFromErr := LoadFrom(path); loadFromErr != nil {
+			t.Errorf("LoadFrom(%s): %v", path, loadFromErr)
 		}
 	}
-	if _, err := LoadFrom(""); err != nil {
-		t.Errorf("LoadFrom(\"\") should fall back to default Load(): %v", err)
+	if _, fallbackErr := LoadFrom(""); fallbackErr != nil {
+		t.Errorf("LoadFrom(\"\") should fall back to default Load(): %v", fallbackErr)
 	}
-	if _, err := LoadFrom(filepath.Join(t.TempDir(), "missing.toml")); err == nil {
+	if _, missingErr := LoadFrom(filepath.Join(t.TempDir(), "missing.toml")); missingErr == nil {
 		t.Errorf("LoadFrom on missing file should have failed")
 	}
 }

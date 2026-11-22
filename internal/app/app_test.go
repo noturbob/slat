@@ -79,8 +79,8 @@ func start(t *testing.T, tweak ...func(*config.Config)) (*App, *terminal) {
 		t.Fatal(err)
 	}
 	a.SetOutput(term)
-	if err := a.Start(100, 30); err != nil {
-		t.Fatal(err)
+	if startErr := a.Start(100, 30); startErr != nil {
+		t.Fatal(startErr)
 	}
 	t.Cleanup(a.Shutdown)
 	a.Attach(100, 30)

@@ -45,8 +45,8 @@ func TestResolvePresetPath(t *testing.T) {
 	}
 
 	direct := filepath.Join(t.TempDir(), "custom.toml")
-	if err := os.WriteFile(direct, []byte("session_name = \"x\"\n"), 0o600); err != nil {
-		t.Fatal(err)
+	if writeErr := os.WriteFile(direct, []byte("session_name = \"x\"\n"), 0o600); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	got, err = ResolvePresetPath(direct)
 	if err != nil {

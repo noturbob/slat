@@ -77,8 +77,8 @@ func Do(sock string, req Request, timeout time.Duration) (Response, error) {
 		return Response{}, fmt.Errorf("no slat session (%w)", err)
 	}
 	defer func() {
-		if err := conn.Close(); err != nil {
-			log.Printf("slat: close control socket: %v", err)
+		if closeErr := conn.Close(); closeErr != nil {
+			log.Printf("slat: close control socket: %v", closeErr)
 		}
 	}()
 
@@ -86,12 +86,12 @@ func Do(sock string, req Request, timeout time.Duration) (Response, error) {
 	if err != nil {
 		return Response{}, err
 	}
-	if err := proto.WriteFrame(conn, proto.TypeControl, body); err != nil {
-		return Response{}, err
+	if writeErr := proto.WriteFrame(conn, proto.TypeControl, body); writeErr != nil {
+		return Response{}, writeErr
 	}
 	if timeout > 0 {
-		if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
-			return Response{}, err
+		if deadlineErr := conn.SetReadDeadline(time.Now().Add(timeout)); deadlineErr != nil {
+			return Response{}, deadlineErr
 		}
 	}
 	frame, err := proto.ReadFrame(conn)
@@ -99,8 +99,8 @@ func Do(sock string, req Request, timeout time.Duration) (Response, error) {
 		return Response{}, fmt.Errorf("daemon closed the connection: %w", err)
 	}
 	var resp Response
-	if err := json.Unmarshal(frame.Payload, &resp); err != nil {
-		return Response{}, fmt.Errorf("bad response from daemon: %w", err)
+	if unmarshalErr := json.Unmarshal(frame.Payload, &resp); unmarshalErr != nil {
+		return Response{}, fmt.Errorf("bad response from daemon: %w", unmarshalErr)
 	}
 	if resp.Error != "" && resp.Code == 0 {
 		resp.Code = CodeError

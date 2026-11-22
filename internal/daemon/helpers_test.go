@@ -31,8 +31,8 @@ func session(t *testing.T, tweak ...func(*config.Config)) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := os.RemoveAll(dir); err != nil {
-			t.Errorf("RemoveAll(%s): %v", dir, err)
+		if rmErr := os.RemoveAll(dir); rmErr != nil {
+			t.Errorf("RemoveAll(%s): %v", dir, rmErr)
 		}
 	})
 	sock := filepath.Join(dir, "s.sock")
@@ -51,8 +51,8 @@ func session(t *testing.T, tweak ...func(*config.Config)) string {
 	}
 	done := make(chan struct{})
 	go func() {
-		if err := srv.Run(); err != nil {
-			t.Errorf("srv.Run: %v", err)
+		if runErr := srv.Run(); runErr != nil {
+			t.Errorf("srv.Run: %v", runErr)
 		}
 		close(done)
 	}()
@@ -68,9 +68,9 @@ func session(t *testing.T, tweak ...func(*config.Config)) string {
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if c, err := net.Dial("unix", sock); err == nil {
-			if err := c.Close(); err != nil {
-				t.Fatal(err)
+		if c, dialErr := net.Dial("unix", sock); dialErr == nil {
+			if closeErr := c.Close(); closeErr != nil {
+				t.Fatal(closeErr)
 			}
 			return sock
 		}

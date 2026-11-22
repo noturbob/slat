@@ -97,11 +97,11 @@ func (s *Server) Run() error {
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", s.sockPath, err)
 	}
-	if err := s.app.Start(80, 24); err != nil {
+	if startErr := s.app.Start(80, 24); startErr != nil {
 		if cErr := ln.Close(); cErr != nil {
 			log.Printf("slat: close listener: %v", cErr)
 		}
-		return fmt.Errorf("failed to start session: %w", err)
+		return fmt.Errorf("failed to start session: %w", startErr)
 	}
 
 	sigCh := make(chan os.Signal, 1)
@@ -112,8 +112,8 @@ func (s *Server) Run() error {
 
 	go func() {
 		for {
-			c, err := ln.Accept()
-			if err != nil {
+			c, acceptErr := ln.Accept()
+			if acceptErr != nil {
 				return
 			}
 			select {
@@ -123,8 +123,8 @@ func (s *Server) Run() error {
 					s.serve(c)
 				}()
 			default:
-				if err := c.Close(); err != nil {
-					log.Printf("slat: close rejected client: %v", err)
+				if closeErr := c.Close(); closeErr != nil {
+					log.Printf("slat: close rejected client: %v", closeErr)
 				}
 			}
 		}
@@ -141,11 +141,11 @@ func (s *Server) Run() error {
 		}
 		// Stop accepting and remove the socket before dropping the client,
 		// so the client can tell "session ended" from "detached".
-		if err := ln.Close(); err != nil {
-			log.Printf("slat: close listener: %v", err)
+		if closeErr := ln.Close(); closeErr != nil {
+			log.Printf("slat: close listener: %v", closeErr)
 		}
-		if err := os.Remove(s.sockPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			log.Printf("slat: remove socket %s: %v", s.sockPath, err)
+		if rmErr := os.Remove(s.sockPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+			log.Printf("slat: remove socket %s: %v", s.sockPath, rmErr)
 		}
 		s.kick()
 		s.app.Shutdown()
@@ -194,7 +194,7 @@ func (s *Server) serve(conn net.Conn) {
 	if hello.Type == proto.TypeControl {
 		// The slat CLI: answer the command and hang up, leaving the
 		// attached client alone. `wait` can block for a long time.
-		if err := conn.SetReadDeadline(time.Time{}); err != nil {
+		if deadlineErr := conn.SetReadDeadline(time.Time{}); deadlineErr != nil {
 			return
 		}
 		s.serveControl(conn, hello.Payload)
@@ -203,15 +203,15 @@ func (s *Server) serve(conn net.Conn) {
 	if hello.Type != proto.TypeHello {
 		return
 	}
-	if err := conn.SetReadDeadline(time.Time{}); err != nil {
+	if deadlineErr := conn.SetReadDeadline(time.Time{}); deadlineErr != nil {
 		return
 	}
 	cols, rows := proto.DecodeSize(hello.Payload)
 
 	s.mu.Lock()
 	if s.client != nil {
-		if err := s.client.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
-			log.Printf("slat: close previous client: %v", err)
+		if closeErr := s.client.Close(); closeErr != nil && !errors.Is(closeErr, net.ErrClosed) {
+			log.Printf("slat: close previous client: %v", closeErr)
 		}
 	}
 	s.client = conn
@@ -220,8 +220,8 @@ func (s *Server) serve(conn net.Conn) {
 	s.app.Attach(cols, rows)
 
 	for {
-		f, err := proto.ReadFrame(conn)
-		if err != nil {
+		f, readErr := proto.ReadFrame(conn)
+		if readErr != nil {
 			break
 		}
 		switch f.Type {

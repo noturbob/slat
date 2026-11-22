@@ -99,7 +99,7 @@ func TestSearch(t *testing.T) {
 	if !ok || lineText(term.LineAt(abs)) != "Error: disk" {
 		t.Fatalf("second match: %q", lineText(term.LineAt(abs)))
 	}
-	if _, _, _, ok := term.Search("Error again", last, -1); ok {
+	if _, _, _, found := term.Search("Error again", last, -1); found {
 		t.Error("capitalized query matched case-insensitively")
 	}
 	abs, col, w, ok = term.Search("found", term.FirstLine(), 1)

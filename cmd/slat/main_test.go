@@ -39,7 +39,7 @@ func TestSocketPathPerDirectory(t *testing.T) {
 	if err != nil || sock != s1 || dir == "" {
 		t.Errorf("resolveAttach(%q) = %q, %q, %v; want %q", d1, sock, dir, err, s1)
 	}
-	if _, _, err := resolveAttach("nonexistent-session-xyz"); err == nil {
+	if _, _, unknownErr := resolveAttach("nonexistent-session-xyz"); unknownErr == nil {
 		t.Error("expected error for unknown session name")
 	}
 }
@@ -111,9 +111,9 @@ func TestGlobalConfigFlag(t *testing.T) {
 	}
 
 	for _, emptyArgs := range [][]string{{"--config="}, {"-c="}, {"--config", ""}} {
-		c, code, errText := runWithArgs(emptyArgs...)
-		if code != 0 || errText != "" || c != "" {
-			t.Errorf("%v: got (%q, %d, %q), want empty configPath", emptyArgs, c, code, errText)
+		c, emptyCode, emptyErr := runWithArgs(emptyArgs...)
+		if emptyCode != 0 || emptyErr != "" || c != "" {
+			t.Errorf("%v: got (%q, %d, %q), want empty configPath", emptyArgs, c, emptyCode, emptyErr)
 		}
 	}
 

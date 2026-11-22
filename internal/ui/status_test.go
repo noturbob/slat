@@ -107,7 +107,7 @@ func TestBordersParse(t *testing.T) {
 		{"vertical": "🙂"},  // two columns wide: it would tear the layout
 		{"vertical": ""},   // nothing
 	} {
-		if _, err := ParseBorders(bad); err == nil {
+		if _, badErr := ParseBorders(bad); badErr == nil {
 			t.Errorf("ParseBorders(%v) should have failed", bad)
 		}
 	}
@@ -217,7 +217,7 @@ func TestStatusStyleTagErrors(t *testing.T) {
 		{TabColors: []string{"not-a-color"}},
 		{PaneColors: []string{"300"}},
 	} {
-		if _, err := ParseStatusConfig(bad); err == nil {
+		if _, badErr := ParseStatusConfig(bad); badErr == nil {
 			t.Errorf("ParseStatusConfig(%+v) should have failed", bad)
 		}
 	}
@@ -436,7 +436,7 @@ func TestDrawSplash(t *testing.T) {
 	if fr.Lines[0][0].Style.Bg != vt.RGB(0x1e, 0x1e, 0x2e) {
 		t.Errorf("splash bg = %v, want #1e1e2e", fr.Lines[0][0].Style.Bg)
 	}
-	if _, err := ParseSplash(nil, "", "", "notacolor", "", ""); err == nil {
+	if _, badErr := ParseSplash(nil, "", "", "notacolor", "", ""); badErr == nil {
 		t.Error("expected error for invalid splash.fg")
 	}
 }
@@ -695,7 +695,7 @@ func TestStatusScriptRenderingAndValidation(t *testing.T) {
 			return c
 		}(),
 	} {
-		if _, err := ParseStatusConfig(bad); err == nil {
+		if _, badErr := ParseStatusConfig(bad); badErr == nil {
 			t.Errorf("ParseStatusConfig(%+v) should have failed", bad)
 		}
 	}
@@ -779,7 +779,7 @@ func TestCurrentPaneAndIDGlyphsAndPaneIDBadge(t *testing.T) {
 	// Validation error on bad pane_id placeholder.
 	badCfg := DefaultStatusConfig()
 	badCfg.PaneID = "{unknown}"
-	if _, err := ParseStatusConfig(badCfg); err == nil {
+	if _, badErr := ParseStatusConfig(badCfg); badErr == nil {
 		t.Errorf("expected error for unknown placeholder in pane_id")
 	}
 }

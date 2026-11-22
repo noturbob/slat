@@ -276,7 +276,7 @@ func (a *App) refTarget(t PaneTarget) (session.PaneRef, error) {
 		}
 		// Ids are never reused, so one below the high-water mark named a pane
 		// that has since closed — worth its own exit code for agents.
-		if id, err := strconv.Atoi(spec); err == nil && id > 0 && id <= a.manager.Issued() {
+		if id, idErr := strconv.Atoi(spec); idErr == nil && id > 0 && id <= a.manager.Issued() {
 			return session.PaneRef{}, errPaneGone{id}
 		}
 		return session.PaneRef{}, fmt.Errorf("no pane %q", spec)
@@ -296,7 +296,7 @@ func (a *App) refTarget(t PaneTarget) (session.PaneRef, error) {
 		var targetPane *pane.Pane
 		if ws != nil {
 			if t.Tab != "" {
-				if _, tab, err := matchTabLocked(ws, t.Tab); err == nil {
+				if _, tab, tabErr := matchTabLocked(ws, t.Tab); tabErr == nil {
 					targetPane = tab.ActivePane
 				}
 			} else if len(ws.Tabs) > 0 && ws.ActiveTabIdx >= 0 && ws.ActiveTabIdx < len(ws.Tabs) {
@@ -318,7 +318,7 @@ func (a *App) refTarget(t PaneTarget) (session.PaneRef, error) {
 			return r, nil
 		}
 	}
-	if id, err := strconv.Atoi(spec); err == nil && id > 0 && id <= a.manager.Issued() {
+	if id, idErr := strconv.Atoi(spec); idErr == nil && id > 0 && id <= a.manager.Issued() {
 		if a.manager.PaneByID(id) != nil {
 			return session.PaneRef{}, fmt.Errorf("pane %d is not in the targeted workspace/tab", id)
 		}
@@ -371,8 +371,8 @@ func (a *App) NewPane(o NewPaneOpts) (PaneInfo, error) {
 	}
 
 	if o.Cmd != "" {
-		if _, err := created.Write([]byte(o.Cmd + "\n")); err != nil {
-			return PaneInfo{}, err
+		if _, writeErr := created.Write([]byte(o.Cmd + "\n")); writeErr != nil {
+			return PaneInfo{}, writeErr
 		}
 	}
 	return a.PaneInfo(fmt.Sprint(created.ID))

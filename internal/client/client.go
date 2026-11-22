@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -30,8 +31,8 @@ func Run(sockPath string) (detached bool, err error) {
 		return false, fmt.Errorf("connect to daemon: %w", err)
 	}
 	defer func() {
-		if err := conn.Close(); err != nil {
-			log.Printf("slat: close client socket: %v", err)
+		if closeErr := conn.Close(); closeErr != nil && !errors.Is(closeErr, net.ErrClosed) {
+			log.Printf("slat: close client socket: %v", closeErr)
 		}
 	}()
 
@@ -41,20 +42,20 @@ func Run(sockPath string) (detached bool, err error) {
 		return false, fmt.Errorf("stdin is not a terminal: %w", err)
 	}
 	restoreOutput := prepareOutput()
-	if _, err := os.Stdout.WriteString(enterScreen); err != nil {
+	if _, enterErr := os.Stdout.WriteString(enterScreen); enterErr != nil {
 		restoreOutput()
 		if rErr := term.Restore(fd, oldState); rErr != nil {
 			log.Printf("slat: restore terminal: %v", rErr)
 		}
-		return false, fmt.Errorf("enter alternate screen: %w", err)
+		return false, fmt.Errorf("enter alternate screen: %w", enterErr)
 	}
 	defer func() {
-		if _, err := os.Stdout.WriteString(leaveScreen); err != nil {
-			log.Printf("slat: leave alternate screen: %v", err)
+		if _, leaveErr := os.Stdout.WriteString(leaveScreen); leaveErr != nil {
+			log.Printf("slat: leave alternate screen: %v", leaveErr)
 		}
 		restoreOutput()
-		if err := term.Restore(fd, oldState); err != nil {
-			log.Printf("slat: restore terminal: %v", err)
+		if restoreErr := term.Restore(fd, oldState); restoreErr != nil {
+			log.Printf("slat: restore terminal: %v", restoreErr)
 		}
 	}()
 
@@ -67,27 +68,27 @@ func Run(sockPath string) (detached bool, err error) {
 		return proto.WriteFrame(conn, t, payload)
 	}
 	size := func() []byte {
-		cols, rows, err := term.GetSize(fd)
-		if err != nil {
+		cols, rows, sizeErr := term.GetSize(fd)
+		if sizeErr != nil {
 			cols, rows = 80, 24
 		}
 		return proto.EncodeSize(cols, rows)
 	}
 
-	if err := send(proto.TypeHello, size()); err != nil {
-		return false, fmt.Errorf("handshake failed: %w", err)
+	if helloErr := send(proto.TypeHello, size()); helloErr != nil {
+		return false, fmt.Errorf("handshake failed: %w", helloErr)
 	}
 
 	stopWatching := watchTerminal(fd,
 		func() {
-			if err := send(proto.TypeResize, size()); err != nil {
-				log.Printf("slat: send resize: %v", err)
+			if resizeErr := send(proto.TypeResize, size()); resizeErr != nil {
+				log.Printf("slat: send resize: %v", resizeErr)
 			}
 		},
 		// Unblocks the read loop below; the defers restore the terminal.
 		func() {
-			if err := conn.Close(); err != nil {
-				log.Printf("slat: close client socket: %v", err)
+			if closeErr := conn.Close(); closeErr != nil && !errors.Is(closeErr, net.ErrClosed) {
+				log.Printf("slat: close client socket: %v", closeErr)
 			}
 		})
 	defer stopWatching()
@@ -95,12 +96,12 @@ func Run(sockPath string) (detached bool, err error) {
 	go func() {
 		buf := make([]byte, 4096)
 		for {
-			n, err := os.Stdin.Read(buf)
+			n, stdinErr := os.Stdin.Read(buf)
 			if n > 0 && send(proto.TypeInput, buf[:n]) != nil {
 				return
 			}
-			if err != nil {
-				if cErr := conn.Close(); cErr != nil {
+			if stdinErr != nil {
+				if cErr := conn.Close(); cErr != nil && !errors.Is(cErr, net.ErrClosed) {
 					log.Printf("slat: close client socket: %v", cErr)
 				}
 				return
@@ -111,14 +112,14 @@ func Run(sockPath string) (detached bool, err error) {
 	// daemon -> terminal: already fully rendered output.
 	buf := make([]byte, 64*1024)
 	for {
-		n, err := conn.Read(buf)
+		n, readErr := conn.Read(buf)
 		if n > 0 {
 			if _, wErr := os.Stdout.Write(buf[:n]); wErr != nil {
 				log.Printf("slat: write stdout: %v", wErr)
 				break
 			}
 		}
-		if err != nil {
+		if readErr != nil {
 			break
 		}
 	}

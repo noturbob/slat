@@ -38,8 +38,8 @@ func TestForegroundAndCapture(t *testing.T) {
 		return isShell && name == "sh"
 	})
 
-	if _, err := p.Write([]byte("echo marker-line\n")); err != nil {
-		t.Fatal(err)
+	if _, writeErr := p.Write([]byte("echo marker-line\n")); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	waitFor(t, "output", func() bool {
 		return strings.Contains(strings.Join(p.Capture(0, false), "\n"), "marker-line")
@@ -48,8 +48,8 @@ func TestForegroundAndCapture(t *testing.T) {
 		t.Error("Activity did not move with the output")
 	}
 
-	if _, err := p.Write([]byte("sleep 3\n")); err != nil {
-		t.Fatal(err)
+	if _, writeErr := p.Write([]byte("sleep 3\n")); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	waitFor(t, "sleep to take the terminal", func() bool {
 		_, name, isShell := p.Foreground()
@@ -57,15 +57,15 @@ func TestForegroundAndCapture(t *testing.T) {
 	})
 
 	// Capture: last line only, and scrollback beyond the screen.
-	if _, err := p.Write([]byte("\003")); err != nil { // Ctrl-C the sleep
-		t.Fatal(err)
+	if _, writeErr := p.Write([]byte("\003")); writeErr != nil { // Ctrl-C the sleep
+		t.Fatal(writeErr)
 	}
 	waitFor(t, "the shell to come back", func() bool {
 		_, _, isShell := p.Foreground()
 		return isShell
 	})
-	if _, err := p.Write([]byte("for i in 1 2 3 4 5 6 7 8 9; do echo line-$i; done\n")); err != nil {
-		t.Fatal(err)
+	if _, writeErr := p.Write([]byte("for i in 1 2 3 4 5 6 7 8 9; do echo line-$i; done\n")); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	waitFor(t, "9 lines", func() bool {
 		return strings.Contains(strings.Join(p.Capture(0, false), "\n"), "line-9")

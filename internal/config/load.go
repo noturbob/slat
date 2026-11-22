@@ -276,8 +276,8 @@ func loadFile(path string, allowMissing bool) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	if err := cfg.merge(user, md); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+	if mergeErr := cfg.merge(user, md); mergeErr != nil {
+		return nil, fmt.Errorf("%s: %w", path, mergeErr)
 	}
 	return cfg, nil
 }

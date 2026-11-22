@@ -43,10 +43,10 @@ func TestDividerAt(t *testing.T) {
 		t.Fatalf("DividerAt on the border = %v, %v, %v", n, got, ok)
 	}
 	// A cell inside a child is not a divider.
-	if _, _, ok := DividerAt(root, area, 5, 2); ok {
+	if _, _, hit1 := DividerAt(root, area, 5, 2); hit1 {
 		t.Error("a cell inside the left pane was reported as a divider")
 	}
-	if _, _, ok := DividerAt(root, area, 5, border.Col+3); ok {
+	if _, _, hit2 := DividerAt(root, area, 5, border.Col+3); hit2 {
 		t.Error("a cell inside the right pane was reported as a divider")
 	}
 }

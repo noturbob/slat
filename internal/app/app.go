@@ -151,8 +151,8 @@ func New(cfg *config.Config) (*App, error) {
 	}
 	sessionDir := session.CanonicalDir("")
 	handler := input.NewHandler(cfg.PrefixKey, cfg.Keybinds)
-	if err := handler.SetShortcuts(cfg.Shortcuts); err != nil {
-		return nil, err
+	if scErr := handler.SetShortcuts(cfg.Shortcuts); scErr != nil {
+		return nil, scErr
 	}
 	a := &App{
 		cfg:        cfg,
@@ -179,7 +179,7 @@ func New(cfg *config.Config) (*App, error) {
 	if cfg.Restore {
 		// A path we cannot work out only means this session will not be
 		// saved; it is no reason to refuse to start.
-		if path, err := session.StatePathForDir(sessionDir); err == nil {
+		if path, stateErr := session.StatePathForDir(sessionDir); stateErr == nil {
 			a.statePath = path
 		}
 	}
@@ -529,16 +529,16 @@ func (a *App) render() {
 		ui.DrawStatusBar(frame, a.rows-1, a.statusOfBar(now), a.status)
 	}
 	if a.prompt != nil {
-		x, y := ui.DrawDialog(frame, a.prompt.label, string(a.prompt.text))
-		cur = ui.Cursor{X: x, Y: y, Visible: true}
+		dx, dy := ui.DrawDialog(frame, a.prompt.label, string(a.prompt.text))
+		cur = ui.Cursor{X: dx, Y: dy, Visible: true}
 	}
 	if a.showHelp {
 		ui.DrawHelp(frame, "slat · keys after "+a.cfg.PrefixKey.Name, a.help)
 		cur.Visible = false
 	}
 	if a.tree != nil {
-		x, y := a.drawTree(frame)
-		cur = ui.Cursor{X: x, Y: y, Visible: true}
+		tx, ty := a.drawTree(frame)
+		cur = ui.Cursor{X: tx, Y: ty, Visible: true}
 	}
 	if err := a.screen.Render(frame, cur, modes); err != nil {
 		log.Printf("slat: render frame: %v", err)
@@ -1011,13 +1011,13 @@ func (a *App) startSaveSession() {
 		writePreset := func() {
 			p := a.manager.ExportPreset()
 			p.SessionName = name
-			if err := session.SavePreset(path, p); err != nil {
-				a.notify(err.Error())
+			if saveErr := session.SavePreset(path, p); saveErr != nil {
+				a.notify(saveErr.Error())
 				return
 			}
 			a.notify("saved session " + name)
 		}
-		if _, err := os.Stat(path); err == nil {
+		if _, statErr := os.Stat(path); statErr == nil {
 			a.startConfirm(fmt.Sprintf("overwrite %s.toml? [y/N]", name), writePreset)
 			return
 		}
