@@ -308,6 +308,7 @@ Save reusable session definitions as TOML files in `~/.config/slat/sessions/`
 ```toml
 session_name = "sample-session"
 start_directory = "~/code/10-apps/project"
+# focus = 1 # 1-based tab index (or workspace index when [[workspaces]] is used) to focus when the session starts
 
 [[tabs]]
 name = "doc"
@@ -318,13 +319,16 @@ panes = [
 
 [[tabs]]
 name = "editor"
+# focus = 1 # 1-based pane index to focus when the session starts
 panes = [
   "nvim -S session.vim",
 ]
 ```
 
+You can also group tabs under `[[workspaces]]`, using top-level `focus` for the 1-based workspace index and workspace-level `focus` for the 1-based tab index (see [`examples/sessions/workspaces.toml`](examples/sessions/workspaces.toml)).
+
 Start or attach to a preconfigured session by name (resolved from
-`~/.config/slat/sessions/<name>.toml`) or by file path:
+`~/.config/slat/sessions/<name>.toml`, with shell tab-completion) or by file path:
 
 ```bash
 slat session slat.session_example
@@ -560,7 +564,7 @@ zoom             = ""     # "" unbinds a command
   between tabs. Inline style tags like `{fg=cyan,bg=236,bold}🐟{/}` or `{fg=theme.background,bg=theme.accent}●{/}` colour any Unicode glyph or span (using a colour name, 0–255 index, `#rrggbb`
   hex, an active `[theme]` variable such as `theme.background` / `bg`, `theme.foreground` / `fg`, `theme.accent`, `theme.dim`, `theme.status_bg`, `theme.tab_bg`, `theme.tab_fg`, `theme.tab_active_bg`, `theme.tab_active_fg`, `theme.badge_fg`, `theme.badge_bg`, any `[theme.vars]` key, or `tab`/`pane` to pick from `tab_colors`/`pane_colors` by index). When
   `{prefix}` is used, `{badge}` omits `"PREFIX"`; `"ZOOM"` remains visible in `{badge}` whenever the current tab is zoomed (like `"MOVE"`), and `{badge}` can be styled via `badge_fg`/`badge_bg` or inline style tags.
-- Session presets (`[[tabs]]` in `~/.config/slat/sessions/<name>.toml`) also accept `focus = N` (1-based pane index) to choose which pane starts focused.
+- Session presets (`~/.config/slat/sessions/<name>.toml`) accept top-level `focus = N` (1-based tab index, or workspace index when `[[workspaces]]` is used), workspace-level `focus = N` (1-based tab index), and `[[tabs]]` `focus = N` (1-based pane index) to choose what starts focused.
 - `[status.scripts.<name>]` runs a shell command on an `interval` (default
   `5s`, `0s` to run once) with a `timeout` (default `2s`), and renders its
   `stdout` wherever `{script:<name>}` appears in `status.left` or

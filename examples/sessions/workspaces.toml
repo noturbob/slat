@@ -1,0 +1,32 @@
+session_name = "workspaces-example"
+start_directory = "~/code/project"
+focus = 2 # 1-based workspace index to focus on start
+
+[[workspaces]]
+name = "backend"
+
+[[workspaces.tabs]]
+name = "api"
+layout = "even-horizontal"
+focus = 2 # 1-based pane index to focus in this tab
+panes = [
+  "go test ./...",
+  "nvim .",
+]
+
+[[workspaces]]
+name = "frontend"
+focus = 2 # 1-based tab index to focus in this workspace
+
+[[workspaces.tabs]]
+name = "dev"
+panes = [
+  "npm run dev",
+]
+
+[[workspaces.tabs]]
+name = "editor"
+focus = 1
+panes = [
+  "nvim src/App.tsx",
+]

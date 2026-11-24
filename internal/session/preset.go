@@ -15,17 +15,22 @@ import (
 )
 
 // Preset is a preconfigured slat session stored as a TOML file.
+// Focus is an optional 1-based tab index (when Tabs is used) or 1-based
+// workspace index (when Workspaces is used).
 type Preset struct {
 	SessionName    string            `toml:"session_name"`
 	StartDirectory string            `toml:"start_directory,omitempty"`
+	Focus          int               `toml:"focus,omitempty"`
 	Tabs           []PresetTab       `toml:"tabs,omitempty"`
 	Workspaces     []PresetWorkspace `toml:"workspaces,omitempty"`
 }
 
 // PresetWorkspace groups tabs under a named workspace in a preset.
+// Focus is an optional 1-based tab index within the workspace.
 type PresetWorkspace struct {
-	Name string      `toml:"name"`
-	Tabs []PresetTab `toml:"tabs"`
+	Name  string      `toml:"name"`
+	Focus int         `toml:"focus,omitempty"`
+	Tabs  []PresetTab `toml:"tabs"`
 }
 
 // PresetTab defines one tab, its layout mode, optional 1-based focused pane,
@@ -135,6 +140,26 @@ func LoadPreset(path string) (Preset, error) {
 	if len(md.Undecoded()) > 0 {
 		return Preset{}, fmt.Errorf("%s: unknown setting %q", path, md.Undecoded()[0].String())
 	}
+	if len(p.Workspaces) == 0 {
+		if p.Focus != 0 {
+			tabCount := max(len(p.Tabs), 1)
+			if p.Focus < 1 || p.Focus > tabCount {
+				return Preset{}, fmt.Errorf("%s: focus %d out of range [1..%d]", path, p.Focus, tabCount)
+			}
+		}
+	} else {
+		if p.Focus != 0 && (p.Focus < 1 || p.Focus > len(p.Workspaces)) {
+			return Preset{}, fmt.Errorf("%s: focus %d out of range [1..%d] workspaces", path, p.Focus, len(p.Workspaces))
+		}
+		for _, ws := range p.Workspaces {
+			if ws.Focus != 0 {
+				tabCount := max(len(ws.Tabs), 1)
+				if ws.Focus < 1 || ws.Focus > tabCount {
+					return Preset{}, fmt.Errorf("%s: focus %d out of range [1..%d] in workspace %q", path, ws.Focus, tabCount, ws.Name)
+				}
+			}
+		}
+	}
 	for _, t := range p.allTabs() {
 		if t.Layout != "" {
 			if _, ok := layout.ParseMode(t.Layout); !ok {
@@ -229,13 +254,22 @@ func (m *Manager) ExportPreset() Preset {
 	}
 
 	if len(m.Workspaces) == 1 && m.Workspaces[0].Name == "main" {
+		if m.Workspaces[0].ActiveTabIdx > 0 {
+			p.Focus = m.Workspaces[0].ActiveTabIdx + 1
+		}
 		for _, tab := range m.Workspaces[0].Tabs {
 			p.Tabs = append(p.Tabs, toPresetTab(tab))
 		}
 		return p
 	}
+	if m.ActiveWorkspaceIdx > 0 {
+		p.Focus = m.ActiveWorkspaceIdx + 1
+	}
 	for _, ws := range m.Workspaces {
 		pw := PresetWorkspace{Name: ws.Name}
+		if ws.ActiveTabIdx > 0 {
+			pw.Focus = ws.ActiveTabIdx + 1
+		}
 		for _, tab := range ws.Tabs {
 			pw.Tabs = append(pw.Tabs, toPresetTab(tab))
 		}
@@ -255,12 +289,15 @@ func (m *Manager) ApplyPreset(p Preset, area layout.Rect) error {
 	baseDir := ExpandPath(p.StartDirectory)
 
 	workspaces := p.Workspaces
+	wsFocus := 0
 	if len(workspaces) == 0 {
 		tabs := p.Tabs
 		if len(tabs) == 0 {
 			tabs = []PresetTab{{Name: "shell"}}
 		}
-		workspaces = []PresetWorkspace{{Name: "main", Tabs: tabs}}
+		workspaces = []PresetWorkspace{{Name: "main", Focus: p.Focus, Tabs: tabs}}
+	} else if p.Focus > 0 {
+		wsFocus = p.Focus
 	}
 
 	for _, pw := range workspaces {
@@ -278,13 +315,20 @@ func (m *Manager) ApplyPreset(p Preset, area layout.Rect) error {
 			ws.Tabs = append(ws.Tabs, tab)
 		}
 		if len(ws.Tabs) > 0 {
+			if pw.Focus > 0 && pw.Focus <= len(ws.Tabs) {
+				ws.ActiveTabIdx = pw.Focus - 1
+			}
 			m.Workspaces = append(m.Workspaces, ws)
 		}
 	}
 	if len(m.Workspaces) == 0 {
 		return m.AddWorkspace(area)
 	}
-	m.ActiveWorkspaceIdx = 0
+	if wsFocus > 0 && wsFocus <= len(m.Workspaces) {
+		m.ActiveWorkspaceIdx = wsFocus - 1
+	} else {
+		m.ActiveWorkspaceIdx = 0
+	}
 	return nil
 }
 

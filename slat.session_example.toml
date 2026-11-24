@@ -1,5 +1,6 @@
 session_name = "sample-session"
 start_directory = "~/code/10-apps/project"
+# focus = 1 # 1-based tab index (or workspace index when [[workspaces]] is used) to focus when the session starts
 
 [[tabs]]
 name = "doc"
