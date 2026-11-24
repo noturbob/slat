@@ -194,6 +194,8 @@ func defaultKeybinds() map[string]string {
 		"zoom":              "z",
 		"identify-panes":    "i",
 		"stack-mode":        "t",
+		"break-pane":        "!",
+		"join-pane":         "@",
 		// Tabs
 		"new-tab":    "c",
 		"next-tab":   "n",

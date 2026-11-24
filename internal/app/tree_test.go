@@ -385,3 +385,84 @@ func TestTreePickerCtrlW(t *testing.T) {
 		t.Errorf("jumped to (%q, %q), want (work, logs)", wsName, tabName)
 	}
 }
+
+func TestBreakPaneToNewTab(t *testing.T) {
+	a, term := start(t)
+	waitFor(t, term, "pane 1/1", 1)
+
+	// Breaking the only pane in a tab is a no-op with a notification.
+	a.FeedInput([]byte{prefix, '!'})
+	waitFor(t, term, "only one pane in tab", 1)
+
+	// Split vertically, then break the active (second) pane into a new tab.
+	a.FeedInput([]byte{prefix, 'v'})
+	waitFor(t, term, "pane 2/2", 1)
+
+	var brokenID int
+	a.WithManagerForTest(func(m *session.Manager) {
+		brokenID = m.ActivePane().ID
+	})
+
+	a.FeedInput([]byte{prefix, '!'})
+	waitFor(t, term, "pane 1/1", 1)
+
+	var tabCount, activeTabIdx, activePaneID, tab0Panes int
+	a.WithManagerForTest(func(m *session.Manager) {
+		ws := m.ActiveWorkspace()
+		tabCount = len(ws.Tabs)
+		activeTabIdx = ws.ActiveTabIdx
+		activePaneID = m.ActivePane().ID
+		tab0Panes = len(m.AllPanes())
+	})
+	if tabCount != 2 || activeTabIdx != 1 {
+		t.Fatalf("after BreakPane: tabs=%d activeTab=%d, want 2, 1", tabCount, activeTabIdx)
+	}
+	if activePaneID != brokenID {
+		t.Errorf("broken pane ID = %d, want %d", activePaneID, brokenID)
+	}
+	if tab0Panes != 2 {
+		t.Errorf("total panes = %d, want 2", tab0Panes)
+	}
+}
+
+func TestJoinPaneIntoCurrentTab(t *testing.T) {
+	a, term := start(t)
+	waitFor(t, term, "pane 1/1", 1)
+
+	// With only one tab/pane, join-pane notifies and does not open a picker.
+	a.FeedInput([]byte{prefix, '@'})
+	waitFor(t, term, "no other panes to join", 1)
+
+	// Create a second tab, rename it "extra", remember its pane ID, then switch back to tab 1.
+	a.FeedInput([]byte{prefix, 'c'})
+	a.FeedInput([]byte{prefix, ','})
+	a.FeedInput([]byte("\x15extra\r"))
+	waitFor(t, term, "2:extra", 1)
+
+	var extraPaneID int
+	a.WithManagerForTest(func(m *session.Manager) {
+		extraPaneID = m.ActivePane().ID
+	})
+
+	a.FeedInput([]byte{prefix, 'p'})
+	waitFor(t, term, "pane 1/1", 1)
+
+	// Open join-pane picker (<prefix> @), filter for "extra", press Enter.
+	a.FeedInput([]byte{prefix, '@'})
+	waitFor(t, term, "join pane", 1)
+	a.FeedInput([]byte("extra\r"))
+	waitGone(t, term, "join pane")
+	waitFor(t, term, "pane 2/2", 1)
+
+	var tabCount, activePaneID int
+	a.WithManagerForTest(func(m *session.Manager) {
+		tabCount = len(m.ActiveWorkspace().Tabs)
+		activePaneID = m.ActivePane().ID
+	})
+	if tabCount != 1 {
+		t.Errorf("tabCount after joining sole pane from extra = %d, want 1", tabCount)
+	}
+	if activePaneID != extraPaneID {
+		t.Errorf("activePaneID = %d, want joined pane %d", activePaneID, extraPaneID)
+	}
+}

@@ -122,6 +122,35 @@ func (a *App) openGlobalTreePicker() {
 	a.tree = ts
 }
 
+func (a *App) openJoinPanePicker() {
+	inActiveTab := make(map[*pane.Pane]bool)
+	for _, p := range a.manager.ActivePanes() {
+		inActiveTab[p] = true
+	}
+	var candidates []treeNode
+	for _, n := range a.buildTree() {
+		if n.pane == nil || inActiveTab[n.pane] {
+			continue
+		}
+		candidates = append(candidates, n)
+	}
+	if len(candidates) == 0 {
+		a.notify("no other panes to join")
+		return
+	}
+	ts := &treeState{
+		title: "join pane",
+		all:   candidates,
+		onSelect: func(n treeNode) {
+			if err := a.manager.JoinPane(n.pane, a.paneArea()); err != nil {
+				a.notify(err.Error())
+			}
+		},
+	}
+	ts.refilter()
+	a.tree = ts
+}
+
 // ExportTree returns a serializable tree of the current session for `tree` RPC.
 func (a *App) ExportTree() []RemoteTreeNode {
 	a.mu.Lock()

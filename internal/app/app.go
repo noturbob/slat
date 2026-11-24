@@ -846,6 +846,12 @@ func (a *App) do(action input.Action) bool {
 		a.showPaneIDs = !a.showPaneIDs
 	case input.ActionStackMode:
 		a.manager.ToggleStack()
+	case input.ActionBreakPane:
+		if err := a.manager.BreakPane(); err != nil {
+			a.notify(err.Error())
+		}
+	case input.ActionJoinPane:
+		a.openJoinPanePicker()
 	case input.ActionClosePane:
 		if a.manager.KillActivePane() {
 			a.doQuit()

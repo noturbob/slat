@@ -310,7 +310,12 @@ func (m *Manager) AddPane(area layout.Rect) error {
 	if err != nil {
 		return err
 	}
-	panes := append(layout.CollectPanes(tab.Layout), newP)
+	m.attachPaneToTab(tab, newP, area)
+	return nil
+}
+
+func (m *Manager) attachPaneToTab(tab *Tab, p *pane.Pane, area layout.Rect) {
+	panes := append(layout.CollectPanes(tab.Layout), p)
 	mode := tab.LayoutMode
 	if mode == "" {
 		if tab.Stacked {
@@ -321,11 +326,92 @@ func (m *Manager) AddPane(area layout.Rect) error {
 	}
 	tab.LayoutMode = mode
 	tab.Layout = layout.Arrange(panes, mode)
-	tab.ActivePane = newP
+	tab.ActivePane = p
 	tab.Zoomed = nil
 	if !tab.Stacked {
 		layout.Apply(tab.Layout, area)
 	}
+}
+
+// BreakPane moves the active pane out of the current tab into a new tab in the
+// active workspace and switches focus to it.
+func (m *Manager) BreakPane() error {
+	ws := m.ActiveWorkspace()
+	tab := m.ActiveTab()
+	p := m.ActivePane()
+	if ws == nil || tab == nil || p == nil {
+		return errors.New("no active pane")
+	}
+	if layout.CountPanes(tab.Layout) <= 1 {
+		return errors.New("only one pane in tab")
+	}
+	var heir *pane.Pane
+	tab.Layout, heir = layout.RemovePane(tab.Layout, p)
+	tab.ActivePane = heir
+	if tab.Zoomed == p || (tab.Zoomed != nil && tab.Layout != nil && tab.Layout.Pane != nil) {
+		tab.Zoomed = nil
+	}
+
+	_, name, _ := p.Foreground()
+	if name == "" {
+		name = "shell"
+	}
+	ws.Tabs = append(ws.Tabs, &Tab{
+		Name:       name,
+		LayoutMode: layout.ModeEvenVertical,
+		Layout:     layout.NewLeaf(p),
+		ActivePane: p,
+	})
+	ws.ActiveTabIdx = len(ws.Tabs) - 1
+	return nil
+}
+
+// JoinPane moves src from its current tab into the active tab, arranging panes
+// according to the active tab's layout mode and removing any emptied source tab.
+func (m *Manager) JoinPane(src *pane.Pane, area layout.Rect) error {
+	dstTab := m.ActiveTab()
+	if dstTab == nil || src == nil {
+		return errors.New("no active tab")
+	}
+	srcWSIdx, srcTabIdx := -1, -1
+	for wi, ws := range m.Workspaces {
+		for ti, tab := range ws.Tabs {
+			if slices.Contains(layout.CollectPanes(tab.Layout), src) {
+				srcWSIdx, srcTabIdx = wi, ti
+				break
+			}
+		}
+		if srcWSIdx >= 0 {
+			break
+		}
+	}
+	if srcWSIdx < 0 {
+		return errors.New("pane not found")
+	}
+	srcWS := m.Workspaces[srcWSIdx]
+	srcTab := srcWS.Tabs[srcTabIdx]
+	if srcTab == dstTab {
+		return errors.New("pane is already in current tab")
+	}
+
+	var heir *pane.Pane
+	srcTab.Layout, heir = layout.RemovePane(srcTab.Layout, src)
+	if srcTab.ActivePane == src {
+		srcTab.ActivePane = heir
+	}
+	if srcTab.Zoomed == src || (srcTab.Zoomed != nil && srcTab.Layout != nil && srcTab.Layout.Pane != nil) {
+		srcTab.Zoomed = nil
+	}
+	if srcTab.Layout == nil {
+		srcWS.Tabs = slices.Delete(srcWS.Tabs, srcTabIdx, srcTabIdx+1)
+		srcWS.ActiveTabIdx = removedIdx(srcWS.ActiveTabIdx, srcTabIdx, len(srcWS.Tabs))
+		if len(srcWS.Tabs) == 0 {
+			m.Workspaces = slices.Delete(m.Workspaces, srcWSIdx, srcWSIdx+1)
+			m.ActiveWorkspaceIdx = removedIdx(m.ActiveWorkspaceIdx, srcWSIdx, len(m.Workspaces))
+		}
+	}
+
+	m.attachPaneToTab(dstTab, src, area)
 	return nil
 }
 

@@ -193,6 +193,8 @@ every key inside slat.
 | `l` | Choose layout (picker menu) |
 | `z` | Zoom the pane to full size per tab (toggle) |
 | `t` | Toggle stacked mode (jump elements with `o`/`O`/`j`/`k` or click) |
+| `!` | Break active pane into a new tab |
+| `@` | Join a pane from another tab into the current tab |
 | `x` | Close the pane |
 | `[` or PageUp | Scroll and copy mode (see below) |
 
