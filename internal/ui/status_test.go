@@ -420,6 +420,24 @@ func TestStatusSessionAndDialog(t *testing.T) {
 	}
 }
 
+func TestDrawHelpExpandsWidth(t *testing.T) {
+	f := NewFrame(120, 20)
+	longDesc := "Move the pane around (hjkl, q exits)"
+	entries := []HelpEntry{
+		{Desc: "Panes"},
+		{Key: "m", Desc: longDesc},
+	}
+	DrawHelp(f, "slat · keys", entries)
+	var b strings.Builder
+	for y := 0; y < f.H; y++ {
+		b.WriteString(row(f, y))
+		b.WriteByte('\n')
+	}
+	if !strings.Contains(b.String(), longDesc) {
+		t.Errorf("expected full description %q without truncation, got:\n%s", longDesc, b.String())
+	}
+}
+
 func TestDrawSplash(t *testing.T) {
 	Themes["default"].Apply()
 	sp, err := ParseSplash([]string{"[SLAT]", " /\\ "}, "v1.0", "press ?", "cyan", "208", "#1e1e2e")

@@ -350,11 +350,23 @@ type HelpEntry struct{ Key, Desc string }
 // DrawHelp draws the keybinding reference centered on the screen, in two
 // columns when one doesn't fit.
 func DrawHelp(f *Frame, title string, entries []HelpEntry) {
-	const colW = 34
 	w, h := f.W, f.H
 
+	maxKeyW, maxDescW, maxHeadW := 5, 0, 0
+	for _, e := range entries {
+		if e.Key == "" {
+			maxHeadW = max(maxHeadW, vt.StringWidth(e.Desc)+8)
+			continue
+		}
+		maxKeyW = max(maxKeyW, vt.StringWidth(e.Key))
+		maxDescW = max(maxDescW, vt.StringWidth(e.Desc))
+	}
+	keyOff := 2 + maxKeyW + 2
+	colW := max(34, max(keyOff+maxDescW+2, maxHeadW))
+
 	columns := [][]HelpEntry{entries}
-	if len(entries)+4 > h && w >= 2*colW+3 {
+	if len(entries)+4 > h && w >= 2*28+3 {
+		colW = min(colW, (w-3)/2)
 		// Split at the section heading nearest the middle.
 		cut := len(entries) / 2
 		for d := 0; d < len(entries)/2; d++ {
@@ -368,25 +380,30 @@ func DrawHelp(f *Frame, title string, entries []HelpEntry) {
 			}
 		}
 		columns = [][]HelpEntry{entries[:cut], entries[cut:]}
+	} else {
+		colW = min(colW, max(w-2, 20))
 	}
 	rows := 0
 	for _, c := range columns {
 		rows = max(rows, len(c))
 	}
 	boxW := len(columns)*colW + 2 + (len(columns) - 1)
+	if boxW > w {
+		boxW = w
+	}
 	boxH := rows + 4
 	x0, y0 := max((w-boxW)/2, 0), max((h-boxH)/2, 0)
 
 	for y := 0; y < boxH; y++ {
 		Fill(f, x0, y0+y, boxW, styleBox)
 	}
-	Text(f, x0, y0, "╭"+strings.Repeat("─", boxW-2)+"╮", styleBox)
+	Text(f, x0, y0, "╭"+strings.Repeat("─", max(boxW-2, 0))+"╮", styleBox)
 	for y := 1; y < boxH-1; y++ {
 		Text(f, x0, y0+y, "│", styleBox)
 		Text(f, x0+boxW-1, y0+y, "│", styleBox)
 	}
-	Text(f, x0, y0+boxH-1, "╰"+strings.Repeat("─", boxW-2)+"╯", styleBox)
-	Text(f, x0+(boxW-vt.StringWidth(title))/2, y0+1, title, styleBoxHead)
+	Text(f, x0, y0+boxH-1, "╰"+strings.Repeat("─", max(boxW-2, 0))+"╯", styleBox)
+	Text(f, x0+max((boxW-vt.StringWidth(title))/2, 1), y0+1, Truncate(title, max(boxW-2, 0)), styleBoxHead)
 
 	for ci, col := range columns {
 		cx := x0 + 1 + ci*(colW+1)
@@ -397,11 +414,11 @@ func DrawHelp(f *Frame, title string, entries []HelpEntry) {
 				continue
 			}
 			Text(f, cx+2, y, e.Key, styleBoxKey)
-			Text(f, cx+9, y, Truncate(e.Desc, colW-10), styleBoxText)
+			Text(f, cx+keyOff, y, Truncate(e.Desc, max(colW-keyOff-1, 0)), styleBoxText)
 		}
 	}
 	foot := "press any key to close"
-	if y0+boxH-1 < h {
+	if y0+boxH-1 < h && len(foot)+2 <= boxW-2 {
 		Text(f, x0+(boxW-len(foot))/2, y0+boxH-1, " "+foot+" ", styleBoxText)
 	}
 }
