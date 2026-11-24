@@ -101,7 +101,7 @@ func (a *App) mouseKey(buf []byte, i int) int {
 	if !ok {
 		return i
 	}
-	if tab := a.manager.ActiveTab(); a.zoomed == nil && a.scroll == nil && tab != nil && tab.Stacked {
+	if tab := a.manager.ActiveTab(); a.scroll == nil && tab != nil && tab.Zoomed == nil && tab.Stacked {
 		panes := a.manager.ActivePanes()
 		if len(panes) > 1 {
 			headerRows := min(len(panes), max(a.paneArea().Rows-1, 0))
@@ -217,7 +217,7 @@ func encodeMouse(ev mouseEvent, sgr bool, x, y int) []byte {
 // whether it did.
 func (a *App) startDrag(ev mouseEvent) bool {
 	// A zoomed pane covers the layout: there are no borders to pull.
-	if a.zoomed != nil || a.scroll != nil {
+	if a.zoomedPane() != nil || a.scroll != nil {
 		return false
 	}
 	tab := a.manager.ActiveTab()

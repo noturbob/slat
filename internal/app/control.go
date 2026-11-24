@@ -450,7 +450,6 @@ func (a *App) FocusPaneTarget(t PaneTarget) error {
 		return err
 	}
 	a.mu.Lock()
-	a.zoomed = nil
 	a.manager.Focus(r.Pane)
 	a.mu.Unlock()
 	a.markDirty()

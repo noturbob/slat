@@ -84,7 +84,6 @@ func (a *App) openLayoutPicker() {
 		title: "layouts",
 		all:   all,
 		onSelect: func(n treeNode) {
-			a.zoomed = nil
 			a.manager.ApplyLayout(n.layoutMode)
 		},
 	}
@@ -150,7 +149,6 @@ func (a *App) FocusTarget(wsIdx, tabIdx, paneID int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	defer a.markDirty()
-	a.zoomed = nil
 	if wsIdx >= 0 && wsIdx < len(a.manager.Workspaces) {
 		a.manager.ActiveWorkspaceIdx = wsIdx
 	}
@@ -348,7 +346,6 @@ func (a *App) jumpToTreeNode(n treeNode) {
 		}
 		return
 	}
-	a.zoomed = nil
 	if n.wsIdx < 0 || n.wsIdx >= len(a.manager.Workspaces) {
 		return
 	}
@@ -368,7 +365,18 @@ func (a *App) treeKey(buf []byte, i int) int {
 	listH := a.treeListHeight()
 	b := buf[i]
 	switch b {
-	case 0x1b: // Esc or arrow sequence
+	case 0x1b: // Esc or arrow/page sequence
+		if i+3 < len(buf) && buf[i+1] == '[' && buf[i+3] == '~' {
+			page := max(listH-1, 1)
+			switch buf[i+2] {
+			case '5': // PageUp
+				ts.move(-page, listH)
+				return i + 3
+			case '6': // PageDown
+				ts.move(page, listH)
+				return i + 3
+			}
+		}
 		if i+2 < len(buf) && (buf[i+1] == '[' || buf[i+1] == 'O') {
 			switch buf[i+2] {
 			case 'A':

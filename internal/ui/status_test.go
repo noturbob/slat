@@ -254,8 +254,8 @@ func TestStatusZoomedTabAndBadge(t *testing.T) {
 	if !strings.Contains(got, "■ 1:one") || !strings.Contains(got, "▣ 2:two") {
 		t.Errorf("zoomed tab glyph = %q", got)
 	}
-	if strings.Contains(got, "ZOOM") {
-		t.Errorf("ZOOM badge should be suppressed when tab_zoom_glyph is used: %q", got)
+	if !strings.Contains(got, "ZOOM") {
+		t.Errorf("ZOOM badge should be visible when zoomed on current tab: %q", got)
 	}
 
 	// Verify zoomed glyph inherits tab 2's yellow colour.
@@ -268,7 +268,7 @@ func TestStatusZoomedTabAndBadge(t *testing.T) {
 		}
 	}
 
-	// {zoom} placeholder in right side also works and suppresses ZOOM badge.
+	// {zoom} placeholder in right side also works while keeping ZOOM badge visible.
 	cfg2 := DefaultStatusConfig()
 	cfg2.Right = "{badge}{zoom} {pane}/{panes} "
 	cfg2.Zoom = "{fg=yellow,bold} ▣{/}"
@@ -279,7 +279,7 @@ func TestStatusZoomedTabAndBadge(t *testing.T) {
 	fr2 := NewFrame(60, 1)
 	DrawStatusBar(fr2, 0, st, f2)
 	got2 := row(fr2, 0)
-	if strings.Contains(got2, "ZOOM") || !strings.Contains(got2, "▣ 1/1") {
+	if !strings.Contains(got2, "ZOOM") || !strings.Contains(got2, "▣ 1/1") {
 		t.Errorf("{zoom} placeholder = %q", got2)
 	}
 }
@@ -325,8 +325,8 @@ func TestStatusThreeGlyphTabs(t *testing.T) {
 			t.Errorf("missing %q in %q", want, got)
 		}
 	}
-	if strings.Contains(got, "ZOOM") {
-		t.Errorf("ZOOM badge should be suppressed when pane_zoom_glyphs is used: %q", got)
+	if !strings.Contains(got, "ZOOM") {
+		t.Errorf("ZOOM badge should be visible when zoomed on current tab: %q", got)
 	}
 
 	// Verify pane_colors[2] = #a6e3a1 on '₃' (3 panes -> 0-based colour index 2),
@@ -477,7 +477,7 @@ func TestStatusPaneGlyphCurrent(t *testing.T) {
 	if !strings.Contains(got, "①:❷/❸") || !strings.Contains(got, "②:₁/₂") {
 		t.Errorf("tab pane_glyph_current = %q", got)
 	}
-	if !strings.HasSuffix(got, "❷") || strings.Contains(got, "ZOOM") {
+	if !strings.HasSuffix(got, "❷") || !strings.Contains(got, "ZOOM") {
 		t.Errorf("right pane_glyph_current = %q", got)
 	}
 }
@@ -915,8 +915,8 @@ func TestStatusZoomGlyphsPerType(t *testing.T) {
 		if !f.HasZoomIndicator() {
 			t.Errorf("%s: HasZoomIndicator = false, want true", tc.name)
 		}
-		if strings.Contains(got, "ZOOM") {
-			t.Errorf("%s: ZOOM badge should be suppressed: %q", tc.name, got)
+		if !strings.Contains(got, "ZOOM") {
+			t.Errorf("%s: ZOOM badge should be visible: %q", tc.name, got)
 		}
 		for _, w := range tc.want {
 			if !strings.Contains(got, w) {
@@ -1018,5 +1018,116 @@ func TestCurrentPaneGlyphsDoNotFallbackToPaneGlyphs(t *testing.T) {
 	}
 	if f2.HasZoomIndicator() {
 		t.Errorf("HasZoomIndicator = true, want false when only current_pane_* placeholders are used without their own arrays")
+	}
+}
+
+func TestStatusBadgeTheming(t *testing.T) {
+	th, err := ParseTheme(map[string]string{
+		"badge_fg": "#111111",
+		"badge_bg": "#ffaa00",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	th.Apply()
+	defer Themes["default"].Apply()
+
+	cfg := DefaultStatusConfig()
+	cfg.Right = "{badge} "
+	f, err := ParseStatusConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, badge := range []string{"MOVE", "ZOOM"} {
+		fr := NewFrame(30, 1)
+		DrawStatusBar(fr, 0, Status{Badge: badge, Zoomed: badge == "ZOOM"}, f)
+		got := row(fr, 0)
+		if !strings.Contains(got, badge) {
+			t.Fatalf("missing %s badge in %q", badge, got)
+		}
+		foundStyled := false
+		for _, c := range fr.Lines[0] {
+			if c.R == rune(badge[0]) && c.Style.Fg == vt.RGB(0x11, 0x11, 0x11) && c.Style.Bg == vt.RGB(0xff, 0xaa, 0x00) {
+				foundStyled = true
+				break
+			}
+		}
+		if !foundStyled {
+			t.Errorf("%s badge did not use badge_fg/badge_bg", badge)
+		}
+	}
+
+	// Inline style tags around {badge} override theme badge colours.
+	cfgInline := DefaultStatusConfig()
+	cfgInline.Right = "{fg=#eeeeee,bg=#224488}{badge}{/} "
+	fInline, err := ParseStatusConfig(cfgInline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fr := NewFrame(30, 1)
+	DrawStatusBar(fr, 0, Status{Badge: "MOVE"}, fInline)
+	foundInline := false
+	for _, c := range fr.Lines[0] {
+		if c.R == 'M' && c.Style.Fg == vt.RGB(0xee, 0xee, 0xee) && c.Style.Bg == vt.RGB(0x22, 0x44, 0x88) {
+			foundInline = true
+			break
+		}
+	}
+	if !foundInline {
+		t.Errorf("inline {fg=...,bg=...}{badge}{/} did not apply custom badge style")
+	}
+}
+
+func TestStatusInactiveZoomedTabGlyphs(t *testing.T) {
+	Themes["default"].Apply()
+
+	cfg := DefaultStatusConfig()
+	cfg.Left = " {tabs} "
+	cfg.Right = "{badge}"
+	cfg.Tab = "{tab_glyph}{tab_index_glyph}:{pane_glyph}:{current_pane_glyph}:{current_pane_id_glyph}{zoom}"
+	cfg.TabGlyphs = []string{"■"}
+	cfg.TabZoomGlyph = "▣"
+	cfg.TabIndexGlyphs = []string{"0", "1", "2"}
+	cfg.TabIndexZoomGlyphs = []string{"⓪", "①", "②"}
+	cfg.PaneGlyphs = []string{"a", "b", "c"}
+	cfg.PaneZoomGlyphs = []string{"A", "B", "C"}
+	cfg.CurrentPaneGlyphs = []string{"x", "y", "z"}
+	cfg.CurrentPaneZoomGlyphs = []string{"X", "Y", "Z"}
+	cfg.CurrentPaneIDGlyphs = []string{"p", "q", "r", "s"}
+	cfg.CurrentPaneIDZoomGlyphs = []string{"P", "Q", "R", "S"}
+	cfg.Zoom = "*"
+	cfg.ZoomGlyphs = ZoomGlyphsConfig{
+		Tab:           true,
+		TabIndex:      true,
+		Pane:          true,
+		CurrentPane:   true,
+		CurrentPaneID: true,
+	}
+
+	f, err := ParseStatusConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Tab 0 is inactive and zoomed; tab 1 is active and not zoomed.
+	st := Status{
+		Tabs:            []string{"one", "two"},
+		TabPaneCount:    []int{2, 2},
+		TabActivePane:   []int{0, 1},
+		TabActivePaneID: []int{1, 3},
+		TabZoomed:       []bool{true, false},
+		ActiveTab:       1,
+		Zoomed:          false,
+	}
+
+	fr := NewFrame(80, 1)
+	DrawStatusBar(fr, 0, st, f)
+	got := row(fr, 0)
+	if !strings.Contains(got, "▣⓪:B:X:P*") {
+		t.Errorf("inactive zoomed tab = %q, want ▣⓪:B:X:P*", got)
+	}
+	if !strings.Contains(got, "■1:b:y:r") || strings.Contains(got, "■1:b:y:r*") {
+		t.Errorf("active unzoomed tab = %q, want ■1:b:y:r", got)
 	}
 }

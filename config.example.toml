@@ -91,7 +91,7 @@ duration = "700ms"        # "0s" skips the startup banner
 #     theme.border, theme.status_bg, theme.tab_bg, theme.tab_fg,
 #     theme.tab_active_bg, theme.tab_active_fg, theme.prefix_fg,
 #     theme.prefix_bg, theme.prefix_active_fg, theme.prefix_active_bg,
-#     plus any custom keys from [theme.vars] / [vars]
+#     theme.badge_fg, theme.badge_bg, plus any custom keys from [theme.vars] / [vars]
 #   - Dynamic indices: tab, pane, default
 #
 # Common placeholders for left/right:

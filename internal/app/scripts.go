@@ -78,7 +78,7 @@ func (a *App) snapshotScriptContextLocked(includeState bool) scriptSnapshot {
 		sessionName: a.manager.SessionName,
 		sessionDir:  a.sessionDir,
 		wsCount:     len(a.manager.Workspaces),
-		zoomed:      a.zoomed != nil,
+		zoomed:      a.zoomedPane() != nil,
 	}
 	if ws := a.manager.ActiveWorkspace(); ws != nil {
 		snap.wsName = ws.Name

@@ -274,3 +274,88 @@ func TestShutdownCommand(t *testing.T) {
 		t.Errorf("expected mutual exclusion error, got code=%d err=%q", code, errOut)
 	}
 }
+
+func TestCompleteAttachTarget(t *testing.T) {
+	sessions := []app.SessionSummary{
+		{Name: "alpha", Tabs: 2, Panes: 3, Attached: true, Dir: "/tmp/alpha"},
+		{Name: "beta", Tabs: 1, Panes: 1, Attached: false, Dir: "/tmp/beta"},
+		{Name: "apollo", Tabs: 3, Panes: 4, Attached: false, Dir: "/tmp/apollo"},
+	}
+	list := func() []app.SessionSummary { return sessions }
+
+	// Prefix matches running session names case-insensitively.
+	got := completeAttachTarget("a", list)
+	if len(got) != 2 || got[0].Value != "alpha" || got[1].Value != "apollo" {
+		t.Errorf("completeAttachTarget(\"a\") = %+v, want [alpha apollo]", got)
+	}
+
+	// Empty prefix lists all running sessions.
+	all := completeAttachTarget("", list)
+	if len(all) != 3 {
+		t.Errorf("completeAttachTarget(\"\") len = %d, want 3", len(all))
+	}
+
+	// No running sessions falls back to nil.
+	if empty := completeAttachTarget("", func() []app.SessionSummary { return nil }); empty != nil {
+		t.Errorf("completeAttachTarget with no sessions = %+v, want nil", empty)
+	}
+
+	// Path-like prefix falls back to nil for shell path completion.
+	for _, p := range []string{"/", "./work", "../other", "~/code"} {
+		if items := completeAttachTarget(p, list); items != nil {
+			t.Errorf("completeAttachTarget(%q) = %+v, want nil", p, items)
+		}
+	}
+}
+
+func TestCompleteSessionTarget(t *testing.T) {
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+
+	// Missing sessions directory returns nil.
+	if items := completeSessionTarget(""); items != nil {
+		t.Errorf("completeSessionTarget with no dir = %+v, want nil", items)
+	}
+
+	sessionsDir := filepath.Join(cfgHome, "slat", "sessions")
+	if err := os.MkdirAll(sessionsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sessionsDir, "alpha.toml"), []byte("start_directory = \"/tmp/alpha\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sessionsDir, "apollo.toml"), []byte("session_name = \"apollo\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sessionsDir, "beta.toml"), []byte("session_name = \"beta\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sessionsDir, "notes.txt"), []byte("ignore"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(sessionsDir, "subdir.toml"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// Prefix matches saved session names case-insensitively.
+	got := completeSessionTarget("A")
+	if len(got) != 2 || got[0].Value != "alpha" || got[1].Value != "apollo" {
+		t.Errorf("completeSessionTarget(\"A\") = %+v, want [alpha apollo]", got)
+	}
+	if got[0].Description != "/tmp/alpha" {
+		t.Errorf("alpha Description = %q, want /tmp/alpha", got[0].Description)
+	}
+
+	// Empty prefix lists all .toml sessions, ignoring non-.toml files and directories.
+	all := completeSessionTarget("")
+	if len(all) != 3 {
+		t.Errorf("completeSessionTarget(\"\") len = %d, want 3 (%+v)", len(all), all)
+	}
+
+	// Path-like prefix falls back to nil for shell path completion.
+	for _, p := range []string{"/", "./work", "../other", "~/code"} {
+		if items := completeSessionTarget(p); items != nil {
+			t.Errorf("completeSessionTarget(%q) = %+v, want nil", p, items)
+		}
+	}
+}

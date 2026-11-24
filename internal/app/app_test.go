@@ -469,3 +469,27 @@ func TestAddPaneHonorsLayout(t *testing.T) {
 		t.Fatalf("unexpected tree splits for master-left: root=%v right=%v", split, rightSplit)
 	}
 }
+
+func TestZoomPersistsAcrossTabSwitch(t *testing.T) {
+	a, term := start(t)
+	a.FeedInput([]byte{prefix, 'v'})
+	waitFor(t, term, "pane 2/2", 1)
+
+	// Zoom active pane on tab 1 (<prefix> z).
+	a.FeedInput([]byte{prefix, 'z'})
+	waitFor(t, term, "ZOOM", 1)
+
+	// Create and switch to tab 2 (<prefix> c); tab 2 should not be zoomed.
+	a.FeedInput([]byte{prefix, 'c'})
+	waitFor(t, term, "pane 1/1", 1)
+	waitGone(t, term, "ZOOM")
+
+	// Switch back to tab 1 (<prefix> p); tab 1 should still be zoomed.
+	a.FeedInput([]byte{prefix, 'p'})
+	waitFor(t, term, "pane 2/2", 1)
+	waitFor(t, term, "ZOOM", 1)
+
+	// Unzoom on tab 1 (<prefix> z).
+	a.FeedInput([]byte{prefix, 'z'})
+	waitGone(t, term, "ZOOM")
+}

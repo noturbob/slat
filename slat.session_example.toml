@@ -10,6 +10,7 @@ panes = [
 
 [[tabs]]
 name = "editor"
+# focus = 1 # 1-based pane index to focus when the session starts
 panes = [
   "nvim -S session.vim",
 ]

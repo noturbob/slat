@@ -199,3 +199,46 @@ func TestBuildTreeSingleLine(t *testing.T) {
 		t.Errorf("expected window and pane on one line, got %q", lbl)
 	}
 }
+
+func TestTreePickerPageUpPageDown(t *testing.T) {
+	a, term := start(t)
+	var sessions []SessionSummary
+	for i := 1; i <= 25; i++ {
+		sessions = append(sessions, SessionSummary{
+			Name:   "sess-" + string(rune('a'+i-1)),
+			Dir:    "/tmp/" + string(rune('a'+i-1)),
+			Tabs:   1,
+			Panes:  1,
+			Socket: "/tmp/s" + string(rune('a'+i-1)) + ".sock",
+		})
+	}
+	a.SetSessionLister(func() []SessionSummary { return sessions })
+
+	a.FeedInput([]byte{prefix, 'F'})
+	waitFor(t, term, "sessions (26/26)", 1)
+
+	// PageDown (\x1b[6~) moves down without closing the modal, then Enter selects a later item.
+	a.FeedInput([]byte("\x1b[6~\r"))
+	select {
+	case <-a.DetachRequested():
+	case <-time.After(time.Second):
+		t.Fatal("expected DetachRequested after PageDown + Enter")
+	}
+	if got := a.PopSwitchTarget(); got == "" || got == "/tmp/sa.sock" {
+		t.Errorf("PopSwitchTarget after PageDown = %q, expected item beyond first", got)
+	}
+
+	// Re-open, PageDown then PageUp (\x1b[5~) twice back to the top (item 0 = current session),
+	// then Down (\x1b[B) + Enter selects item 1 (/tmp/sa.sock).
+	a.FeedInput([]byte{prefix, 'F'})
+	waitFor(t, term, "sessions (26/26)", 1)
+	a.FeedInput([]byte("\x1b[6~\x1b[5~\x1b[5~\x1b[B\r"))
+	select {
+	case <-a.DetachRequested():
+	case <-time.After(time.Second):
+		t.Fatal("expected DetachRequested after PageUp + Enter")
+	}
+	if got := a.PopSwitchTarget(); got != "/tmp/sa.sock" {
+		t.Errorf("PopSwitchTarget after PageUp to top = %q, want /tmp/sa.sock", got)
+	}
+}

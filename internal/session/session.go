@@ -23,6 +23,7 @@ type Tab struct {
 	prevMode   layout.Mode
 	Layout     *layout.Node
 	ActivePane *pane.Pane
+	Zoomed     *pane.Pane
 }
 
 // Workspace groups tabs under a named context.
@@ -220,6 +221,7 @@ func (m *Manager) ToggleStack() {
 	if tab == nil {
 		return
 	}
+	tab.Zoomed = nil
 	if tab.Stacked {
 		prev := tab.prevMode
 		if prev == "" || prev == layout.ModeStack {
@@ -242,6 +244,7 @@ func (m *Manager) ApplyLayout(mode layout.Mode) {
 	if tab == nil {
 		return
 	}
+	tab.Zoomed = nil
 	if mode != layout.ModeStack {
 		tab.prevMode = mode
 	}
@@ -260,6 +263,9 @@ func (m *Manager) ApplyLayout(mode layout.Mode) {
 // FocusPane sets the active pane in the active tab to p.
 func (m *Manager) FocusPane(p *pane.Pane) {
 	if tab := m.ActiveTab(); tab != nil && p != nil {
+		if tab.Zoomed != p {
+			tab.Zoomed = nil
+		}
 		tab.ActivePane = p
 	}
 }
@@ -316,6 +322,7 @@ func (m *Manager) AddPane(area layout.Rect) error {
 	tab.LayoutMode = mode
 	tab.Layout = layout.Arrange(panes, mode)
 	tab.ActivePane = newP
+	tab.Zoomed = nil
 	if !tab.Stacked {
 		layout.Apply(tab.Layout, area)
 	}
@@ -350,6 +357,7 @@ func (m *Manager) SplitAt(target *pane.Pane, d pane.SplitDirection, dir string) 
 	}
 	layout.SplitNode(node, d, newP)
 	tab.ActivePane = newP
+	tab.Zoomed = nil
 	return newP, nil
 }
 
@@ -394,6 +402,9 @@ func (m *Manager) Focus(p *pane.Pane) bool {
 	for wi, ws := range m.Workspaces {
 		for ti, tab := range ws.Tabs {
 			if slices.Contains(layout.CollectPanes(tab.Layout), p) {
+				if tab.Zoomed != p {
+					tab.Zoomed = nil
+				}
 				m.ActiveWorkspaceIdx, ws.ActiveTabIdx, tab.ActivePane = wi, ti, p
 				return true
 			}
@@ -457,11 +468,17 @@ func (m *Manager) Reap() bool {
 				if tab.ActivePane == p {
 					tab.ActivePane = heir
 				}
+				if tab.Zoomed == p {
+					tab.Zoomed = nil
+				}
 			}
 			if tab.Layout == nil {
 				ws.Tabs = slices.Delete(ws.Tabs, ti, ti+1)
 				ws.ActiveTabIdx = removedIdx(ws.ActiveTabIdx, ti, len(ws.Tabs))
 				continue
+			}
+			if tab.Zoomed != nil && tab.Layout.Pane != nil {
+				tab.Zoomed = nil
 			}
 			ti++
 		}
@@ -493,6 +510,7 @@ func (m *Manager) cyclePane(d int) {
 	if tab == nil {
 		return
 	}
+	tab.Zoomed = nil
 	panes := layout.CollectPanes(tab.Layout)
 	if i := slices.Index(panes, tab.ActivePane); i >= 0 {
 		n := len(panes)
@@ -507,6 +525,7 @@ func (m *Manager) SelectPaneInDirection(direction string) {
 	if tab == nil {
 		return
 	}
+	tab.Zoomed = nil
 	if p := m.paneInDirection(tab, direction); p != nil {
 		tab.ActivePane = p
 	}
@@ -576,11 +595,13 @@ func (m *Manager) SwapPanes() {
 	if tab == nil {
 		return
 	}
+	tab.Zoomed = nil
 	panes := layout.CollectPanes(tab.Layout)
 	i := slices.Index(panes, tab.ActivePane)
 	if len(panes) <= 1 || i < 0 {
 		return
 	}
+	tab.Zoomed = nil
 	a := layout.FindLeaf(tab.Layout, panes[i])
 	b := layout.FindLeaf(tab.Layout, panes[(i+1)%len(panes)])
 	a.Pane, b.Pane = b.Pane, a.Pane
@@ -597,6 +618,7 @@ func (m *Manager) ResizeRatio(delta float64) {
 	if parent == nil {
 		return
 	}
+	tab.Zoomed = nil
 	// Ratio is the first child's share, so growing the second child means
 	// lowering it.
 	if idx == 1 {
@@ -608,6 +630,7 @@ func (m *Manager) ResizeRatio(delta float64) {
 // EqualizeLayout resets all split ratios to 0.5.
 func (m *Manager) EqualizeLayout() {
 	if tab := m.ActiveTab(); tab != nil {
+		tab.Zoomed = nil
 		layout.Equalize(tab.Layout)
 	}
 }

@@ -37,12 +37,15 @@ type Theme struct {
 	PrefixBg       vt.Color // status {prefix} background when idle
 	PrefixActiveFg vt.Color // status {prefix} text when prefix key is pressed
 	PrefixActiveBg vt.Color // status {prefix} background when prefix key is pressed
+	BadgeFg        vt.Color // status {badge} text (MOVE, ZOOM, PREFIX, ...)
+	BadgeBg        vt.Color // status {badge} background
 
 	HasStatusBg       bool
 	HasTabBg          bool
 	HasTabActiveBg    bool
 	HasPrefixBg       bool
 	HasPrefixActiveBg bool
+	HasBadgeBg        bool
 
 	Vars map[string]vt.Color // custom palette variables ([vars] / [theme.vars])
 }
@@ -64,6 +67,8 @@ type themeFile struct {
 	PrefixBg       string            `toml:"prefix_bg"`
 	PrefixActiveFg string            `toml:"prefix_active_fg"`
 	PrefixActiveBg string            `toml:"prefix_active_bg"`
+	BadgeFg        string            `toml:"badge_fg"`
+	BadgeBg        string            `toml:"badge_bg"`
 	Vars           map[string]string `toml:"vars"`
 }
 
@@ -96,6 +101,8 @@ func (tf themeFile) toSettings() (map[string]string, error) {
 	add("prefix_bg", tf.PrefixBg)
 	add("prefix_active_fg", tf.PrefixActiveFg)
 	add("prefix_active_bg", tf.PrefixActiveBg)
+	add("badge_fg", tf.BadgeFg)
+	add("badge_bg", tf.BadgeBg)
 	return s, nil
 }
 
@@ -295,6 +302,12 @@ func FormatThemeTOML(t Theme) []byte {
 	if t.HasPrefixActiveBg {
 		writeKV("prefix_active_bg", t.PrefixActiveBg)
 	}
+	if t.BadgeFg != 0 {
+		writeKV("badge_fg", t.BadgeFg)
+	}
+	if t.HasBadgeBg {
+		writeKV("badge_bg", t.BadgeBg)
+	}
 	if len(t.Vars) > 0 {
 		b.WriteString("\n[vars]\n")
 		keys := make([]string, 0, len(t.Vars))
@@ -394,6 +407,7 @@ func applyThemeOverrides(base Theme, settings, vars map[string]string) (Theme, e
 		"tab_active_bg": &t.TabActiveBg, "tab_active_fg": &t.TabActiveFg,
 		"prefix_fg": &t.PrefixFg, "prefix_bg": &t.PrefixBg,
 		"prefix_active_fg": &t.PrefixActiveFg, "prefix_active_bg": &t.PrefixActiveBg,
+		"badge_fg": &t.BadgeFg, "badge_bg": &t.BadgeBg,
 	}
 	bgFlags := map[string]*bool{
 		"status_bg":        &t.HasStatusBg,
@@ -401,6 +415,7 @@ func applyThemeOverrides(base Theme, settings, vars map[string]string) (Theme, e
 		"tab_active_bg":    &t.HasTabActiveBg,
 		"prefix_bg":        &t.HasPrefixBg,
 		"prefix_active_bg": &t.HasPrefixActiveBg,
+		"badge_bg":         &t.HasBadgeBg,
 	}
 	for key := range normSettings {
 		if _, ok := fields[key]; !ok {
@@ -566,6 +581,13 @@ func (t Theme) ResolveColor(key string) (vt.Color, bool) {
 			return t.PrefixActiveBg, true
 		}
 		return fallbackColor(t.PrefixActiveBg, t.Accent), true
+	case "badge_fg":
+		return fallbackColor(t.BadgeFg, t.Bg), true
+	case "badge_bg":
+		if t.HasBadgeBg {
+			return t.BadgeBg, true
+		}
+		return fallbackColor(t.BadgeBg, t.Accent), true
 	default:
 		if c, ok := t.Vars[strings.ToLower(strings.TrimSpace(key))]; ok {
 			return c, true
@@ -608,11 +630,19 @@ func (t Theme) Apply() {
 	if t.HasPrefixActiveBg {
 		prefixActiveBg = t.PrefixActiveBg
 	}
+	badgeBg := fallbackColor(t.BadgeBg, t.Accent)
+	if t.HasBadgeBg {
+		badgeBg = t.BadgeBg
+	}
 	styleBar = vt.Style{Fg: t.Fg, Bg: barBg}
 	styleWorkspace = vt.Style{Fg: t.Accent, Bg: barBg, Attrs: vt.Bold}
 	styleTab = vt.Style{Fg: t.TabFg, Bg: t.TabBg}
 	styleTabActive = vt.Style{Fg: t.TabActiveFg, Bg: t.TabActiveBg, Attrs: vt.Bold}
-	styleBadge = vt.Style{Fg: t.Bg, Bg: t.Accent, Attrs: vt.Bold}
+	styleBadge = vt.Style{
+		Fg:    fallbackColor(t.BadgeFg, t.Bg),
+		Bg:    badgeBg,
+		Attrs: vt.Bold,
+	}
 	styleDim = vt.Style{Fg: t.Dim, Bg: barBg}
 	styleAccent = t.Accent
 	stylePrefix = vt.Style{

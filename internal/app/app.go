@@ -63,7 +63,6 @@ type App struct {
 	handler     *input.Handler
 	screen      *ui.Screen
 	cols, rows  int
-	zoomed      *pane.Pane
 	scroll      *scroll // scroll mode, or nil
 	showHelp    bool
 	showPaneIDs bool
@@ -90,6 +89,7 @@ type App struct {
 	statusTabActivePane   []int
 	statusTabActivePaneID []int
 	statusTabProcess      []string
+	statusTabZoomed       []bool
 	scriptOutputs         map[string]string
 	statusScripts         map[string]string
 	preset                *session.Preset
@@ -440,8 +440,13 @@ func (a *App) render() {
 		return
 	}
 	visible := a.manager.ActivePanes()
-	if !slices.Contains(visible, a.zoomed) {
-		a.zoomed = nil // closed, or on another tab
+	tab := a.manager.ActiveTab()
+	var zoomed *pane.Pane
+	if tab != nil {
+		if tab.Zoomed != nil && (!slices.Contains(visible, tab.Zoomed) || len(visible) <= 1) {
+			tab.Zoomed = nil // closed, or only pane left
+		}
+		zoomed = tab.Zoomed
 	}
 	if a.scroll != nil && a.scroll.pane != a.manager.ActivePane() {
 		a.scroll = nil // closed, or focus moved
@@ -449,12 +454,11 @@ func (a *App) render() {
 	area := a.paneArea()
 	var borders []layout.Rect
 	allPanes := visible
-	tab := a.manager.ActiveTab()
-	stacked := a.zoomed == nil && tab != nil && tab.Stacked && len(visible) > 1
+	stacked := zoomed == nil && tab != nil && tab.Stacked && len(visible) > 1
 	headerRows := 0
-	if a.zoomed != nil {
-		visible = []*pane.Pane{a.zoomed}
-		a.zoomed.SetRect(area.Row, area.Col, area.Rows, area.Cols)
+	if zoomed != nil {
+		visible = []*pane.Pane{zoomed}
+		zoomed.SetRect(area.Row, area.Col, area.Rows, area.Cols)
 	} else if stacked {
 		headerRows = min(len(visible), max(area.Rows-1, 0))
 		ap := a.manager.ActivePane()
@@ -511,7 +515,7 @@ func (a *App) render() {
 		for _, p := range visible {
 			pr, pc, _, pcols := p.Rect()
 			idx := slices.Index(allPanes, p)
-			ui.DrawPaneIDBadge(frame, pr, pc, pcols, p.ID, idx+1, p == active, a.zoomed != nil, a.status)
+			ui.DrawPaneIDBadge(frame, pr, pc, pcols, p.ID, idx+1, p == active, zoomed != nil, a.status)
 		}
 	}
 
@@ -561,6 +565,7 @@ func (a *App) statusOfBar(now time.Time) ui.Status {
 	a.statusTabActivePane = a.statusTabActivePane[:0]
 	a.statusTabActivePaneID = a.statusTabActivePaneID[:0]
 	a.statusTabProcess = a.statusTabProcess[:0]
+	a.statusTabZoomed = a.statusTabZoomed[:0]
 	for _, t := range ws.Tabs {
 		a.statusTabs = append(a.statusTabs, t.Name)
 		a.statusPaneCount = append(a.statusPaneCount, layout.CountPanes(t.Layout))
@@ -573,6 +578,7 @@ func (a *App) statusOfBar(now time.Time) ui.Status {
 		}
 		a.statusTabActivePaneID = append(a.statusTabActivePaneID, activeID)
 		a.statusTabProcess = append(a.statusTabProcess, activeProc)
+		a.statusTabZoomed = append(a.statusTabZoomed, t.Zoomed != nil)
 		alert := len(a.attention) > 0 && layout.AnyPane(t.Layout, func(p *pane.Pane) bool {
 			return a.attention[p.ID]
 		})
@@ -584,6 +590,7 @@ func (a *App) statusOfBar(now time.Time) ui.Status {
 	st.TabActivePane = a.statusTabActivePane
 	st.TabActivePaneID = a.statusTabActivePaneID
 	st.TabProcess = a.statusTabProcess
+	st.TabZoomed = a.statusTabZoomed
 	panes := a.manager.ActivePanes()
 	ap := a.manager.ActivePane()
 	if ap != nil {
@@ -592,7 +599,8 @@ func (a *App) statusOfBar(now time.Time) ui.Status {
 	st.PaneIndex = slices.Index(panes, ap)
 	st.PaneCount = len(panes)
 	st.PrefixActive = a.handler.IsPrefixActive()
-	st.Zoomed = a.zoomed != nil
+	zoomed := a.zoomedPane() != nil
+	st.Zoomed = zoomed
 	switch {
 	case a.handler.IsPrefixActive():
 		st.Badge = "PREFIX"
@@ -602,7 +610,7 @@ func (a *App) statusOfBar(now time.Time) ui.Status {
 		st.Badge = a.scrollBadge()
 	case a.moving:
 		st.Badge = "MOVE"
-	case a.zoomed != nil:
+	case zoomed:
 		st.Badge = "ZOOM"
 	case a.manager.ActiveTab() != nil && a.manager.ActiveTab().Stacked && len(panes) > 1:
 		st.Badge = "STACK"
@@ -784,22 +792,18 @@ func (a *App) do(action input.Action) bool {
 		if action == input.ActionSplitHorizontal {
 			dir = pane.SplitHorizontal
 		}
-		a.zoomed = nil
 		if err := a.manager.SplitPane(dir); err != nil {
 			a.notify(err.Error())
 		} else {
 			a.startAnim(a.manager.ActivePane(), dir)
 		}
 	case input.ActionAddPane:
-		a.zoomed = nil
 		if err := a.manager.AddPane(a.paneArea()); err != nil {
 			a.notify(err.Error())
 		}
 	case input.ActionNextPane:
-		a.zoomed = nil
 		a.manager.NextPane()
 	case input.ActionPrevPane:
-		a.zoomed = nil
 		a.manager.PrevPane()
 	case input.ActionSelectPaneUp:
 		a.selectPane("up")
@@ -821,29 +825,26 @@ func (a *App) do(action input.Action) bool {
 	case input.ActionSelectPaneRight:
 		a.selectPane("right")
 	case input.ActionSwapPane:
-		a.zoomed = nil
 		a.manager.SwapPanes()
 	case input.ActionResizeGrow:
-		a.zoomed = nil
 		a.manager.ResizeRatio(0.05)
 	case input.ActionResizeShrink:
-		a.zoomed = nil
 		a.manager.ResizeRatio(-0.05)
 	case input.ActionEqualizeLayout:
-		a.zoomed = nil
 		a.manager.EqualizeLayout()
 	case input.ActionLayoutPicker:
 		a.openLayoutPicker()
 	case input.ActionZoom:
-		if a.zoomed != nil {
-			a.zoomed = nil
-		} else if len(a.manager.ActivePanes()) > 1 {
-			a.zoomed = a.manager.ActivePane()
+		if tab := a.manager.ActiveTab(); tab != nil {
+			if tab.Zoomed != nil {
+				tab.Zoomed = nil
+			} else if len(a.manager.ActivePanes()) > 1 {
+				tab.Zoomed = a.manager.ActivePane()
+			}
 		}
 	case input.ActionIdentifyPanes:
 		a.showPaneIDs = !a.showPaneIDs
 	case input.ActionStackMode:
-		a.zoomed = nil
 		a.manager.ToggleStack()
 	case input.ActionClosePane:
 		if a.manager.KillActivePane() {
@@ -881,7 +882,7 @@ func (a *App) do(action input.Action) bool {
 		a.startPrompt("rename workspace", a.manager.ActiveWorkspace().Name, a.manager.RenameWorkspace)
 
 	case input.ActionScrollMode:
-		a.zoomed = nil
+		a.unzoom()
 		a.enterScroll()
 
 	// ── Session
@@ -924,8 +925,21 @@ func (a *App) do(action input.Action) bool {
 	return true
 }
 
+func (a *App) zoomedPane() *pane.Pane {
+	if tab := a.manager.ActiveTab(); tab != nil {
+		return tab.Zoomed
+	}
+	return nil
+}
+
+func (a *App) unzoom() {
+	if tab := a.manager.ActiveTab(); tab != nil {
+		tab.Zoomed = nil
+	}
+}
+
 func (a *App) selectPane(dir string) {
-	a.zoomed = nil
+	a.unzoom()
 	if tab := a.manager.ActiveTab(); tab != nil && tab.Stacked && len(a.manager.ActivePanes()) > 1 {
 		switch dir {
 		case "down", "right":

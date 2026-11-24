@@ -213,7 +213,10 @@ func newCLIApp(deps cliDeps) (*mcli.App, *globalFlags) {
 	type attachArgs struct {
 		Target string `cli:"target, session name, directory, or socket path"`
 	}
-	addCmd(m, "attach", "attach to a session by name or directory", 1, checkCmd, parseOpts,
+	attachParseOpts := withTargetCompletion(parseOpts, func(prefix string) []mcli.CompletionItem {
+		return completeAttachTarget(prefix, deps.listSessions)
+	})
+	addCmd(m, "attach", "attach to a session by name or directory", 1, checkCmd, attachParseOpts,
 		func(_ *mcli.Context, args *attachArgs) {
 			sock, dir, err := deps.resolveAttach(args.Target)
 			if err != nil {
@@ -257,7 +260,8 @@ func newCLIApp(deps cliDeps) (*mcli.App, *globalFlags) {
 	type sessionArgs struct {
 		Target string `cli:"#R, target, preconfigured session name or TOML path"`
 	}
-	addCmd(m, "session", "start or attach to a preconfigured session TOML", 1, checkCmd, parseOpts,
+	sessionParseOpts := withTargetCompletion(parseOpts, completeSessionTarget)
+	addCmd(m, "session", "start or attach to a preconfigured session TOML", 1, checkCmd, sessionParseOpts,
 		func(_ *mcli.Context, args *sessionArgs) {
 			sock, dir, presetPath, err := deps.resolvePreset(args.Target)
 			if err != nil {
@@ -397,6 +401,83 @@ func newCLIApp(deps cliDeps) (*mcli.App, *globalFlags) {
 	m.AddCompletion()
 	m.AddHelp()
 	return m, &globals
+}
+
+func isPathLikePrefix(s string) bool {
+	return strings.HasPrefix(s, "/") || strings.HasPrefix(s, "./") || strings.HasPrefix(s, "../") || strings.HasPrefix(s, "~")
+}
+
+func withTargetCompletion(base []mcli.ParseOpt, fn func(string) []mcli.CompletionItem) []mcli.ParseOpt {
+	return append(append([]mcli.ParseOpt(nil), base...), mcli.WithArgCompFuncs(map[string]mcli.ArgCompletionFunc{
+		"target": func(ctx mcli.ArgCompletionContext) []mcli.CompletionItem {
+			return fn(ctx.ArgPrefix())
+		},
+	}))
+}
+
+func completeAttachTarget(rawPrefix string, listFn func() []app.SessionSummary) []mcli.CompletionItem {
+	if listFn == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(rawPrefix)
+	if isPathLikePrefix(trimmed) {
+		return nil
+	}
+	prefix := strings.ToLower(trimmed)
+	sessions := listFn()
+	if len(sessions) == 0 {
+		return nil
+	}
+	var items []mcli.CompletionItem
+	for _, s := range sessions {
+		if prefix != "" && !strings.HasPrefix(strings.ToLower(s.Name), prefix) {
+			continue
+		}
+		state := "detached"
+		if s.Attached {
+			state = "attached"
+		}
+		items = append(items, mcli.CompletionItem{
+			Value:       s.Name,
+			Description: fmt.Sprintf("%d tabs, %d panes (%s) %s", s.Tabs, s.Panes, state, s.Dir),
+		})
+	}
+	return items
+}
+
+func completeSessionTarget(rawPrefix string) []mcli.CompletionItem {
+	trimmed := strings.TrimSpace(rawPrefix)
+	if isPathLikePrefix(trimmed) {
+		return nil
+	}
+	dir, err := session.SessionsDir()
+	if err != nil {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	prefix := strings.ToLower(trimmed)
+	var items []mcli.CompletionItem
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".toml") {
+			continue
+		}
+		name := strings.TrimSuffix(e.Name(), ".toml")
+		if prefix != "" && !strings.HasPrefix(strings.ToLower(name), prefix) {
+			continue
+		}
+		desc := filepath.Join(dir, e.Name())
+		if p, err := session.LoadPreset(desc); err == nil && p.StartDirectory != "" {
+			desc = p.StartDirectory
+		}
+		items = append(items, mcli.CompletionItem{
+			Value:       name,
+			Description: desc,
+		})
+	}
+	return items
 }
 
 func resolveAttach(target string) (string, string, error) {

@@ -265,6 +265,23 @@ mint = "#a6e3a1"
 	if _, _, badErr := ExportThemeTOML("no-such-theme", nil, nil); badErr == nil {
 		t.Error("expected error for unknown theme")
 	}
+
+	// badge_fg / badge_bg in [theme] and theme.badge_* references.
+	badgeTheme, bErr := ParseThemeWith(map[string]string{
+		"badge_fg": "theme.background",
+		"badge_bg": "#ff5500",
+	}, nil, nil)
+	if bErr != nil {
+		t.Fatalf("ParseThemeWith(badge): %v", bErr)
+	}
+	if c, ok := badgeTheme.ResolveColor("badge_fg"); !ok || c != badgeTheme.Bg {
+		t.Errorf("ResolveColor(badge_fg) = (%v, %v), want %v", c, ok, badgeTheme.Bg)
+	}
+	if c, ok := badgeTheme.ResolveColor("badge_bg"); !ok || c != vt.RGB(0xff, 0x55, 0x00) {
+		t.Errorf("ResolveColor(badge_bg) = (%v, %v), want #ff5500", c, ok)
+	}
+	badgeTheme.Apply()
+	Themes["default"].Apply()
 }
 
 func containsAll(s string, subs ...string) bool {

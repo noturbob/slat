@@ -164,6 +164,7 @@ type Status struct {
 	TabActivePane   []int    // 0-based active pane index in each tab
 	TabActivePaneID []int    // active pane ID in each tab
 	TabProcess      []string // active pane foreground process name in each tab
+	TabZoomed       []bool   // a pane in this tab is zoomed
 	ActiveTab       int
 	Badge           string // "PREFIX", "ZOOM", ... or ""
 	PrefixActive    bool
@@ -180,9 +181,6 @@ type Status struct {
 // are in is worse than one with a truncated tab list.
 func DrawStatusBar(f *Frame, y int, st Status, format StatusFormat) {
 	if st.Badge == "PREFIX" && format.HasPrefixPlaceholder() {
-		st.Badge = ""
-	}
-	if st.Badge == "ZOOM" && format.HasZoomIndicator() {
 		st.Badge = ""
 	}
 	w := f.W
@@ -336,7 +334,7 @@ func DrawTreePicker(f *Frame, title, query string, rows []TreeRow, offset, total
 		Text(f, x0+2, listY+i, line, st)
 	}
 
-	foot := " ↑↓/C-n/C-p move · Enter jump · Esc cancel "
+	foot := " ↑↓/PgUp/PgDn/C-n/C-p move · Enter jump · Esc cancel "
 	if vt.StringWidth(foot) <= boxW-2 {
 		Text(f, x0+(boxW-vt.StringWidth(foot))/2, y0+boxH-1, foot, styleFinderText)
 	}

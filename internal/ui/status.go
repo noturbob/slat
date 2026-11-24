@@ -835,9 +835,13 @@ func emitStatus(b *barSink, format string, st Status, f StatusFormat) {
 				emitTabs(b, st, f, ctx)
 			case "badge":
 				if st.Badge != "" {
-					b.emit(" ", styleBadge)
-					b.emit(st.Badge, styleBadge)
-					b.emit(" ", styleBadge)
+					badgeSt := styleBadge
+					if cur != styleBar {
+						badgeSt = cur
+					}
+					b.emit(" ", badgeSt)
+					b.emit(st.Badge, badgeSt)
+					b.emit(" ", badgeSt)
 				}
 			case "prefix":
 				pFormat, pStyle := f.Prefix, stylePrefix
@@ -929,6 +933,7 @@ func emitTabs(b *barSink, st Status, f StatusFormat, ctx styleCtx) {
 		}
 		tabCtx := styleCtx{tabColor: f.tabColor(i), paneColor: ctx.paneColor}
 		hasAlert := i < len(st.TabAlert) && st.TabAlert[i]
+		tabZoomed := st.tabZoomed(i)
 		paneCount := 1
 		if i < len(st.TabPaneCount) && st.TabPaneCount[i] > 0 {
 			paneCount = st.TabPaneCount[i]
@@ -974,7 +979,7 @@ func emitTabs(b *barSink, st Status, f StatusFormat, ctx styleCtx) {
 					}
 					if pg, ok := f.processGlyph(st, i); ok {
 						emitPlain(b, f, pg, s, tabCtx)
-					} else if f.ZoomGlyphs.Tab && i == st.ActiveTab && st.Zoomed && f.TabZoomGlyph != "" {
+					} else if f.ZoomGlyphs.Tab && tabZoomed && f.TabZoomGlyph != "" {
 						emitPlain(b, f, f.TabZoomGlyph, s, tabCtx)
 					} else if len(f.TabGlyphs) > 0 {
 						emitPlain(b, f, f.TabGlyphs[i%len(f.TabGlyphs)], s, tabCtx)
@@ -988,7 +993,7 @@ func emitTabs(b *barSink, st Status, f StatusFormat, ctx styleCtx) {
 						emitPlain(b, f, pg, s, tabCtx)
 					}
 				case "tab_index_glyph":
-					glyphs := pickGlyphSet(f.TabIndexGlyphs, activeZoomSet(f.TabIndexZoomGlyphs, f.ZoomGlyphs.TabIndex), i == st.ActiveTab && st.Zoomed)
+					glyphs := pickGlyphSet(f.TabIndexGlyphs, activeZoomSet(f.TabIndexZoomGlyphs, f.ZoomGlyphs.TabIndex), tabZoomed)
 					if len(glyphs) > 0 {
 						s := cur
 						if c := f.tabColor(i); c != 0 && cur == tabBase {
@@ -997,7 +1002,7 @@ func emitTabs(b *barSink, st Status, f StatusFormat, ctx styleCtx) {
 						emitNumberGlyphs(b, f, glyphs, i+1, s, tabCtx)
 					}
 				case "pane_glyph":
-					glyphs := pickGlyphSet(f.PaneGlyphs, activeZoomSet(f.PaneZoomGlyphs, f.ZoomGlyphs.Pane), i == st.ActiveTab && st.Zoomed)
+					glyphs := pickGlyphSet(f.PaneGlyphs, activeZoomSet(f.PaneZoomGlyphs, f.ZoomGlyphs.Pane), tabZoomed)
 					pCtx := styleCtx{tabColor: f.tabColor(i), paneColor: f.paneColor(paneCount - 1)}
 					emitPaneNumberGlyph(b, f, glyphs, paneCount, paneCount-1, cur, tabBase, pCtx)
 				case "pane_glyph_current":
@@ -1005,7 +1010,7 @@ func emitTabs(b *barSink, st Status, f StatusFormat, ctx styleCtx) {
 					if i < len(st.TabActivePane) && st.TabActivePane[i] >= 0 {
 						activeIdx = st.TabActivePane[i]
 					}
-					glyphs := pickGlyphSet(f.PaneGlyphs, activeZoomSet(f.PaneZoomGlyphs, f.ZoomGlyphs.Pane), i == st.ActiveTab && st.Zoomed)
+					glyphs := pickGlyphSet(f.PaneGlyphs, activeZoomSet(f.PaneZoomGlyphs, f.ZoomGlyphs.Pane), tabZoomed)
 					pCtx := styleCtx{tabColor: f.tabColor(i), paneColor: f.paneColor(activeIdx)}
 					emitPaneNumberGlyph(b, f, glyphs, activeIdx+1, activeIdx, cur, tabBase, pCtx)
 				case "current_pane_glyph":
@@ -1013,7 +1018,7 @@ func emitTabs(b *barSink, st Status, f StatusFormat, ctx styleCtx) {
 					if i < len(st.TabActivePane) && st.TabActivePane[i] >= 0 {
 						activeIdx = st.TabActivePane[i]
 					}
-					glyphs := pickGlyphSet(f.CurrentPaneGlyphs, activeZoomSet(f.CurrentPaneZoomGlyphs, f.ZoomGlyphs.CurrentPane), i == st.ActiveTab && st.Zoomed)
+					glyphs := pickGlyphSet(f.CurrentPaneGlyphs, activeZoomSet(f.CurrentPaneZoomGlyphs, f.ZoomGlyphs.CurrentPane), tabZoomed)
 					pCtx := styleCtx{tabColor: f.tabColor(i), paneColor: f.paneColor(activeIdx)}
 					emitPaneNumberGlyph(b, f, glyphs, activeIdx+1, activeIdx, cur, tabBase, pCtx)
 				case "current_pane_id_glyph":
@@ -1024,11 +1029,11 @@ func emitTabs(b *barSink, st Status, f StatusFormat, ctx styleCtx) {
 					if i < len(st.TabActivePane) && st.TabActivePane[i] >= 0 {
 						activeIdx = st.TabActivePane[i]
 					}
-					glyphs := pickGlyphSet(f.CurrentPaneIDGlyphs, activeZoomSet(f.CurrentPaneIDZoomGlyphs, f.ZoomGlyphs.CurrentPaneID), i == st.ActiveTab && st.Zoomed)
+					glyphs := pickGlyphSet(f.CurrentPaneIDGlyphs, activeZoomSet(f.CurrentPaneIDZoomGlyphs, f.ZoomGlyphs.CurrentPaneID), tabZoomed)
 					pCtx := styleCtx{tabColor: f.tabColor(i), paneColor: f.paneColor(activeIdx)}
 					emitPaneNumberGlyph(b, f, glyphs, st.TabActivePaneID[i], activeIdx, cur, tabBase, pCtx)
 				case "zoom":
-					if i == st.ActiveTab && st.Zoomed {
+					if tabZoomed {
 						emitPlain(b, f, f.Zoom, cur, tabCtx)
 					}
 				case "alert":
@@ -1042,6 +1047,13 @@ func emitTabs(b *barSink, st Status, f StatusFormat, ctx styleCtx) {
 			emitPlain(b, f, f.TabSep, styleBar, ctx)
 		}
 	}
+}
+
+func (st Status) tabZoomed(i int) bool {
+	if i >= 0 && i < len(st.TabZoomed) {
+		return st.TabZoomed[i]
+	}
+	return i == st.ActiveTab && st.Zoomed
 }
 
 func (f StatusFormat) processGlyph(st Status, tabIdx int) (string, bool) {

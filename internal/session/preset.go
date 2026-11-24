@@ -28,11 +28,13 @@ type PresetWorkspace struct {
 	Tabs []PresetTab `toml:"tabs"`
 }
 
-// PresetTab defines one tab, its layout mode, and its panes.
+// PresetTab defines one tab, its layout mode, optional 1-based focused pane,
+// and its panes.
 type PresetTab struct {
 	Name           string       `toml:"name"`
 	Layout         string       `toml:"layout,omitempty"`
 	StartDirectory string       `toml:"start_directory,omitempty"`
+	Focus          int          `toml:"focus,omitempty"`
 	Panes          []PresetPane `toml:"panes,omitempty"`
 }
 
@@ -139,6 +141,12 @@ func LoadPreset(path string) (Preset, error) {
 				return Preset{}, fmt.Errorf("%s: unknown layout %q in tab %q", path, t.Layout, t.Name)
 			}
 		}
+		if t.Focus != 0 {
+			paneCount := max(len(t.Panes), 1)
+			if t.Focus < 1 || t.Focus > paneCount {
+				return Preset{}, fmt.Errorf("%s: focus %d out of range [1..%d] in tab %q", path, t.Focus, paneCount, t.Name)
+			}
+		}
 	}
 	return p, nil
 }
@@ -207,10 +215,13 @@ func (m *Manager) ExportPreset() Preset {
 			Name:   tab.Name,
 			Layout: string(mode),
 		}
-		for _, pn := range layout.CollectPanes(tab.Layout) {
+		for idx, pn := range layout.CollectPanes(tab.Layout) {
 			pp := PresetPane{Cwd: pn.Cwd()}
 			if _, fg, _ := pn.Foreground(); fg != "" && fg != filepath.Base(m.shell) {
 				pp.Cmd = fg
+			}
+			if pn == tab.ActivePane && idx > 0 {
+				pt.Focus = idx + 1
 			}
 			pt.Panes = append(pt.Panes, pp)
 		}
@@ -317,12 +328,16 @@ func (m *Manager) buildPresetTab(pt PresetTab, baseDir string, area layout.Rect)
 	if name == "" {
 		name = "shell"
 	}
+	activeIdx := 0
+	if pt.Focus > 0 && pt.Focus <= len(panes) {
+		activeIdx = pt.Focus - 1
+	}
 	return &Tab{
 		Name:       name,
 		CustomName: customName,
 		Stacked:    mode == layout.ModeStack,
 		LayoutMode: mode,
 		Layout:     layout.Arrange(panes, mode),
-		ActivePane: panes[0],
+		ActivePane: panes[activeIdx],
 	}, nil
 }

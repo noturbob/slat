@@ -191,7 +191,7 @@ every key inside slat.
 | `+` / `-` | Grow / shrink the pane |
 | `=` | Equalize all sizes |
 | `l` | Choose layout (fuzzy menu) |
-| `z` | Zoom the pane to full size (toggle) |
+| `z` | Zoom the pane to full size per tab (toggle) |
 | `t` | Toggle stacked mode (jump elements with `o`/`O`/`j`/`k` or click) |
 | `x` | Close the pane |
 | `[` or PageUp | Scroll and copy mode (see below) |
@@ -219,7 +219,7 @@ every key inside slat.
 | Key | Action |
 | --- | --- |
 | `S` | Rename the session |
-| `f` | Fuzzy tree picker (session / workspaces / tabs / panes) |
+| `f` | Fuzzy tree picker (session / workspaces / tabs / panes; `PageUp`/`PageDown` scrolls by page) |
 | `F` | Switch between running sessions (fuzzy) |
 | `)` / `(` | Switch to next / previous running session |
 | `g` | Global fuzzy tree across all sessions, tabs & panes |
@@ -389,7 +389,8 @@ $ slat capture 3 --lines 20             # read what it printed
 | --- | --- |
 | `slat ls` | every pane, with what each one is doing |
 | `slat sessions [--json]` | list running directory-based sessions |
-| `slat attach [NAME\|DIR]` | attach to a session by name or directory |
+| `slat session [NAME\|PATH]` | start or attach to a preconfigured session TOML (tab-completes saved sessions in `~/.config/slat/sessions/`) |
+| `slat attach [NAME\|DIR]` | attach to a session by name or directory (tab-completes running session names; falls back to current directory when omitted) |
 | `slat shutdown [--all] [--session NAME\|DIR] [--json]` | shut down the active session, or all running sessions with `--all` |
 | `slat status [PANE]` | one pane's status |
 | `slat pane new [--split v\|h] [--cwd D] [--cmd C] [--target P] [--focus]` | split a pane |
@@ -523,7 +524,8 @@ zoom             = ""     # "" unbinds a command
   add new themes or override built-in ones). Colours are `bg` (alias
   `background`), `status_bg`, `fg` (alias `foreground`), `dim`, `accent`,
   `border`, `tab_bg`, `tab_fg`, `tab_active_bg`, `tab_active_fg`, `prefix_fg`,
-  `prefix_bg`, `prefix_active_fg`, and `prefix_active_bg`, written as a colour
+  `prefix_bg`, `prefix_active_fg`, `prefix_active_bg`, `badge_fg`, and
+  `badge_bg`, written as a colour
   name, a palette index (0-255), `#rrggbb`, or a `theme.<var>` reference
   (`status_bg` and `*_bg` also accept `""` or `"transparent"` for the
   terminal's default background). You can also define custom palette variables
@@ -541,7 +543,7 @@ zoom             = ""     # "" unbinds a command
   uses only its own glyph array, with no fallback to `pane_glyphs`), plus
   `[status.zoom_glyphs]` (`tab`, `tab_index`, `pane`, `current_pane`,
   `current_pane_id` — all `false` by default, set to `true` to enable zoomed
-  glyph replacement for that glyph type) and `[status.process_glyphs]`
+  glyph replacement for that glyph type, persisting on inactive zoomed tabs) and `[status.process_glyphs]`
   (a `process = "glyph"` map that overrides `{tab_glyph}` — and populates
   `{process_glyph}` — when the tab's active pane is running that process,
   taking precedence over `tab_zoom_glyph` and `tab_glyphs`). The sides accept `{prefix}` `{session}`
@@ -556,9 +558,9 @@ zoom             = ""     # "" unbinds a command
   + `i`) accept `{id}` `{index}` `{pane_glyph}` `{current_pane_id_glyph}`; and
   `tab_sep` (default `" "`, set to `""` to remove space between tabs) is drawn
   between tabs. Inline style tags like `{fg=cyan,bg=236,bold}🐟{/}` or `{fg=theme.background,bg=theme.accent}●{/}` colour any Unicode glyph or span (using a colour name, 0–255 index, `#rrggbb`
-  hex, an active `[theme]` variable such as `theme.background` / `bg`, `theme.foreground` / `fg`, `theme.accent`, `theme.dim`, `theme.status_bg`, `theme.tab_bg`, `theme.tab_fg`, `theme.tab_active_bg`, `theme.tab_active_fg`, any `[theme.vars]` key, or `tab`/`pane` to pick from `tab_colors`/`pane_colors` by index). When
-  `{prefix}` is used, `{badge}` omits `"PREFIX"`; when `{zoom}` or an enabled
-  `[status.zoom_glyphs]` override is active, `{badge}` omits `"ZOOM"`.
+  hex, an active `[theme]` variable such as `theme.background` / `bg`, `theme.foreground` / `fg`, `theme.accent`, `theme.dim`, `theme.status_bg`, `theme.tab_bg`, `theme.tab_fg`, `theme.tab_active_bg`, `theme.tab_active_fg`, `theme.badge_fg`, `theme.badge_bg`, any `[theme.vars]` key, or `tab`/`pane` to pick from `tab_colors`/`pane_colors` by index). When
+  `{prefix}` is used, `{badge}` omits `"PREFIX"`; `"ZOOM"` remains visible in `{badge}` whenever the current tab is zoomed (like `"MOVE"`), and `{badge}` can be styled via `badge_fg`/`badge_bg` or inline style tags.
+- Session presets (`[[tabs]]` in `~/.config/slat/sessions/<name>.toml`) also accept `focus = N` (1-based pane index) to choose which pane starts focused.
 - `[status.scripts.<name>]` runs a shell command on an `interval` (default
   `5s`, `0s` to run once) with a `timeout` (default `2s`), and renders its
   `stdout` wherever `{script:<name>}` appears in `status.left` or
