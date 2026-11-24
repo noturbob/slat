@@ -409,6 +409,9 @@ func (a *App) treeKey(buf []byte, i int) int {
 	case 0x15: // Ctrl-U
 		ts.query = ts.query[:0]
 		ts.refilter()
+	case 0x17: // Ctrl-W
+		ts.query = deleteLastWord(ts.query)
+		ts.refilter()
 	case 0x7f, 0x08: // Backspace
 		if len(ts.query) > 0 {
 			_, size := utf8.DecodeLastRune(ts.query)
@@ -448,29 +451,67 @@ func (a *App) drawTree(frame *ui.Frame) (int, int) {
 	return ui.DrawTreePicker(frame, title, string(ts.query), rows, ts.offset, len(ts.all))
 }
 
-// ─── FuzzyMatchV2 (fzf / go-fuzzyfinder Smith-Waterman DP) ──────────────────
+// deleteLastWord removes trailing whitespace and the preceding non-whitespace
+// word from b (standard Ctrl-W readline behavior).
+func deleteLastWord(b []byte) []byte {
+	for len(b) > 0 {
+		r, size := utf8.DecodeLastRune(b)
+		if !unicode.IsSpace(r) {
+			break
+		}
+		b = b[:len(b)-size]
+	}
+	for len(b) > 0 {
+		r, size := utf8.DecodeLastRune(b)
+		if unicode.IsSpace(r) {
+			break
+		}
+		b = b[:len(b)-size]
+	}
+	return b
+}
+
+// ─── Word-Prefix & fzf Extended-Search Filter ───────────────────────────────
+
+type filterMode uint8
 
 const (
-	fzScoreMatch        = 16
-	fzScoreGapStart     = -3
-	fzScoreGapExtension = -1
-	fzBonusBoundary     = 8
-	fzBonusCamel123     = 7
-	fzBonusConsecutive  = 4
-	fzFirstCharMult     = 2
+	filterWordPrefix filterMode = iota
+	filterExact
 )
 
-// fuzzyMatch matches all space-separated tokens in query against text using
-// smart-case and fzf's FuzzyMatchV2 Smith-Waterman DP scoring.
-func fuzzyMatch(query, text string) (int, bool) {
-	tokens := strings.Fields(query)
-	if len(tokens) == 0 {
-		return 0, true
+type filterTerm struct {
+	pat           []rune
+	mode          filterMode
+	anchorStart   bool
+	anchorEnd     bool
+	negate        bool
+	caseSensitive bool
+}
+
+func (t *filterTerm) eval(text []rune) (int, bool) {
+	return evalFilterTerm(*t, text)
+}
+
+type filterNode interface {
+	eval(text []rune) (int, bool)
+}
+
+type filterNotNode struct{ child filterNode }
+
+func (n filterNotNode) eval(text []rune) (int, bool) {
+	if _, ok := n.child.eval(text); ok {
+		return 0, false
 	}
-	tRunes := []rune(text)
+	return 0, true
+}
+
+type filterAndNode struct{ children []filterNode }
+
+func (n filterAndNode) eval(text []rune) (int, bool) {
 	total := 0
-	for _, tok := range tokens {
-		sc, ok := fuzzyMatchToken([]rune(tok), tRunes)
+	for _, c := range n.children {
+		sc, ok := c.eval(text)
 		if !ok {
 			return 0, false
 		}
@@ -479,8 +520,304 @@ func fuzzyMatch(query, text string) (int, bool) {
 	return total, true
 }
 
-func fuzzyMatchToken(pat, text []rune) (int, bool) {
-	m, n := len(pat), len(text)
+type filterOrNode struct{ children []filterNode }
+
+func (n filterOrNode) eval(text []rune) (int, bool) {
+	matched := false
+	best := 0
+	for _, c := range n.children {
+		sc, ok := c.eval(text)
+		if !ok {
+			continue
+		}
+		if !matched || sc > best {
+			best = sc
+		}
+		matched = true
+	}
+	return best, matched
+}
+
+type queryTokenKind uint8
+
+const (
+	tokTerm queryTokenKind = iota
+	tokLParen
+	tokRParen
+	tokOr
+	tokNot
+)
+
+type queryToken struct {
+	kind queryTokenKind
+	raw  string
+}
+
+func tokenizeFilterQuery(query string) []queryToken {
+	var tokens []queryToken
+	i := 0
+	for i < len(query) {
+		r, size := utf8.DecodeRuneInString(query[i:])
+		if unicode.IsSpace(r) {
+			i += size
+			continue
+		}
+		switch r {
+		case '(':
+			tokens = append(tokens, queryToken{kind: tokLParen})
+			i += size
+		case ')':
+			tokens = append(tokens, queryToken{kind: tokRParen})
+			i += size
+		case '|':
+			tokens = append(tokens, queryToken{kind: tokOr})
+			i += size
+		case '!':
+			// Treat '!' as a prefix negation operator when followed by '(' (with optional spaces).
+			j := i + size
+			for j < len(query) {
+				nr, ns := utf8.DecodeRuneInString(query[j:])
+				if !unicode.IsSpace(nr) {
+					if nr == '(' {
+						tokens = append(tokens, queryToken{kind: tokNot})
+						i += size
+						goto nextTok
+					}
+					break
+				}
+				j += ns
+			}
+			fallthrough
+		default:
+			start := i
+			for i < len(query) {
+				tr, ts := utf8.DecodeRuneInString(query[i:])
+				if tr == '\\' && i+ts < len(query) {
+					_, ns := utf8.DecodeRuneInString(query[i+ts:])
+					i += ts + ns
+					continue
+				}
+				if unicode.IsSpace(tr) || tr == '(' || tr == ')' || tr == '|' {
+					break
+				}
+				i += ts
+			}
+			tokens = append(tokens, queryToken{kind: tokTerm, raw: query[start:i]})
+		}
+	nextTok:
+	}
+	return tokens
+}
+
+type filterParser struct {
+	tokens []queryToken
+	pos    int
+}
+
+func (p *filterParser) peek() (queryToken, bool) {
+	if p.pos >= len(p.tokens) {
+		return queryToken{}, false
+	}
+	return p.tokens[p.pos], true
+}
+
+func (p *filterParser) parseAnd() filterNode {
+	var children []filterNode
+	for {
+		tok, ok := p.peek()
+		if !ok || tok.kind == tokRParen {
+			break
+		}
+		if tok.kind == tokOr {
+			p.pos++
+			continue
+		}
+		if node := p.parseOr(); node != nil {
+			children = append(children, node)
+		}
+	}
+	switch len(children) {
+	case 0:
+		return nil
+	case 1:
+		return children[0]
+	default:
+		return filterAndNode{children: children}
+	}
+}
+
+func (p *filterParser) parseOr() filterNode {
+	first := p.parseUnary()
+	var children []filterNode
+	if first != nil {
+		children = append(children, first)
+	}
+	for {
+		tok, ok := p.peek()
+		if !ok || tok.kind != tokOr {
+			break
+		}
+		p.pos++
+		if next := p.parseUnary(); next != nil {
+			children = append(children, next)
+		}
+	}
+	switch len(children) {
+	case 0:
+		return nil
+	case 1:
+		return children[0]
+	default:
+		return filterOrNode{children: children}
+	}
+}
+
+func (p *filterParser) parseUnary() filterNode {
+	for {
+		tok, ok := p.peek()
+		if !ok || tok.kind == tokRParen {
+			return nil
+		}
+		if tok.kind == tokOr {
+			p.pos++
+			continue
+		}
+		if tok.kind == tokNot {
+			p.pos++
+			child := p.parseUnary()
+			if child == nil {
+				return nil
+			}
+			return filterNotNode{child: child}
+		}
+		if tok.kind == tokLParen {
+			p.pos++
+			inner := p.parseAnd()
+			if next, ok := p.peek(); ok && next.kind == tokRParen {
+				p.pos++
+			}
+			return inner
+		}
+		p.pos++
+		term, ok := parseFilterTerm(tok.raw)
+		if !ok {
+			continue
+		}
+		return &term
+	}
+}
+
+func parseFilterExpr(query string) filterNode {
+	tokens := tokenizeFilterQuery(query)
+	if len(tokens) == 0 {
+		return nil
+	}
+	p := &filterParser{tokens: tokens}
+	var parts []filterNode
+	for p.pos < len(p.tokens) {
+		if node := p.parseAnd(); node != nil {
+			parts = append(parts, node)
+		}
+		// Skip any unmatched ')' at the top level.
+		if tok, ok := p.peek(); ok && tok.kind == tokRParen {
+			p.pos++
+		}
+	}
+	switch len(parts) {
+	case 0:
+		return nil
+	case 1:
+		return parts[0]
+	default:
+		return filterAndNode{children: parts}
+	}
+}
+
+// fuzzyMatch matches query against text using word-prefix matching by default,
+// space-separated AND clauses, | OR alternatives, parenthesis grouping,
+// smart-case, and fzf extended-search modifiers (^prefix, suffix$, 'exact, !exclude).
+func fuzzyMatch(query, text string) (int, bool) {
+	expr := parseFilterExpr(query)
+	if expr == nil {
+		return 0, true
+	}
+	return expr.eval([]rune(text))
+}
+
+func parseFilterTerm(tok string) (filterTerm, bool) {
+	var term filterTerm
+	if strings.HasPrefix(tok, "!") {
+		term.negate = true
+		tok = tok[1:]
+	}
+	if strings.HasPrefix(tok, "'") {
+		term.mode = filterExact
+		tok = tok[1:]
+	} else {
+		if strings.HasPrefix(tok, "^") {
+			term.anchorStart = true
+			tok = tok[1:]
+		}
+		if strings.HasSuffix(tok, "$") && len(tok) > 0 && !isEscapedEnd(tok, len(tok)-1) {
+			term.anchorEnd = true
+			tok = tok[:len(tok)-1]
+		}
+	}
+	pat := unescapeFilterPat(tok)
+	if len(pat) == 0 {
+		return filterTerm{}, false
+	}
+	term.pat = pat
+	for _, r := range term.pat {
+		if unicode.IsUpper(r) {
+			term.caseSensitive = true
+			break
+		}
+	}
+	return term, true
+}
+
+// isEscapedEnd reports whether the byte at idx in s is preceded by an odd number of backslashes.
+func isEscapedEnd(s string, idx int) bool {
+	bs := 0
+	for i := idx - 1; i >= 0 && s[i] == '\\'; i-- {
+		bs++
+	}
+	return bs%2 == 1
+}
+
+func unescapeFilterPat(s string) []rune {
+	var out []rune
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == '\\' {
+			if i+size >= len(s) {
+				break
+			}
+			nr, ns := utf8.DecodeRuneInString(s[i+size:])
+			out = append(out, nr)
+			i += size + ns
+			continue
+		}
+		out = append(out, r)
+		i += size
+	}
+	return out
+}
+
+func evalFilterTerm(term filterTerm, text []rune) (int, bool) {
+	sc, matched := matchFilterTerm(term, text)
+	if term.negate {
+		if matched {
+			return 0, false
+		}
+		return 0, true
+	}
+	return sc, matched
+}
+
+func matchFilterTerm(term filterTerm, text []rune) (int, bool) {
+	m, n := len(term.pat), len(text)
 	if m == 0 {
 		return 0, true
 	}
@@ -488,151 +825,85 @@ func fuzzyMatchToken(pat, text []rune) (int, bool) {
 		return 0, false
 	}
 
-	caseSensitive := false
-	for _, r := range pat {
-		if unicode.IsUpper(r) {
-			caseSensitive = true
-			break
+	if term.anchorStart && term.anchorEnd {
+		if n != m {
+			return 0, false
 		}
+		return scoreMatchAt(term.pat, text, 0, term.caseSensitive)
+	}
+	if term.anchorStart {
+		return scoreMatchAt(term.pat, text, 0, term.caseSensitive)
+	}
+	if term.anchorEnd {
+		return scoreMatchAt(term.pat, text, n-m, term.caseSensitive)
 	}
 
-	// Quick subsequence pre-check + boundary bonus precompute.
-	pi := 0
-	bonus := make([]int, n)
-	prevClass := charNonWord
-	for j, r := range text {
-		class := classifyRune(r)
-		bonus[j] = calcBonus(prevClass, class)
-		prevClass = class
+	best := 0
+	found := false
+	limit := n - m
+	for i := 0; i <= limit; i++ {
+		if term.mode == filterWordPrefix && !isWordBoundary(text, i) {
+			continue
+		}
+		if sc, ok := scoreMatchAt(term.pat, text, i, term.caseSensitive); ok {
+			if !found || sc > best {
+				best = sc
+				found = true
+			}
+		}
+	}
+	return best, found
+}
 
-		tr := r
+func scoreMatchAt(pat, text []rune, start int, caseSensitive bool) (int, bool) {
+	if start < 0 || start+len(pat) > len(text) {
+		return 0, false
+	}
+	exactCase := 0
+	for i, pr := range pat {
+		tr := text[start+i]
+		if tr == pr {
+			exactCase++
+		}
 		if !caseSensitive {
 			tr = unicode.ToLower(tr)
 		}
-		if pi < m && tr == pat[pi] {
-			pi++
-		}
-	}
-	if pi < m {
-		return 0, false
-	}
-
-	// Smith-Waterman DP: H[j] = best score ending at text[j] for pat[0..i],
-	// C[j] = consecutive match run length ending at text[j].
-	H := make([]int, n)
-	C := make([]int, n)
-	const negInf = -1 << 29
-
-	for i := 0; i < m; i++ {
-		pr := pat[i]
-		prevRowH := negInf
-		prevRowC := 0
-		prevBest := negInf
-		inGap := false
-
-		for j := 0; j < n; j++ {
-			curH := H[j]
-			curC := C[j]
-			tr := text[j]
-			if !caseSensitive {
-				tr = unicode.ToLower(tr)
-			}
-
-			var matchScore int
-			var runLen int
-			if tr == pr && (i == 0 || prevRowH > negInf/2) {
-				b := bonus[j]
-				if i == 0 {
-					b *= fzFirstCharMult
-					matchScore = fzScoreMatch + b
-					runLen = 1
-				} else {
-					diag := prevRowH + fzScoreMatch
-					if prevRowC > 0 {
-						consec := max(fzBonusConsecutive, b)
-						if bonus[j-prevRowC] > consec {
-							consec = bonus[j-prevRowC]
-						}
-						diag += consec
-						runLen = prevRowC + 1
-					} else {
-						diag += b
-						runLen = 1
-					}
-					matchScore = diag
-				}
-			} else {
-				matchScore = negInf
-			}
-
-			var gapScore int
-			if prevBest > negInf/2 {
-				if inGap {
-					gapScore = prevBest + fzScoreGapExtension
-				} else {
-					gapScore = prevBest + fzScoreGapStart
-				}
-			} else {
-				gapScore = negInf
-			}
-
-			if matchScore >= gapScore {
-				H[j] = matchScore
-				C[j] = runLen
-				inGap = false
-			} else {
-				H[j] = gapScore
-				C[j] = 0
-				inGap = true
-			}
-			if H[j] > prevBest {
-				prevBest = H[j]
-			}
-			prevRowH = curH
-			prevRowC = curC
+		if tr != pr {
+			return 0, false
 		}
 	}
 
-	best := negInf
-	for j := 0; j < n; j++ {
-		if H[j] > best {
-			best = H[j]
-		}
+	score := len(pat)*16 + exactCase*2 - start
+	if start == 0 {
+		score += 32
 	}
-	return best, best > negInf/2
+	atStart := isWordBoundary(text, start)
+	if atStart {
+		score += 16
+	}
+	end := start + len(pat)
+	atEnd := end == len(text) || !isWordRune(text[end]) || (end > 0 && unicode.IsLower(text[end-1]) && unicode.IsUpper(text[end]))
+	if atEnd {
+		score += 16
+	}
+	if atStart && atEnd {
+		// Full-word matches always outrank partial-word prefix matches.
+		score += 256
+	}
+	return score, true
 }
 
-type charClass uint8
-
-const (
-	charNonWord charClass = iota
-	charLower
-	charUpper
-	charNumber
-)
-
-func classifyRune(r rune) charClass {
-	switch {
-	case unicode.IsLower(r):
-		return charLower
-	case unicode.IsUpper(r):
-		return charUpper
-	case unicode.IsDigit(r):
-		return charNumber
-	default:
-		return charNonWord
-	}
+func isWordRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
-func calcBonus(prev, cur charClass) int {
-	if cur == charNonWord {
-		return 0
+func isWordBoundary(text []rune, idx int) bool {
+	if idx == 0 {
+		return true
 	}
-	if prev == charNonWord {
-		return fzBonusBoundary
+	prev, cur := text[idx-1], text[idx]
+	if !isWordRune(prev) {
+		return true
 	}
-	if (prev == charLower && cur == charUpper) || (prev != charNumber && cur == charNumber) {
-		return fzBonusCamel123
-	}
-	return 0
+	return unicode.IsLower(prev) && unicode.IsUpper(cur)
 }

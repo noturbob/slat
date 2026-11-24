@@ -1069,6 +1069,8 @@ func (a *App) promptKey(b byte) bool {
 		a.prompt = nil
 	case 0x15: // Ctrl-U
 		p.text = p.text[:0]
+	case 0x17: // Ctrl-W
+		p.text = deleteLastWord(p.text)
 	case 0x7f, 0x08: // Backspace: remove a whole UTF-8 character
 		if len(p.text) > 0 {
 			_, size := utf8.DecodeLastRune(p.text)

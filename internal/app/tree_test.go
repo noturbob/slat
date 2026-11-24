@@ -11,14 +11,38 @@ import (
 )
 
 func TestFuzzyMatchV2(t *testing.T) {
-	// Consecutive boundary match outranks scattered match.
-	sGood, ok1 := FuzzyMatch("fish", "slat main 1:fish pane 1")
-	sWeak, ok2 := FuzzyMatch("fish", "slat f_i_s_h_x")
-	if !ok1 || !ok2 {
-		t.Fatalf("expected both to match: ok1=%v ok2=%v", ok1, ok2)
+	// Word-prefix matching: matches start of words/segments, rejects loose subsequences.
+	if _, ok := FuzzyMatch("fish", "slat main 1:fish pane 1"); !ok {
+		t.Error("expected word-prefix match for fish")
 	}
-	if sGood <= sWeak {
-		t.Errorf("boundary consecutive match %d should outrank scattered %d", sGood, sWeak)
+	if _, ok := FuzzyMatch("fi", "slat main 1:fish pane 1"); !ok {
+		t.Error("expected word-prefix match for fi")
+	}
+	if _, ok := FuzzyMatch("monkey", "distilled-monkey /tmp/other detached"); !ok {
+		t.Error("expected word-prefix match after hyphen")
+	}
+	if _, ok := FuzzyMatch("fish", "slat f_i_s_h_x"); ok {
+		t.Error("loose subsequence should not match word-prefix filter")
+	}
+	if _, ok := FuzzyMatch("fl", "slat main 1:fish 2:logs"); ok {
+		t.Error("cross-word subsequence should not match word-prefix filter")
+	}
+	if _, ok := FuzzyMatch("ish", "slat main 1:fish"); ok {
+		t.Error("mid-word substring should not match without ' exact modifier")
+	}
+
+	// Ranking: full-word match outranks partial-word prefix match even when later in text.
+	sFull, ok1 := FuzzyMatch("fish", "fish main")
+	sFullLate, ok2 := FuzzyMatch("fish", "slat main 1:zsh pane 1 fish")
+	sPartialStart, ok3 := FuzzyMatch("fish", "fisherman main 1:zsh")
+	if !ok1 || !ok2 || !ok3 {
+		t.Fatalf("expected all to match: ok1=%v ok2=%v ok3=%v", ok1, ok2, ok3)
+	}
+	if sFull <= sFullLate {
+		t.Errorf("earlier full-word match %d should outrank later full-word match %d", sFull, sFullLate)
+	}
+	if sFullLate <= sPartialStart {
+		t.Errorf("full-word match %d should outrank partial-word prefix match %d", sFullLate, sPartialStart)
 	}
 
 	// Smart-case: uppercase token requires uppercase match.
@@ -29,12 +53,102 @@ func TestFuzzyMatchV2(t *testing.T) {
 		t.Error("uppercase query should match uppercase text")
 	}
 
-	// Multi-token query matches across different parts of the path.
+	// Multi-token AND semantics.
 	if _, ok := FuzzyMatch("work 2", "slat work 2:nvim pane 1"); !ok {
-		t.Error("multi-token query should match")
+		t.Error("multi-token AND query should match")
 	}
 	if _, ok := FuzzyMatch("work missing", "slat work 2:nvim pane 1"); ok {
-		t.Error("multi-token query with missing token should not match")
+		t.Error("multi-token AND query with missing token should not match")
+	}
+
+	// fzf extended-search operators: ^prefix, suffix$, 'exact, !negate, | OR.
+	if _, ok := FuzzyMatch("^slat", "slat work 2:logs"); !ok {
+		t.Error("^slat should match start of text")
+	}
+	if _, ok := FuzzyMatch("^work", "slat work 2:logs"); ok {
+		t.Error("^work should not match when slat is at start")
+	}
+	if _, ok := FuzzyMatch("logs$", "slat work 2:logs"); !ok {
+		t.Error("logs$ should match end of text")
+	}
+	if _, ok := FuzzyMatch("work$", "slat work 2:logs"); ok {
+		t.Error("work$ should not match when not at end of text")
+	}
+	if _, ok := FuzzyMatch("^exact$", "exact"); !ok {
+		t.Error("^exact$ should match full text")
+	}
+	if _, ok := FuzzyMatch("^exact$", "exact-more"); ok {
+		t.Error("^exact$ should not match longer text")
+	}
+	if _, ok := FuzzyMatch("'ish", "slat main 1:fish"); !ok {
+		t.Error("'ish should match exact substring mid-word")
+	}
+	if _, ok := FuzzyMatch("slat !logs", "slat work 2:logs"); ok {
+		t.Error("!logs should exclude matching item")
+	}
+	if _, ok := FuzzyMatch("slat !logs", "slat work 2:nvim"); !ok {
+		t.Error("!logs should keep non-matching item")
+	}
+	if _, ok := FuzzyMatch("!^slat", "slat work"); ok {
+		t.Error("!^slat should exclude item starting with slat")
+	}
+	if _, ok := FuzzyMatch("work | home", "slat home 1:zsh"); !ok {
+		t.Error("OR operator should match second branch")
+	}
+	if _, ok := FuzzyMatch("slat work | home !zsh", "slat home 1:fish"); !ok {
+		t.Error("combined AND/OR/negate query should match")
+	}
+	if _, ok := FuzzyMatch("slat work | home !zsh", "slat home 1:zsh"); ok {
+		t.Error("combined AND/OR/negate query should respect negation")
+	}
+
+	// Parenthesis grouping.
+	if _, ok := FuzzyMatch("(work | home) logs", "slat home 2:logs"); !ok {
+		t.Error("parenthesized OR with AND should match")
+	}
+	if _, ok := FuzzyMatch("(work|home) logs", "slat work 2:logs"); !ok {
+		t.Error("compact parenthesized OR without spaces should match")
+	}
+	if _, ok := FuzzyMatch("(work logs) | (home zsh)", "slat home 1:zsh"); !ok {
+		t.Error("OR of parenthesized AND groups should match second branch")
+	}
+	if _, ok := FuzzyMatch("(work logs) | (home zsh)", "slat home 2:logs"); ok {
+		t.Error("OR of parenthesized AND groups should not mix branches")
+	}
+	if _, ok := FuzzyMatch("slat !(work | home)", "slat main 1:fish"); !ok {
+		t.Error("negated parenthesized group should keep non-matching item")
+	}
+	if _, ok := FuzzyMatch("slat !(work | home)", "slat work 1:fish"); ok {
+		t.Error("negated parenthesized group should exclude matching item")
+	}
+	if _, ok := FuzzyMatch("(work | home", "slat home 1:fish"); !ok {
+		t.Error("unclosed parenthesis while typing should still match")
+	}
+	if _, ok := FuzzyMatch("work) logs", "slat work 2:logs"); !ok {
+		t.Error("stray closing parenthesis should be ignored gracefully")
+	}
+
+	// Escaping special characters: (, ), $, ^, ', !, |, space, \.
+	if _, ok := FuzzyMatch(`\(fish\)`, "slat main (fish)"); !ok {
+		t.Error("escaped parentheses should match literal parentheses")
+	}
+	if _, ok := FuzzyMatch(`foo\$`, "slat foo$ bar"); !ok {
+		t.Error("escaped $ should match literal $ instead of end anchor")
+	}
+	if _, ok := FuzzyMatch(`foo\\$`, `slat foo\`); !ok {
+		t.Error("escaped backslash before $ should still treat $ as end anchor")
+	}
+	if _, ok := FuzzyMatch(`\^slat`, "main ^slat"); !ok {
+		t.Error("escaped ^ should match literal ^")
+	}
+	if _, ok := FuzzyMatch(`\!warn`, "slat !warn"); !ok {
+		t.Error("escaped ! should match literal !")
+	}
+	if _, ok := FuzzyMatch(`a\|b`, "slat a|b"); !ok {
+		t.Error("escaped | should match literal |")
+	}
+	if _, ok := FuzzyMatch(`work\ 2:logs`, "slat work 2:logs"); !ok {
+		t.Error("escaped space should match literal space inside single token")
 	}
 }
 
@@ -240,5 +354,34 @@ func TestTreePickerPageUpPageDown(t *testing.T) {
 	}
 	if got := a.PopSwitchTarget(); got != "/tmp/sa.sock" {
 		t.Errorf("PopSwitchTarget after PageUp to top = %q, want /tmp/sa.sock", got)
+	}
+}
+
+func TestTreePickerCtrlW(t *testing.T) {
+	a, term := start(t)
+	a.FeedInput([]byte{prefix, 'W'})
+	a.FeedInput([]byte{prefix, '$'})
+	a.FeedInput([]byte("\x15work\r"))
+	a.FeedInput([]byte{prefix, 'c'})
+	a.FeedInput([]byte{prefix, ','})
+	a.FeedInput([]byte("\x15logs\r"))
+	waitFor(t, term, "2:logs", 1)
+
+	a.FeedInput([]byte{prefix, 'P'})
+	waitFor(t, term, "main", 1)
+
+	// Open tree picker, type "work missing", press Ctrl-W (0x17) to clear "missing", then type "logs\r".
+	a.FeedInput([]byte{prefix, 'f'})
+	waitFor(t, term, "session tree", 1)
+	a.FeedInput([]byte("work missing\x17logs\r"))
+	waitGone(t, term, "session tree")
+
+	var wsName, tabName string
+	a.WithManagerForTest(func(m *session.Manager) {
+		wsName = m.ActiveWorkspace().Name
+		tabName = m.ActiveTab().Name
+	})
+	if wsName != "work" || tabName != "logs" {
+		t.Errorf("jumped to (%q, %q), want (work, logs)", wsName, tabName)
 	}
 }

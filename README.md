@@ -190,7 +190,7 @@ every key inside slat.
 | `<` `>` `K` `J` | Move the pane left / right / up / down |
 | `+` / `-` | Grow / shrink the pane |
 | `=` | Equalize all sizes |
-| `l` | Choose layout (fuzzy menu) |
+| `l` | Choose layout (picker menu) |
 | `z` | Zoom the pane to full size per tab (toggle) |
 | `t` | Toggle stacked mode (jump elements with `o`/`O`/`j`/`k` or click) |
 | `x` | Close the pane |
@@ -219,15 +219,17 @@ every key inside slat.
 | Key | Action |
 | --- | --- |
 | `S` | Rename the session |
-| `f` | Fuzzy tree picker (session / workspaces / tabs / panes; `PageUp`/`PageDown` scrolls by page) |
-| `F` | Switch between running sessions (fuzzy) |
+| `f` | Tree picker (session / workspaces / tabs / panes; `PageUp`/`PageDown` scrolls by page) |
+| `F` | Switch between running sessions |
 | `)` / `(` | Switch to next / previous running session |
-| `g` | Global fuzzy tree across all sessions, tabs & panes |
+| `g` | Global tree picker across all sessions, tabs & panes |
 | `E` | Save current session as a preconfigured TOML (asks before overwriting) |
 | `b` | Toggle the bottom status bar |
 | `d` | Detach — the session keeps running |
 | `q` | Quit — ends every shell |
 | `?` | Show all keys |
+
+Picker dialogs (`l`, `f`, `F`, `g`) filter by **word-prefix** with `fzf`-style extended search: space-separated terms are `AND`ed, `|` is `OR`, `(...)` groups expressions, `^term` matches the start, `term$` matches the end, `'term` matches any exact substring, `!term` excludes matches, `\` escapes special characters (`(`, `)`, `$`, `^`, `'`, `!`, `|`, space, `\`), and smart-case is used (case-insensitive unless uppercase is typed). Use `Ctrl+W` to delete the last word and `Ctrl+U` to clear the input.
 
 ### Scroll and copy mode
 
