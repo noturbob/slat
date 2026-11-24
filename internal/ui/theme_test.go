@@ -114,13 +114,17 @@ func TestParseTheme(t *testing.T) {
 		t.Errorf("finder match styles = %+v %+v", *StyleFinderMatch, *StyleFinderSelMatch)
 	}
 
-	ss, err := ParseStackTheme(StackTheme{Fg: "250", Bg: "236", ActiveFg: "#1e1e2e", ActiveBg: "#89b4fa"})
+	icon := " ▶ "
+	ss, err := ParseStackTheme(StackTheme{Fg: "250", Bg: "236", ActiveFg: "#1e1e2e", ActiveBg: "#89b4fa", Icon: &icon})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ss.Apply()
 	if StyleStack.Fg != vt.Indexed(250) || StyleStackActive.Bg != vt.RGB(0x89, 0xb4, 0xfa) {
 		t.Errorf("stack styles = %+v %+v", *StyleStack, *StyleStackActive)
+	}
+	if !ss.HasIcon || ss.Icon != " ▶ " {
+		t.Errorf("stack icon = (%v, %q), want (true, ' ▶ ')", ss.HasIcon, ss.Icon)
 	}
 	Themes["default"].Apply()
 

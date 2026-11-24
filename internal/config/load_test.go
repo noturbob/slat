@@ -264,9 +264,21 @@ tab_index_glyphs = ["⓪", "①", "②"]
 tab_index_zoom_glyphs = ["⓿", "❶", "❷"]
 pane_glyphs = ["₀", "₁", "₂"]
 pane_zoom_glyphs = ["⓿", "❶", "❷"]
+[status.badges]
+move = "󰆾 MOVE"
+zoom = ""
 `)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if cfg.Status.Badges.Move == nil || *cfg.Status.Badges.Move != "󰆾 MOVE" {
+		t.Errorf("status.badges.move = %v, want '󰆾 MOVE'", cfg.Status.Badges.Move)
+	}
+	if cfg.Status.Badges.Zoom == nil || *cfg.Status.Badges.Zoom != "" {
+		t.Errorf("status.badges.zoom = %v, want empty string", cfg.Status.Badges.Zoom)
+	}
+	if cfg.Status.Badges.Prefix != nil {
+		t.Errorf("unset status.badges.prefix = %v, want nil", cfg.Status.Badges.Prefix)
 	}
 	if cfg.Borders["style"] != "rounded" || cfg.Status.Tab != "[{tab_glyph}{index}]" ||
 		cfg.Status.TabActive != "<{tab_glyph}{index}>" || cfg.Status.TabSep != "" {

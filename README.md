@@ -496,12 +496,16 @@ duration = "700ms"
 
 [stack]
 # fg / bg / active_fg / active_bg          # stacked pane header colours
+# icon = " ▸ "                             # active stacked pane icon (inactive_icon defaults to matching spaces)
 
 [status]
 left  = " {workspace} │ {tabs}"
 right = "{badge} pane {pane}/{panes}  {time} "
 tab   = " {index}:{name}{alert} "
 alert = " ●"
+
+[status.badges]
+# prefix / help / scroll / copy / move / zoom / stack  # customize or "" to hide {badge} labels
 
 # Example: 3-glyph tabs (icon, 1-based window index, 1-based pane count + zoomed set; 10-entry 0-9 arrays render multi-digit numbers > 9):
 # [status]

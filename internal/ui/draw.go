@@ -32,8 +32,10 @@ var (
 	styleFinderSel      = styleTabActive
 	styleFinderMatch    = vt.Style{Fg: styleAccent, Bg: styleBox.Bg, Attrs: vt.Bold}
 	styleFinderSelMatch = vt.Style{Fg: styleTabActive.Fg, Bg: styleTabActive.Bg, Attrs: vt.Bold | vt.Underline}
-	styleStack       = styleTab
-	styleStackActive = styleTabActive
+	styleStack        = styleTab
+	styleStackActive  = styleTabActive
+	stackIcon         = " ▸ "
+	stackInactiveIcon = "   "
 	styleBanner      = vt.Style{Fg: vt.Indexed(44), Attrs: vt.Bold}
 	styleBannerSub = vt.Style{Fg: vt.Indexed(244)}
 )
@@ -105,10 +107,10 @@ func DrawStackHeaders(f *Frame, area layout.Rect, headers []StackHeader) {
 		}
 		y := area.Row + i
 		st := styleStack
-		prefix := "   "
+		prefix := stackInactiveIcon
 		if h.Active {
 			st = styleStackActive
-			prefix = " ▸ "
+			prefix = stackIcon
 		}
 		Fill(f, area.Col, y, area.Cols, st)
 		line := fmt.Sprintf("%s%d: %s", prefix, h.Index, h.Title)
@@ -182,7 +184,7 @@ type Status struct {
 // side wins when the two sides don't fit: a bar that hides which pane you
 // are in is worse than one with a truncated tab list.
 func DrawStatusBar(f *Frame, y int, st Status, format StatusFormat) {
-	if st.Badge == "PREFIX" && format.HasPrefixPlaceholder() {
+	if st.PrefixActive && format.HasPrefixPlaceholder() {
 		st.Badge = ""
 	}
 	w := f.W

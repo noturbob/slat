@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/noturbob/slat/internal/layout"
 	. "github.com/noturbob/slat/internal/ui"
 	"github.com/noturbob/slat/internal/vt"
 )
@@ -468,6 +469,40 @@ func TestDrawTreePickerMatchHighlight(t *testing.T) {
 	}
 	if !gotSelMatch || !gotRowMatch {
 		t.Errorf("match highlight missing: sel=%v row=%v", gotSelMatch, gotRowMatch)
+	}
+}
+
+func TestStackIconAndCustomBadges(t *testing.T) {
+	Themes["default"].Apply()
+	icon := " -> "
+	ss, err := ParseStackTheme(StackTheme{Icon: &icon})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ss.Apply()
+
+	f := NewFrame(30, 4)
+	DrawStackHeaders(f, layout.Rect{Row: 0, Col: 0, Rows: 2, Cols: 30}, []StackHeader{
+		{Index: 1, Title: "one", Active: true},
+		{Index: 2, Title: "two", Active: false},
+	})
+	if got := row(f, 0); !strings.HasPrefix(got, " -> 1: one") {
+		t.Errorf("active stack header = %q, want prefix ' -> 1: one'", got)
+	}
+	if got := row(f, 1); !strings.HasPrefix(got, "    2: two") {
+		t.Errorf("inactive stack header = %q, want 4-space aligned '    2: two'", got)
+	}
+
+	customMove := "MOVING"
+	emptyZoom := ""
+	cfg := DefaultStatusConfig()
+	cfg.Badges = BadgesConfig{Move: &customMove, Zoom: &emptyZoom}
+	sf, err := ParseStatusConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sf.Badges.Move != "MOVING" || sf.Badges.Zoom != "" || sf.Badges.Prefix != "PREFIX" {
+		t.Errorf("resolved badges = %+v", sf.Badges)
 	}
 }
 

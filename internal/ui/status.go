@@ -66,7 +66,42 @@ type StatusConfig struct {
 	CurrentPaneIDZoomGlyphs []string                      `toml:"current_pane_id_zoom_glyphs"`
 	ZoomGlyphs              ZoomGlyphsConfig              `toml:"zoom_glyphs"`
 	ProcessGlyphs           map[string]string             `toml:"process_glyphs"`
+	Badges                  BadgesConfig                  `toml:"badges"`
 	Scripts                 map[string]StatusScriptConfig `toml:"scripts"`
+}
+
+// BadgesConfig customizes the text shown by {badge} for each mode.
+// Unset fields keep their default label; setting a field to "" hides that badge.
+type BadgesConfig struct {
+	Prefix *string `toml:"prefix"`
+	Help   *string `toml:"help"`
+	Scroll *string `toml:"scroll"`
+	Copy   *string `toml:"copy"`
+	Move   *string `toml:"move"`
+	Zoom   *string `toml:"zoom"`
+	Stack  *string `toml:"stack"`
+}
+
+// BadgesFormat holds resolved badge labels for each mode.
+type BadgesFormat struct {
+	Prefix string
+	Help   string
+	Scroll string
+	Copy   string
+	Move   string
+	Zoom   string
+	Stack  string
+}
+
+// DefaultBadgesFormat holds the default {badge} labels.
+var DefaultBadgesFormat = BadgesFormat{
+	Prefix: "PREFIX",
+	Help:   "HELP",
+	Scroll: "SCROLL",
+	Copy:   "COPY",
+	Move:   "MOVE",
+	Zoom:   "ZOOM",
+	Stack:  "STACK",
 }
 
 // StatusFormat is the validated status bar layout and palettes. Each part is
@@ -98,6 +133,7 @@ type StatusFormat struct {
 	CurrentPaneIDZoomGlyphs []string
 	ZoomGlyphs              ZoomGlyphsConfig
 	ProcessGlyphs           map[string]string
+	Badges                  BadgesFormat
 	Scripts                 map[string]StatusScriptSpec
 	compiled                map[string][]compiledPart
 	leftParts               []compiledPart
@@ -125,6 +161,7 @@ var DefaultStatusFormat = StatusFormat{
 	PrefixActive: "   ",
 	Zoom:         " ▣",
 	PaneID:       " {id} ",
+	Badges:       DefaultBadgesFormat,
 }
 
 // DefaultStatusConfig returns the default [status] configuration.
@@ -217,6 +254,24 @@ func ParseStatusConfig(cfg StatusConfig) (StatusFormat, error) {
 // ParseStatusConfigIn validates a StatusConfig against t, checking
 // placeholders, inline style tags (including theme.* variables), and indexed
 // colour lists.
+func resolveBadges(b BadgesConfig) BadgesFormat {
+	pick := func(p *string, def string) string {
+		if p != nil {
+			return *p
+		}
+		return def
+	}
+	return BadgesFormat{
+		Prefix: pick(b.Prefix, DefaultBadgesFormat.Prefix),
+		Help:   pick(b.Help, DefaultBadgesFormat.Help),
+		Scroll: pick(b.Scroll, DefaultBadgesFormat.Scroll),
+		Copy:   pick(b.Copy, DefaultBadgesFormat.Copy),
+		Move:   pick(b.Move, DefaultBadgesFormat.Move),
+		Zoom:   pick(b.Zoom, DefaultBadgesFormat.Zoom),
+		Stack:  pick(b.Stack, DefaultBadgesFormat.Stack),
+	}
+}
+
 func ParseStatusConfigIn(cfg StatusConfig, t Theme) (StatusFormat, error) {
 	f := StatusFormat{
 		Left:           cfg.Left,
@@ -231,6 +286,7 @@ func ParseStatusConfigIn(cfg StatusConfig, t Theme) (StatusFormat, error) {
 		TabZoomGlyph:            cfg.TabZoomGlyph,
 		PaneID:                  cfg.PaneID,
 		PaneIDActive:            cfg.PaneIDActive,
+		Badges:                  resolveBadges(cfg.Badges),
 		TabGlyphs:               slices.Clone(cfg.TabGlyphs),
 		TabIndexGlyphs:          slices.Clone(cfg.TabIndexGlyphs),
 		TabIndexZoomGlyphs:      slices.Clone(cfg.TabIndexZoomGlyphs),

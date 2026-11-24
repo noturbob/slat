@@ -558,17 +558,17 @@ func (a *App) statusOfBar(now time.Time) ui.Status {
 	st.Zoomed = zoomed
 	switch {
 	case a.handler.IsPrefixActive():
-		st.Badge = "PREFIX"
+		st.Badge = a.status.Badges.Prefix
 	case a.showHelp:
-		st.Badge = "HELP"
+		st.Badge = a.status.Badges.Help
 	case a.scroll != nil:
 		st.Badge = a.scrollBadge()
 	case a.moving:
-		st.Badge = "MOVE"
+		st.Badge = a.status.Badges.Move
 	case zoomed:
-		st.Badge = "ZOOM"
+		st.Badge = a.status.Badges.Zoom
 	case a.manager.ActiveTab() != nil && a.manager.ActiveTab().Stacked && len(panes) > 1:
-		st.Badge = "STACK"
+		st.Badge = a.status.Badges.Stack
 	}
 	if now.Before(a.messageEnd) {
 		st.Message = a.message

@@ -80,7 +80,9 @@ duration = "700ms"        # "0s" skips the startup banner
 # sel_bg   = "theme.tab_active_bg"
 # match_fg = "theme.accent"
 [stack]
-# active_bg = "theme.accent"
+# active_bg     = "theme.accent"
+# icon          = " ▸ "
+# inactive_icon = "   "
 
 # ── 3. Status Bar & Theme Colours ────────────────────────────────────────────
 # Inline style tags work in any status string and status script output:
@@ -137,6 +139,16 @@ alert          = "{fg=red,bold} ?{/}"
 # ssh  = "{fg=yellow}󰣀{/}"
 # nvim = ""
 # vim  = ""
+
+# Customize {badge} labels per mode (set to "" to hide a badge):
+# [status.badges]
+# prefix = "󰌌 PREFIX"
+# help   = "󰋖 HELP"
+# scroll = "󰹹 SCROLL"
+# copy   = "󰆏 COPY"
+# move   = "󰆾 MOVE"
+# zoom   = "󰊓 ZOOM"
+# stack  = "󰓩 STACK"
 
 # Live status-line scripts (referenced as {script:git} in left/right):
 # [status.scripts.git]

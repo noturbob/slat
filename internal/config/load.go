@@ -564,6 +564,24 @@ func (cfg *Config) mergeStatus(user ui.StatusConfig, md toml.MetaData, theme ui.
 	if md.IsDefined("status", "scripts") {
 		cfg.Status.Scripts = user.Scripts
 	}
+	badgeFields := []struct {
+		key string
+		dst **string
+		src *string
+	}{
+		{"prefix", &cfg.Status.Badges.Prefix, user.Badges.Prefix},
+		{"help", &cfg.Status.Badges.Help, user.Badges.Help},
+		{"scroll", &cfg.Status.Badges.Scroll, user.Badges.Scroll},
+		{"copy", &cfg.Status.Badges.Copy, user.Badges.Copy},
+		{"move", &cfg.Status.Badges.Move, user.Badges.Move},
+		{"zoom", &cfg.Status.Badges.Zoom, user.Badges.Zoom},
+		{"stack", &cfg.Status.Badges.Stack, user.Badges.Stack},
+	}
+	for _, f := range badgeFields {
+		if md.IsDefined("status", "badges", f.key) {
+			*f.dst = f.src
+		}
+	}
 	_, err := ui.ParseStatusConfigIn(cfg.Status, theme)
 	return err
 }

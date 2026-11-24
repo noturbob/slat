@@ -675,6 +675,8 @@ func (t Theme) Apply() {
 	styleFinderSelMatch = vt.Style{Fg: selMatchFg, Bg: styleTabActive.Bg, Attrs: selMatchAttrs}
 	styleStack = styleTab
 	styleStackActive = styleTabActive
+	stackIcon = " ▸ "
+	stackInactiveIcon = "   "
 	styleBanner = vt.Style{Fg: t.Accent, Attrs: vt.Bold}
 	styleBannerSub = vt.Style{Fg: t.Dim}
 }
@@ -848,18 +850,22 @@ func (s FinderStyle) Apply() {
 	}
 }
 
-// StackTheme holds optional colour overrides for stacked pane headers.
+// StackTheme holds optional colour and icon overrides for stacked pane headers.
 type StackTheme struct {
-	Fg       string `toml:"fg"`
-	Bg       string `toml:"bg"`
-	ActiveFg string `toml:"active_fg"`
-	ActiveBg string `toml:"active_bg"`
+	Fg           string  `toml:"fg"`
+	Bg           string  `toml:"bg"`
+	ActiveFg     string  `toml:"active_fg"`
+	ActiveBg     string  `toml:"active_bg"`
+	Icon         *string `toml:"icon"`
+	InactiveIcon *string `toml:"inactive_icon"`
 }
 
-// StackStyle is a validated set of stacked header colour overrides.
+// StackStyle is a validated set of stacked header colour and icon overrides.
 type StackStyle struct {
-	Fg, Bg, ActiveFg, ActiveBg          vt.Color
+	Fg, Bg, ActiveFg, ActiveBg             vt.Color
 	HasFg, HasBg, HasActiveFg, HasActiveBg bool
+	Icon, InactiveIcon                     string
+	HasIcon, HasInactiveIcon               bool
 }
 
 // ParseStackTheme validates a [stack] colour table against the active theme.
@@ -876,6 +882,14 @@ func ParseStackThemeIn(d StackTheme, t Theme) (StackStyle, error) {
 		{"active_fg", d.ActiveFg, &s.ActiveFg, &s.HasActiveFg, false},
 		{"active_bg", d.ActiveBg, &s.ActiveBg, &s.HasActiveBg, true},
 	}, t)
+	if d.Icon != nil {
+		s.Icon = *d.Icon
+		s.HasIcon = true
+	}
+	if d.InactiveIcon != nil {
+		s.InactiveIcon = *d.InactiveIcon
+		s.HasInactiveIcon = true
+	}
 	return s, err
 }
 
@@ -892,6 +906,15 @@ func (s StackStyle) Apply() {
 	}
 	if s.HasActiveBg {
 		styleStackActive.Bg = s.ActiveBg
+	}
+	if s.HasIcon {
+		stackIcon = s.Icon
+		if !s.HasInactiveIcon {
+			stackInactiveIcon = strings.Repeat(" ", vt.StringWidth(s.Icon))
+		}
+	}
+	if s.HasInactiveIcon {
+		stackInactiveIcon = s.InactiveIcon
 	}
 }
 
