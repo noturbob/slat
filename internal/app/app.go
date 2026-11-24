@@ -176,9 +176,6 @@ func (a *App) Start(cols, rows int) error {
 	go a.watch()
 	go a.statusScriptLoop()
 	go a.saveLoop()
-	if a.cfg.Path != "" {
-		go a.configReloadLoop()
-	}
 	return nil
 }
 
@@ -866,6 +863,12 @@ func (a *App) do(action input.Action) bool {
 		a.openGlobalTreePicker()
 	case input.ActionSaveSession:
 		a.startSaveSession()
+	case input.ActionReloadConfig:
+		if err := a.reloadConfigLocked(); err != nil {
+			a.notify("config reload failed: " + err.Error())
+		} else {
+			a.notify("config reloaded")
+		}
 	case input.ActionToggleStatusBar:
 		a.cfg.StatusBar = !a.cfg.StatusBar
 		a.screen.Invalidate()

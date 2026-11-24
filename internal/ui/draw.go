@@ -25,11 +25,13 @@ var (
 	styleBoxKey    = vt.Style{Fg: vt.Indexed(231), Bg: vt.Indexed(235), Attrs: vt.Bold}
 	styleBoxText   = vt.Style{Fg: vt.Indexed(252), Bg: vt.Indexed(235)}
 	styleBoxHead     = vt.Style{Fg: vt.Indexed(44), Bg: vt.Indexed(235), Attrs: vt.Bold}
-	styleFinder      = styleBox
-	styleFinderKey   = styleBoxKey
-	styleFinderText  = styleBoxText
-	styleFinderHead  = styleBoxHead
-	styleFinderSel   = styleTabActive
+	styleFinder         = styleBox
+	styleFinderKey      = styleBoxKey
+	styleFinderText     = styleBoxText
+	styleFinderHead     = styleBoxHead
+	styleFinderSel      = styleTabActive
+	styleFinderMatch    = vt.Style{Fg: styleAccent, Bg: styleBox.Bg, Attrs: vt.Bold}
+	styleFinderSelMatch = vt.Style{Fg: styleTabActive.Fg, Bg: styleTabActive.Bg, Attrs: vt.Bold | vt.Underline}
 	styleStack       = styleTab
 	styleStackActive = styleTabActive
 	styleBanner      = vt.Style{Fg: vt.Indexed(44), Attrs: vt.Bold}
@@ -265,9 +267,10 @@ func DrawDialog(f *Frame, title, text string) (int, int) {
 
 // TreeRow is one visible entry in DrawTreePicker.
 type TreeRow struct {
-	Label    string
-	Selected bool
-	Active   bool
+	Label      string
+	Selected   bool
+	Active     bool
+	MatchSpans [][2]int
 }
 
 // DrawTreePicker draws a centered fuzzy tree picker modal, returning the
@@ -322,16 +325,18 @@ func DrawTreePicker(f *Frame, title, query string, rows []TreeRow, offset, total
 		}
 		r := rows[idx]
 		st := styleFinderText
+		matchSt := styleFinderMatch
 		mark := "  "
 		if r.Selected {
 			st = styleFinderSel
+			matchSt = styleFinderSelMatch
 			mark = "▸ "
 		} else if r.Active {
 			st = styleFinderHead
 		}
 		Fill(f, x0+1, listY+i, boxW-2, st)
-		line := Truncate(mark+r.Label, boxW-4)
-		Text(f, x0+2, listY+i, line, st)
+		mx := Text(f, x0+2, listY+i, mark, st)
+		drawFinderRowLabel(f, mx, listY+i, boxW-4-vt.StringWidth(mark), r.Label, r.MatchSpans, st, matchSt)
 	}
 
 	foot := " ↑↓/PgUp/PgDn/C-n/C-p move · Enter jump · Esc cancel "
@@ -339,6 +344,37 @@ func DrawTreePicker(f *Frame, title, query string, rows []TreeRow, offset, total
 		Text(f, x0+(boxW-vt.StringWidth(foot))/2, y0+boxH-1, foot, styleFinderText)
 	}
 	return curX, y0 + 1
+}
+
+func drawFinderRowLabel(f *Frame, x, y, maxW int, label string, spans [][2]int, base, match vt.Style) {
+	if maxW <= 0 || label == "" {
+		return
+	}
+	limitW := maxW
+	truncated := vt.StringWidth(label) > maxW
+	if truncated {
+		limitW = maxW - 1
+	}
+	col := 0
+	spanIdx := 0
+	for runeIdx, r := range []rune(label) {
+		rw := vt.RuneWidth(r)
+		if col+rw > limitW {
+			break
+		}
+		for spanIdx < len(spans) && runeIdx >= spans[spanIdx][1] {
+			spanIdx++
+		}
+		st := base
+		if spanIdx < len(spans) && runeIdx >= spans[spanIdx][0] && runeIdx < spans[spanIdx][1] {
+			st = match
+		}
+		Text(f, x+col, y, string(r), st)
+		col += rw
+	}
+	if truncated && maxW >= 1 {
+		Text(f, x+col, y, "…", base)
+	}
 }
 
 // ─── Help overlay ───────────────────────────────────────────────────────────

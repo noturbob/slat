@@ -101,6 +101,7 @@ func TestParseTheme(t *testing.T) {
 
 	fs, err := ParseFinderTheme(FinderTheme{
 		Fg: "white", SubFg: "248", HeadFg: "cyan", BorderFg: "blue", Bg: "#1e1e2e", SelFg: "16", SelBg: "yellow",
+		MatchFg: "bright-green", MatchBg: "235",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -108,6 +109,9 @@ func TestParseTheme(t *testing.T) {
 	fs.Apply()
 	if StyleFinderKey.Fg != vt.Indexed(7) || StyleFinderSel.Bg != vt.Indexed(3) || StyleFinder.Bg != vt.RGB(0x1e, 0x1e, 0x2e) {
 		t.Errorf("finder styles = %+v %+v", *StyleFinder, *StyleFinderSel)
+	}
+	if StyleFinderMatch.Fg != vt.Indexed(10) || StyleFinderMatch.Bg != vt.Indexed(235) || StyleFinderSelMatch.Fg != vt.Indexed(10) {
+		t.Errorf("finder match styles = %+v %+v", *StyleFinderMatch, *StyleFinderSelMatch)
 	}
 
 	ss, err := ParseStackTheme(StackTheme{Fg: "250", Bg: "236", ActiveFg: "#1e1e2e", ActiveBg: "#89b4fa"})

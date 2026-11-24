@@ -77,7 +77,8 @@ duration = "700ms"        # "0s" skips the startup banner
 # head_fg = "theme.accent"
 # bg      = "theme.background"
 [finder]
-# sel_bg  = "theme.tab_active_bg"
+# sel_bg   = "theme.tab_active_bg"
+# match_fg = "theme.accent"
 [stack]
 # active_bg = "theme.accent"
 

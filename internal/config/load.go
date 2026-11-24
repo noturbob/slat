@@ -216,6 +216,7 @@ func defaultKeybinds() map[string]string {
 		"prev-session":   "(",
 		"global-tree":       "g",
 		"save-session":      "E",
+		"reload-config":     "r",
 		"toggle-status-bar": "b",
 		"detach":            "d",
 		"quit":           "q",

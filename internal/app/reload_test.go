@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	. "github.com/noturbob/slat/internal/app"
 
@@ -55,24 +54,26 @@ func TestConfigReloadValidAndInvalid(t *testing.T) {
 	a, term, cfgPath, _ := startWithConfigFile(t, "mouse = true\n")
 	waitFor(t, term, "pane 1/1", 1)
 
-	// Valid update: disable mouse and change navigation keys.
+	// Valid update: disable mouse and change navigation keys, then press <prefix> r.
 	if err := os.WriteFile(cfgPath, []byte("mouse = false\n[navigation]\nkeys = \"ctrl\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	a.FeedInput([]byte{prefix, 'r'})
 	waitFor(t, term, "config reloaded", 1)
 
-	// Invalid update: bad colour / unknown setting keeps previous config and notifies.
+	// Invalid update: unknown setting keeps previous config and notifies on <prefix> r.
 	if err := os.WriteFile(cfgPath, []byte("unknown_key = 123\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	a.FeedInput([]byte{prefix, 'r'})
 	waitFor(t, term, "config reload failed:", 1)
 
-	// Recover with valid config.
+	// Recover with valid config and reload via <prefix> r.
 	if err := os.WriteFile(cfgPath, []byte("mouse = true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	a.FeedInput([]byte{prefix, 'r'})
 	waitFor(t, term, "config reloaded", 1)
-	_ = a
 }
 
 func TestConfigReloadThemeFile(t *testing.T) {
@@ -119,7 +120,6 @@ accent = "#89b4fa"
 	a.Attach(80, 24)
 	waitFor(t, term, "pane 1/1", 1)
 
-	time.Sleep(50 * time.Millisecond)
 	updatedTOML := `background = "#101010"
 foreground = "#ffffff"
 accent = "#a6e3a1"
@@ -127,5 +127,6 @@ accent = "#a6e3a1"
 	if err := os.WriteFile(themePath, []byte(updatedTOML), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	a.FeedInput([]byte{prefix, 'r'})
 	waitFor(t, term, "config reloaded", 1)
 }

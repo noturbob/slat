@@ -357,6 +357,21 @@ func TestTreePickerPageUpPageDown(t *testing.T) {
 	}
 }
 
+func TestFilterMatchSpans(t *testing.T) {
+	label := "slat / work · 2:logs · pane 1 (fish)"
+	spans := FilterMatchSpans("work logs !nvim", label)
+	if len(spans) != 2 {
+		t.Fatalf("spans = %v, want 2 spans", spans)
+	}
+	r := []rune(label)
+	if got := string(r[spans[0][0]:spans[0][1]]); got != "work" {
+		t.Errorf("span[0] = %q, want work", got)
+	}
+	if got := string(r[spans[1][0]:spans[1][1]]); got != "logs" {
+		t.Errorf("span[1] = %q, want logs", got)
+	}
+}
+
 func TestTreePickerCtrlW(t *testing.T) {
 	a, term := start(t)
 	a.FeedInput([]byte{prefix, 'W'})

@@ -3,17 +3,12 @@ package app
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/noturbob/slat/internal/config"
 	"github.com/noturbob/slat/internal/input"
 	"github.com/noturbob/slat/internal/ui"
 )
-
-const configReloadInterval = 500 * time.Millisecond
 
 type compiledConfig struct {
 	theme   ui.Theme
@@ -100,6 +95,13 @@ func (a *App) ApplyConfig(cfg *config.Config) error {
 		return err
 	}
 	a.mu.Lock()
+	a.applyCompiledLocked(cfg, cc)
+	a.mu.Unlock()
+	a.markDirty()
+	return nil
+}
+
+func (a *App) applyCompiledLocked(cfg *config.Config, cc compiledConfig) {
 	cc.applyStyles()
 	a.cfg = cfg
 	a.status = cc.status
@@ -112,81 +114,30 @@ func (a *App) ApplyConfig(cfg *config.Config) error {
 	if a.screen != nil {
 		a.screen.Invalidate()
 	}
-	a.mu.Unlock()
-	a.markDirty()
+}
+
+// reloadConfigLocked reloads configuration from the active config path.
+// Caller must hold a.mu.
+func (a *App) reloadConfigLocked() error {
+	cfg, err := config.LoadFrom(a.cfg.Path)
+	if err != nil {
+		return err
+	}
+	cc, err := compileConfig(cfg)
+	if err != nil {
+		return err
+	}
+	a.applyCompiledLocked(cfg, cc)
 	return nil
 }
 
 // ReloadConfig reloads configuration from the active config path and applies it.
 func (a *App) ReloadConfig() error {
 	a.mu.Lock()
-	cfgPath := a.cfg.Path
+	err := a.reloadConfigLocked()
 	a.mu.Unlock()
-	cfg, err := config.LoadFrom(cfgPath)
-	if err != nil {
-		return err
+	if err == nil {
+		a.markDirty()
 	}
-	return a.ApplyConfig(cfg)
-}
-
-func (a *App) configReloadLoop() {
-	a.mu.Lock()
-	cfgPath := a.cfg.Path
-	a.mu.Unlock()
-	if cfgPath == "" {
-		return
-	}
-	lastSig := configSnapshot(cfgPath, config.ThemesDir())
-	tick := time.NewTicker(configReloadInterval)
-	defer tick.Stop()
-	for {
-		select {
-		case <-a.quit:
-			return
-		case <-tick.C:
-		}
-		a.mu.Lock()
-		cfgPath = a.cfg.Path
-		a.mu.Unlock()
-		if cfgPath == "" {
-			continue
-		}
-		sig := configSnapshot(cfgPath, config.ThemesDir())
-		if sig == lastSig {
-			continue
-		}
-		lastSig = sig
-		if err := a.ReloadConfig(); err != nil {
-			a.notify("config reload failed: " + err.Error())
-		} else {
-			a.notify("config reloaded")
-		}
-	}
-}
-
-func configSnapshot(cfgPath, themesDir string) string {
-	var b strings.Builder
-	b.WriteString(fileFingerprint(cfgPath))
-	if themesDir == "" {
-		return b.String()
-	}
-	entries, err := os.ReadDir(themesDir)
-	if err != nil {
-		return b.String()
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".toml" {
-			continue
-		}
-		b.WriteString(fileFingerprint(filepath.Join(themesDir, entry.Name())))
-	}
-	return b.String()
-}
-
-func fileFingerprint(path string) string {
-	info, err := os.Stat(path)
-	if err != nil {
-		return path + ":missing;"
-	}
-	return fmt.Sprintf("%s:%d:%d;", path, info.Size(), info.ModTime().UnixNano())
+	return err
 }

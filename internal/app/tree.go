@@ -35,13 +35,14 @@ type treeNode struct {
 }
 
 type treeState struct {
-	title    string
-	query    []byte
-	all      []treeNode
-	filtered []treeNode
-	cursor   int
-	offset   int
-	onSelect func(treeNode)
+	title      string
+	query      []byte
+	all        []treeNode
+	filtered   []treeNode
+	matchSpans [][][2]int
+	cursor     int
+	offset     int
+	onSelect   func(treeNode)
 }
 
 func (a *App) openTree() {
@@ -299,18 +300,33 @@ func (ts *treeState) refilter() {
 	q := strings.TrimSpace(string(ts.query))
 	if q == "" {
 		ts.filtered = append(ts.filtered[:0], ts.all...)
+		ts.matchSpans = ts.matchSpans[:0]
 		ts.clampCursor()
 		return
 	}
+	expr := parseFilterExpr(q)
+	if expr == nil {
+		ts.filtered = append(ts.filtered[:0], ts.all...)
+		ts.matchSpans = ts.matchSpans[:0]
+		ts.clampCursor()
+		return
+	}
+	posTerms := collectPositiveTerms(expr)
 	type scored struct {
 		node  treeNode
+		spans [][2]int
 		score int
 		order int
 	}
 	var matches []scored
 	for idx, n := range ts.all {
-		if sc, ok := fuzzyMatch(q, n.searchText); ok {
-			matches = append(matches, scored{node: n, score: sc, order: idx})
+		if sc, ok := expr.eval([]rune(n.searchText)); ok {
+			matches = append(matches, scored{
+				node:  n,
+				spans: findLabelMatchSpans(posTerms, n.label),
+				score: sc,
+				order: idx,
+			})
 		}
 	}
 	sort.Slice(matches, func(i, j int) bool {
@@ -320,8 +336,10 @@ func (ts *treeState) refilter() {
 		return matches[i].order < matches[j].order
 	})
 	ts.filtered = ts.filtered[:0]
+	ts.matchSpans = ts.matchSpans[:0]
 	for _, m := range matches {
 		ts.filtered = append(ts.filtered, m.node)
+		ts.matchSpans = append(ts.matchSpans, m.spans)
 	}
 	ts.cursor = 0
 	ts.offset = 0
@@ -467,10 +485,15 @@ func (a *App) drawTree(frame *ui.Frame) (int, int) {
 	}
 	rows := make([]ui.TreeRow, len(ts.filtered))
 	for i, n := range ts.filtered {
+		var spans [][2]int
+		if i < len(ts.matchSpans) {
+			spans = ts.matchSpans[i]
+		}
 		rows[i] = ui.TreeRow{
-			Label:    n.label,
-			Selected: i == ts.cursor,
-			Active:   n.active,
+			Label:      n.label,
+			Selected:   i == ts.cursor,
+			Active:     n.active,
+			MatchSpans: spans,
 		}
 	}
 	title := ts.title
@@ -846,28 +869,36 @@ func evalFilterTerm(term filterTerm, text []rune) (int, bool) {
 }
 
 func matchFilterTerm(term filterTerm, text []rune) (int, bool) {
+	sc, _, _, ok := matchFilterTermSpan(term, text)
+	return sc, ok
+}
+
+func matchFilterTermSpan(term filterTerm, text []rune) (int, int, int, bool) {
 	m, n := len(term.pat), len(text)
 	if m == 0 {
-		return 0, true
+		return 0, 0, 0, true
 	}
 	if m > n {
-		return 0, false
+		return 0, 0, 0, false
 	}
 
 	if term.anchorStart && term.anchorEnd {
 		if n != m {
-			return 0, false
+			return 0, 0, 0, false
 		}
-		return scoreMatchAt(term.pat, text, 0, term.caseSensitive)
+		sc, ok := scoreMatchAt(term.pat, text, 0, term.caseSensitive)
+		return sc, 0, m, ok
 	}
 	if term.anchorStart {
-		return scoreMatchAt(term.pat, text, 0, term.caseSensitive)
+		sc, ok := scoreMatchAt(term.pat, text, 0, term.caseSensitive)
+		return sc, 0, m, ok
 	}
 	if term.anchorEnd {
-		return scoreMatchAt(term.pat, text, n-m, term.caseSensitive)
+		sc, ok := scoreMatchAt(term.pat, text, n-m, term.caseSensitive)
+		return sc, n - m, n, ok
 	}
 
-	best := 0
+	best, bestStart := 0, 0
 	found := false
 	limit := n - m
 	for i := 0; i <= limit; i++ {
@@ -877,11 +908,68 @@ func matchFilterTerm(term filterTerm, text []rune) (int, bool) {
 		if sc, ok := scoreMatchAt(term.pat, text, i, term.caseSensitive); ok {
 			if !found || sc > best {
 				best = sc
+				bestStart = i
 				found = true
 			}
 		}
 	}
-	return best, found
+	return best, bestStart, bestStart + m, found
+}
+
+func collectPositiveTerms(node filterNode) []filterTerm {
+	switch n := node.(type) {
+	case *filterTerm:
+		if !n.negate {
+			return []filterTerm{*n}
+		}
+	case filterAndNode:
+		var out []filterTerm
+		for _, c := range n.children {
+			out = append(out, collectPositiveTerms(c)...)
+		}
+		return out
+	case filterOrNode:
+		var out []filterTerm
+		for _, c := range n.children {
+			out = append(out, collectPositiveTerms(c)...)
+		}
+		return out
+	}
+	return nil
+}
+
+func findLabelMatchSpans(terms []filterTerm, label string) [][2]int {
+	if len(terms) == 0 || label == "" {
+		return nil
+	}
+	runes := []rune(label)
+	var spans [][2]int
+	for _, term := range terms {
+		if _, start, end, ok := matchFilterTermSpan(term, runes); ok && end > start {
+			spans = append(spans, [2]int{start, end})
+		}
+	}
+	if len(spans) <= 1 {
+		return spans
+	}
+	sort.Slice(spans, func(i, j int) bool {
+		if spans[i][0] != spans[j][0] {
+			return spans[i][0] < spans[j][0]
+		}
+		return spans[i][1] < spans[j][1]
+	})
+	merged := spans[:1]
+	for _, sp := range spans[1:] {
+		last := &merged[len(merged)-1]
+		if sp[0] <= last[1] {
+			if sp[1] > last[1] {
+				last[1] = sp[1]
+			}
+		} else {
+			merged = append(merged, sp)
+		}
+	}
+	return merged
 }
 
 func scoreMatchAt(pat, text []rune, start int, caseSensitive bool) (int, bool) {

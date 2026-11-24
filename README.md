@@ -226,6 +226,7 @@ every key inside slat.
 | `)` / `(` | Switch to next / previous running session |
 | `g` | Global tree picker across all sessions, tabs & panes |
 | `E` | Save current session as a preconfigured TOML (asks before overwriting) |
+| `r` | Reload configuration (`config.toml` and themes) |
 | `b` | Toggle the bottom status bar |
 | `d` | Detach — the session keeps running |
 | `q` | Quit — ends every shell |
@@ -446,7 +447,7 @@ Tune the detection under `[agent]` in the config; see
 
 ## Configuration
 
-slat reads `~/.config/slat/config.toml` (or `$XDG_CONFIG_HOME/slat/config.toml`), or pass `-c` / `--config PATH` (for example, `slat --config examples/configs/cyberpunk.toml`). Changes to `config.toml` and theme files in `~/.config/slat/themes/` are reloaded automatically while running.
+slat reads `~/.config/slat/config.toml` (or `$XDG_CONFIG_HOME/slat/config.toml`), or pass `-c` / `--config PATH` (for example, `slat --config examples/configs/cyberpunk.toml`). Press <kbd>Ctrl</kbd>+<kbd>s</kbd> then <kbd>r</kbd> (`reload-config`) to reload `config.toml` and theme files in `~/.config/slat/themes/` while running.
 Every setting is optional:
 
 ```toml
@@ -491,7 +492,7 @@ duration = "700ms"
 # fg / sub_fg / head_fg / border_fg / bg   # customize modal dialog & help overlay colours
 
 [finder]
-# fg / sub_fg / head_fg / border_fg / bg / sel_fg / sel_bg  # fuzzy tree picker colours
+# fg / sub_fg / head_fg / border_fg / bg / sel_fg / sel_bg / match_fg / match_bg  # picker colours
 
 [stack]
 # fg / bg / active_fg / active_bg          # stacked pane header colours

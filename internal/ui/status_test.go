@@ -438,6 +438,39 @@ func TestDrawHelpExpandsWidth(t *testing.T) {
 	}
 }
 
+func TestDrawTreePickerMatchHighlight(t *testing.T) {
+	Themes["default"].Apply()
+	fs, err := ParseFinderTheme(FinderTheme{MatchFg: "bright-yellow"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs.Apply()
+
+	f := NewFrame(60, 10)
+	rows := []TreeRow{
+		{Label: "slat / work · 2:logs", Selected: true, MatchSpans: [][2]int{{7, 11}}},
+		{Label: "slat / main · 1:fish", Selected: false, MatchSpans: [][2]int{{16, 20}}},
+	}
+	DrawTreePicker(f, "session tree", "work", rows, 0, 2)
+
+	// Locate 'w' of "work" on selected row and 'f' of "fish" on unselected row.
+	var gotSelMatch, gotRowMatch bool
+	for y := 0; y < f.H; y++ {
+		for x := 0; x < f.W; x++ {
+			c := f.Lines[y][x]
+			if c.R == 'w' && c.Style.Fg == StyleFinderSelMatch.Fg && c.Style.Bg == StyleFinderSelMatch.Bg {
+				gotSelMatch = true
+			}
+			if c.R == 'f' && c.Style.Fg == StyleFinderMatch.Fg && c.Style.Bg == StyleFinderMatch.Bg {
+				gotRowMatch = true
+			}
+		}
+	}
+	if !gotSelMatch || !gotRowMatch {
+		t.Errorf("match highlight missing: sel=%v row=%v", gotSelMatch, gotRowMatch)
+	}
+}
+
 func TestDrawSplash(t *testing.T) {
 	Themes["default"].Apply()
 	sp, err := ParseSplash([]string{"[SLAT]", " /\\ "}, "v1.0", "press ?", "cyan", "208", "#1e1e2e")

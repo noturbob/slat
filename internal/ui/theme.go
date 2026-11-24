@@ -665,6 +665,14 @@ func (t Theme) Apply() {
 	styleFinderText = styleBoxText
 	styleFinderHead = styleBoxHead
 	styleFinderSel = styleTabActive
+	styleFinderMatch = vt.Style{Fg: t.Accent, Bg: t.Bg, Attrs: vt.Bold}
+	selMatchFg := t.Accent
+	selMatchAttrs := vt.Bold
+	if selMatchFg == 0 || selMatchFg == styleTabActive.Bg {
+		selMatchFg = styleTabActive.Fg
+		selMatchAttrs = vt.Bold | vt.Underline
+	}
+	styleFinderSelMatch = vt.Style{Fg: selMatchFg, Bg: styleTabActive.Bg, Attrs: selMatchAttrs}
 	styleStack = styleTab
 	styleStackActive = styleTabActive
 	styleBanner = vt.Style{Fg: t.Accent, Attrs: vt.Bold}
@@ -769,12 +777,14 @@ type FinderTheme struct {
 	Bg       string `toml:"bg"`
 	SelFg    string `toml:"sel_fg"`
 	SelBg    string `toml:"sel_bg"`
+	MatchFg  string `toml:"match_fg"`
+	MatchBg  string `toml:"match_bg"`
 }
 
 // FinderStyle is a validated set of finder colour overrides.
 type FinderStyle struct {
-	Fg, SubFg, HeadFg, BorderFg, Bg, SelFg, SelBg          vt.Color
-	HasFg, HasSubFg, HasHeadFg, HasBorderFg, HasBg, HasSelFg, HasSelBg bool
+	Fg, SubFg, HeadFg, BorderFg, Bg, SelFg, SelBg, MatchFg, MatchBg                   vt.Color
+	HasFg, HasSubFg, HasHeadFg, HasBorderFg, HasBg, HasSelFg, HasSelBg, HasMatchFg, HasMatchBg bool
 }
 
 // ParseFinderTheme validates a [finder] colour table against the active theme.
@@ -793,6 +803,8 @@ func ParseFinderThemeIn(d FinderTheme, t Theme) (FinderStyle, error) {
 		{"bg", d.Bg, &s.Bg, &s.HasBg, true},
 		{"sel_fg", d.SelFg, &s.SelFg, &s.HasSelFg, false},
 		{"sel_bg", d.SelBg, &s.SelBg, &s.HasSelBg, true},
+		{"match_fg", d.MatchFg, &s.MatchFg, &s.HasMatchFg, false},
+		{"match_bg", d.MatchBg, &s.MatchBg, &s.HasMatchBg, true},
 	}, t)
 	return s, err
 }
@@ -816,12 +828,23 @@ func (s FinderStyle) Apply() {
 		styleFinderHead.Bg = s.Bg
 		styleFinderKey.Bg = s.Bg
 		styleFinderText.Bg = s.Bg
+		styleFinderMatch.Bg = s.Bg
 	}
 	if s.HasSelFg {
 		styleFinderSel.Fg = s.SelFg
 	}
 	if s.HasSelBg {
 		styleFinderSel.Bg = s.SelBg
+		styleFinderSelMatch.Bg = s.SelBg
+	}
+	if s.HasMatchFg {
+		styleFinderMatch.Fg = s.MatchFg
+		styleFinderSelMatch.Fg = s.MatchFg
+		styleFinderSelMatch.Attrs = vt.Bold
+	}
+	if s.HasMatchBg {
+		styleFinderMatch.Bg = s.MatchBg
+		styleFinderSelMatch.Bg = s.MatchBg
 	}
 }
 

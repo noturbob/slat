@@ -194,6 +194,7 @@ const (
 	ActionPrevSession
 	ActionGlobalTreePicker
 	ActionSaveSession
+	ActionReloadConfig
 	ActionQuit
 	ActionDetach
 	ActionSendPrefix
@@ -253,6 +254,7 @@ var Bindings = []Binding{
 	{"prev-session", "Session", "Previous session", ActionPrevSession},
 	{"global-tree", "Session", "All sessions/tabs/panes tree", ActionGlobalTreePicker},
 	{"save-session", "Session", "Save preconfigured session", ActionSaveSession},
+	{"reload-config", "Session", "Reload configuration", ActionReloadConfig},
 	{"toggle-status-bar", "Session", "Toggle status bar", ActionToggleStatusBar},
 	{"detach", "Session", "Detach (keeps running)", ActionDetach},
 	{"quit", "Session", "Quit (ends session)", ActionQuit},

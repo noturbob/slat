@@ -8,9 +8,11 @@ var (
 	StyleBoxHead     = &styleBoxHead
 	StyleBoxKey      = &styleBoxKey
 	StyleBoxText     = &styleBoxText
-	StyleFinder      = &styleFinder
-	StyleFinderKey   = &styleFinderKey
-	StyleFinderSel   = &styleFinderSel
+	StyleFinder         = &styleFinder
+	StyleFinderKey      = &styleFinderKey
+	StyleFinderSel      = &styleFinderSel
+	StyleFinderMatch    = &styleFinderMatch
+	StyleFinderSelMatch = &styleFinderSelMatch
 	StyleStack       = &styleStack
 	StyleStackActive = &styleStackActive
 )

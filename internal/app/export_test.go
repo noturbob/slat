@@ -13,7 +13,10 @@ import (
 var (
 	Quote       = quote
 	Ago         = ago
-	FuzzyMatch  = fuzzyMatch
+	FuzzyMatch       = fuzzyMatch
+	FilterMatchSpans = func(query, label string) [][2]int {
+		return findLabelMatchSpans(collectPositiveTerms(parseFilterExpr(query)), label)
+	}
 	ShellPrompt = shellPrompt
 )
 
