@@ -446,7 +446,7 @@ Tune the detection under `[agent]` in the config; see
 
 ## Configuration
 
-slat reads `~/.config/slat/config.toml` (or `$XDG_CONFIG_HOME/slat/config.toml`), or pass `-c` / `--config PATH` (for example, `slat --config examples/configs/cyberpunk.toml`).
+slat reads `~/.config/slat/config.toml` (or `$XDG_CONFIG_HOME/slat/config.toml`), or pass `-c` / `--config PATH` (for example, `slat --config examples/configs/cyberpunk.toml`). Changes to `config.toml` and theme files in `~/.config/slat/themes/` are reloaded automatically while running.
 Every setting is optional:
 
 ```toml

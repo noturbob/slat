@@ -52,6 +52,12 @@ func NewManager(shell string, scrollback int, onChange func()) *Manager {
 	return &Manager{SessionName: "slat", shell: shell, scrollback: scrollback, onChange: onChange}
 }
 
+// UpdateDefaults updates the shell and scrollback used for newly created panes.
+func (m *Manager) UpdateDefaults(shell string, scrollback int) {
+	m.shell = shell
+	m.scrollback = scrollback
+}
+
 func (m *Manager) newPane(rows, cols int, dir string) (*pane.Pane, error) {
 	m.nextPane++
 	p, err := pane.New(m.nextPane, rows, cols, m.shell, dir, m.scrollback, m.onChange)

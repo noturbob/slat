@@ -46,6 +46,7 @@ type Config struct {
 	Navigation Navigation        `toml:"navigation"`
 
 	PrefixKey input.Prefix `toml:"-"` // parsed Prefix
+	Path      string       `toml:"-"` // source config file path
 }
 
 // Navigation configures direct, prefix-less pane navigation (e.g. Alt+h/j/k/l)
@@ -312,6 +313,7 @@ func unpackThemeTable(md toml.MetaData, raw map[string]toml.Primitive) (settings
 
 func loadFile(path string, allowMissing bool) (*Config, error) {
 	cfg := DefaultConfig()
+	cfg.Path = path
 	userThemes, err := ui.LoadThemesFromDir(ThemesDir())
 	if err != nil {
 		return nil, err
@@ -337,6 +339,7 @@ func loadFile(path string, allowMissing bool) (*Config, error) {
 	if mergeErr := cfg.merge(&user.Config, md); mergeErr != nil {
 		return nil, fmt.Errorf("%s: %w", path, mergeErr)
 	}
+	cfg.Path = path
 	return cfg, nil
 }
 

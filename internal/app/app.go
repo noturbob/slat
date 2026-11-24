@@ -3,7 +3,6 @@
 package app
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -105,65 +104,21 @@ type prompt struct {
 
 // New creates a new App from the given config.
 func New(cfg *config.Config) (*App, error) {
-	if cfg == nil {
-		return nil, errors.New("config must not be nil")
-	}
-	theme, err := ui.ParseThemeWith(cfg.Theme, cfg.ThemeVars, cfg.UserThemes)
+	cc, err := compileConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
-	theme.Apply()
-	dlg, err := ui.ParseDialogThemeIn(cfg.Dialog, theme)
-	if err != nil {
-		return nil, err
-	}
-	dlg.Apply()
-	fnd, err := ui.ParseFinderThemeIn(cfg.Finder, theme)
-	if err != nil {
-		return nil, err
-	}
-	fnd.Apply()
-	stk, err := ui.ParseStackThemeIn(cfg.Stack, theme)
-	if err != nil {
-		return nil, err
-	}
-	stk.Apply()
-	borders, err := ui.ParseBorders(cfg.Borders)
-	if err != nil {
-		return nil, err
-	}
-	borders.Apply()
-	status, err := ui.ParseStatusConfigIn(cfg.Status, theme)
-	if err != nil {
-		return nil, err
-	}
-	prefixName := cfg.PrefixKey.Name
-	subtitle := "terminal multiplexer " + Version
-	if cfg.Splash.HasSubtitle {
-		subtitle = strings.ReplaceAll(cfg.Splash.Subtitle, "{version}", Version)
-	}
-	hint := fmt.Sprintf("press %s then ? for help", prefixName)
-	if cfg.Splash.HasHint {
-		hint = strings.ReplaceAll(cfg.Splash.Hint, "{prefix}", prefixName)
-	}
-	splash, err := ui.ParseSplashIn(cfg.Splash.Art, subtitle, hint, cfg.Splash.Fg, cfg.Splash.SubFg, cfg.Splash.Bg, theme)
-	if err != nil {
-		return nil, err
-	}
+	cc.applyStyles()
 	sessionDir := session.CanonicalDir("")
-	handler := input.NewHandler(cfg.PrefixKey, cfg.Keybinds)
-	if scErr := handler.SetShortcuts(cfg.Shortcuts); scErr != nil {
-		return nil, scErr
-	}
 	a := &App{
 		cfg:        cfg,
-		status:     status,
-		splash:     splash,
-		help:       helpEntries(cfg),
+		status:     cc.status,
+		splash:     cc.splash,
+		help:       cc.help,
 		quit:       make(chan struct{}),
 		detachCh:   make(chan struct{}, 1),
 		dirty:      make(chan struct{}, 1),
-		handler:    handler,
+		handler:    cc.handler,
 		screen:     ui.NewScreen(io.Discard),
 		sessionDir: sessionDir,
 	}
@@ -221,6 +176,9 @@ func (a *App) Start(cols, rows int) error {
 	go a.watch()
 	go a.statusScriptLoop()
 	go a.saveLoop()
+	if a.cfg.Path != "" {
+		go a.configReloadLoop()
+	}
 	return nil
 }
 
