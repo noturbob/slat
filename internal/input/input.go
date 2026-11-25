@@ -234,7 +234,7 @@ var Bindings = []Binding{
 	{"zoom", "Panes", "Toggle zoom", ActionZoom},
 	{"identify-panes", "Panes", "Toggle pane ID badges", ActionIdentifyPanes},
 	{"stack-mode", "Panes", "Toggle stacked mode", ActionStackMode},
-	{"break-pane", "Panes", "Break pane into new tab", ActionBreakPane},
+	{"break-pane", "Panes", "Move pane to tab / new tab", ActionBreakPane},
 	{"join-pane", "Panes", "Join pane into current tab", ActionJoinPane},
 	{"close-pane", "Panes", "Close pane", ActionClosePane},
 	{"scroll-mode", "Panes", "Scroll back (q exits)", ActionScrollMode},

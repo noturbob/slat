@@ -375,7 +375,30 @@ func (m *Manager) BreakPane() error {
 // JoinPane moves src from its current tab into the active tab, arranging panes
 // according to the active tab's layout mode and removing any emptied source tab.
 func (m *Manager) JoinPane(src *pane.Pane, area layout.Rect) error {
-	dstTab := m.ActiveTab()
+	return m.movePaneToTab(src, m.ActiveTab(), area)
+}
+
+// MovePaneToTab moves src from its current tab into the tab at (dstWSIdx, dstTabIdx),
+// arranging panes according to the destination tab's layout mode, removing any
+// emptied source tab/workspace, and focusing the moved pane in the destination tab.
+func (m *Manager) MovePaneToTab(src *pane.Pane, dstWSIdx, dstTabIdx int, area layout.Rect) error {
+	if dstWSIdx < 0 || dstWSIdx >= len(m.Workspaces) {
+		return errors.New("workspace not found")
+	}
+	dstWS := m.Workspaces[dstWSIdx]
+	if dstTabIdx < 0 || dstTabIdx >= len(dstWS.Tabs) {
+		return errors.New("tab not found")
+	}
+	if err := m.movePaneToTab(src, dstWS.Tabs[dstTabIdx], area); err != nil {
+		return err
+	}
+	// Resolve destination indices after removal in case an emptied source
+	// tab or workspace shifted indices.
+	m.Focus(src)
+	return nil
+}
+
+func (m *Manager) movePaneToTab(src *pane.Pane, dstTab *Tab, area layout.Rect) error {
 	if dstTab == nil || src == nil {
 		return errors.New("no active tab")
 	}

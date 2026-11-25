@@ -193,8 +193,8 @@ every key inside slat.
 | `l` | Choose layout (picker menu) |
 | `z` | Zoom the pane to full size per tab (toggle) |
 | `t` | Toggle stacked mode (jump elements with `o`/`O`/`j`/`k` or click) |
-| `!` | Break active pane into a new tab |
-| `@` | Join a pane from another tab into the current tab |
+| `!` | Move active pane to an existing tab or a new tab (fuzzy picker) |
+| `@` | Join a pane from another tab into the current tab (fuzzy picker) |
 | `x` | Close the pane |
 | `[` or PageUp | Scroll and copy mode (see below) |
 
@@ -232,7 +232,7 @@ every key inside slat.
 | `q` | Quit — ends every shell |
 | `?` | Show all keys |
 
-Picker dialogs (`l`, `f`, `F`, `g`) filter by **word-prefix** with `fzf`-style extended search: space-separated terms are `AND`ed, `|` is `OR`, `(...)` groups expressions, `^term` matches the start, `term$` matches the end, `'term` matches any exact substring, `!term` excludes matches, `\` escapes special characters (`(`, `)`, `$`, `^`, `'`, `!`, `|`, space, `\`), and smart-case is used (case-insensitive unless uppercase is typed). Use `Ctrl+W` to delete the last word and `Ctrl+U` to clear the input.
+Picker dialogs (`l`, `!`, `@`, `f`, `F`, `g`) filter by **word-prefix** with `fzf`-style extended search: space-separated terms are `AND`ed, `|` is `OR`, `(...)` groups expressions, `^term` matches the start, `term$` matches the end, `'term` matches any exact substring, `!term` excludes matches, `\` escapes special characters (`(`, `)`, `$`, `^`, `'`, `!`, `|`, space, `\`), and smart-case is used (case-insensitive unless uppercase is typed). Use `Ctrl+W` to delete the last word and `Ctrl+U` to clear the input.
 
 ### Scroll and copy mode
 

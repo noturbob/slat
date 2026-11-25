@@ -802,9 +802,7 @@ func (a *App) do(action input.Action) bool {
 	case input.ActionStackMode:
 		a.manager.ToggleStack()
 	case input.ActionBreakPane:
-		if err := a.manager.BreakPane(); err != nil {
-			a.notify(err.Error())
-		}
+		a.openBreakPanePicker()
 	case input.ActionJoinPane:
 		a.openJoinPanePicker()
 	case input.ActionClosePane:

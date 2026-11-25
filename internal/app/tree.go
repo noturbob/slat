@@ -31,6 +31,7 @@ type treeNode struct {
 	paneID     int        // used for remote pane focus
 	socket     string     // non-empty for cross-session picker items
 	layoutMode layout.Mode
+	newTab     bool
 	active     bool
 }
 
@@ -144,6 +145,65 @@ func (a *App) openJoinPanePicker() {
 		all:   candidates,
 		onSelect: func(n treeNode) {
 			if err := a.manager.JoinPane(n.pane, a.paneArea()); err != nil {
+				a.notify(err.Error())
+			}
+		},
+	}
+	ts.refilter()
+	a.tree = ts
+}
+
+func (a *App) openBreakPanePicker() {
+	activePane := a.manager.ActivePane()
+	if activePane == nil {
+		return
+	}
+	sess := a.manager.SessionName
+	if sess == "" {
+		sess = "slat"
+	}
+	var candidates []treeNode
+	if len(a.manager.ActivePanes()) > 1 {
+		candidates = append(candidates, treeNode{
+			label:      "+ new tab",
+			searchText: "new tab create",
+			newTab:     true,
+		})
+	}
+	activeWS := a.manager.ActiveWorkspaceIdx
+	for wi, ws := range a.manager.Workspaces {
+		for ti, tab := range ws.Tabs {
+			if wi == activeWS && ti == ws.ActiveTabIdx {
+				continue
+			}
+			nPanes := len(layout.CollectPanes(tab.Layout))
+			paneWord := "panes"
+			if nPanes == 1 {
+				paneWord = "pane"
+			}
+			candidates = append(candidates, treeNode{
+				label:      fmt.Sprintf("%s / %s · %d:%s (%d %s)", sess, ws.Name, ti+1, tab.Name, nPanes, paneWord),
+				searchText: fmt.Sprintf("%s %s %d:%s %s", sess, ws.Name, ti+1, tab.Name, tab.Name),
+				wsIdx:      wi,
+				tabIdx:     ti,
+			})
+		}
+	}
+	if len(candidates) == 0 {
+		a.notify("only one pane in tab")
+		return
+	}
+	ts := &treeState{
+		title: "move pane to tab",
+		all:   candidates,
+		onSelect: func(n treeNode) {
+			if n.newTab {
+				if err := a.manager.BreakPane(); err != nil {
+					a.notify(err.Error())
+				}
+				return
+			}
+			if err := a.manager.MovePaneToTab(activePane, n.wsIdx, n.tabIdx, a.paneArea()); err != nil {
 				a.notify(err.Error())
 			}
 		},

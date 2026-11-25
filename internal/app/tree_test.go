@@ -419,6 +419,9 @@ func TestBreakPaneToNewTab(t *testing.T) {
 	})
 
 	a.FeedInput([]byte{prefix, '!'})
+	waitFor(t, term, "move pane to tab", 1)
+	a.FeedInput([]byte("\r"))
+	waitGone(t, term, "move pane to tab")
 	waitFor(t, term, "pane 1/1", 1)
 
 	var tabCount, activeTabIdx, activePaneID, tab0Panes int
@@ -479,5 +482,76 @@ func TestJoinPaneIntoCurrentTab(t *testing.T) {
 	}
 	if activePaneID != extraPaneID {
 		t.Errorf("activePaneID = %d, want joined pane %d", activePaneID, extraPaneID)
+	}
+}
+
+func TestBreakPaneToExistingTab(t *testing.T) {
+	a, term := start(t)
+	waitFor(t, term, "pane 1/1", 1)
+
+	// Create a second tab, rename it "target", then switch back to tab 1.
+	a.FeedInput([]byte{prefix, 'c'})
+	a.FeedInput([]byte{prefix, ','})
+	a.FeedInput([]byte("\x15target\r"))
+	waitFor(t, term, "2:target", 1)
+	a.FeedInput([]byte{prefix, 'p'})
+	waitFor(t, term, "pane 1/1", 1)
+
+	// Split tab 1, then move the active (second) pane into "target".
+	a.FeedInput([]byte{prefix, 'v'})
+	waitFor(t, term, "pane 2/2", 1)
+
+	var movedID int
+	a.WithManagerForTest(func(m *session.Manager) {
+		movedID = m.ActivePane().ID
+	})
+
+	a.FeedInput([]byte{prefix, '!'})
+	waitFor(t, term, "move pane to tab", 1)
+	a.FeedInput([]byte("target\r"))
+	waitGone(t, term, "move pane to tab")
+	waitFor(t, term, "pane 2/2", 1)
+
+	var tabCount, activeTabIdx, activePaneID int
+	a.WithManagerForTest(func(m *session.Manager) {
+		ws := m.ActiveWorkspace()
+		tabCount = len(ws.Tabs)
+		activeTabIdx = ws.ActiveTabIdx
+		activePaneID = m.ActivePane().ID
+	})
+	if tabCount != 2 || activeTabIdx != 1 {
+		t.Fatalf("after moving to existing tab: tabs=%d activeTab=%d, want 2, 1", tabCount, activeTabIdx)
+	}
+	if activePaneID != movedID {
+		t.Errorf("activePaneID = %d, want moved pane %d", activePaneID, movedID)
+	}
+
+	// Switch back to tab 1 (now has 1 pane) and move its sole pane to "target";
+	// the emptied source tab should be removed.
+	a.FeedInput([]byte{prefix, 'p'})
+	waitFor(t, term, "pane 1/1", 1)
+
+	var soleID int
+	a.WithManagerForTest(func(m *session.Manager) {
+		soleID = m.ActivePane().ID
+	})
+
+	a.FeedInput([]byte{prefix, '!'})
+	waitFor(t, term, "move pane to tab", 1)
+	a.FeedInput([]byte("target\r"))
+	waitGone(t, term, "move pane to tab")
+	waitFor(t, term, "pane 3/3", 1)
+
+	a.WithManagerForTest(func(m *session.Manager) {
+		ws := m.ActiveWorkspace()
+		tabCount = len(ws.Tabs)
+		activeTabIdx = ws.ActiveTabIdx
+		activePaneID = m.ActivePane().ID
+	})
+	if tabCount != 1 || activeTabIdx != 0 {
+		t.Fatalf("after moving sole pane: tabs=%d activeTab=%d, want 1, 0", tabCount, activeTabIdx)
+	}
+	if activePaneID != soleID {
+		t.Errorf("activePaneID = %d, want moved sole pane %d", activePaneID, soleID)
 	}
 }
