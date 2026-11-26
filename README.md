@@ -195,6 +195,7 @@ every key inside slat.
 | `t` | Toggle stacked mode (jump elements with `o`/`O`/`j`/`k` or click) |
 | `!` | Move active pane to an existing tab or a new tab (fuzzy picker) |
 | `@` | Join a pane from another tab into the current tab (fuzzy picker) |
+| `A` | Jump to the first/next pane needing attention |
 | `x` | Close the pane |
 | `[` or PageUp | Scroll and copy mode (see below) |
 

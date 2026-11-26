@@ -200,6 +200,7 @@ func defaultKeybinds() map[string]string {
 		"stack-mode":        "t",
 		"break-pane":        "!",
 		"join-pane":         "@",
+		"next-attention":    "A",
 		// Tabs
 		"new-tab":    "c",
 		"next-tab":   "n",

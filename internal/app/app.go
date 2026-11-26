@@ -805,6 +805,8 @@ func (a *App) do(action input.Action) bool {
 		a.openBreakPanePicker()
 	case input.ActionJoinPane:
 		a.openJoinPanePicker()
+	case input.ActionNextAttention:
+		a.focusNextAttention()
 	case input.ActionClosePane:
 		if a.manager.KillActivePane() {
 			a.doQuit()
@@ -888,6 +890,29 @@ func (a *App) do(action input.Action) bool {
 		}
 	}
 	return true
+}
+
+func (a *App) focusNextAttention() {
+	if len(a.attention) == 0 {
+		a.notify("no panes need attention")
+		return
+	}
+	var candidates []treeNode
+	for _, n := range a.buildTree() {
+		if n.pane != nil && a.attention[n.pane.ID] {
+			candidates = append(candidates, n)
+		}
+	}
+	switch len(candidates) {
+	case 0:
+		a.notify("no panes need attention")
+	case 1:
+		a.jumpToTreeNode(candidates[0])
+	default:
+		ts := &treeState{title: "attention", all: candidates}
+		ts.refilter()
+		a.tree = ts
+	}
 }
 
 func (a *App) zoomedPane() *pane.Pane {

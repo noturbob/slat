@@ -284,3 +284,49 @@ func TestAutoRenameAndManualPrecedence(t *testing.T) {
 		t.Errorf("auto_rename=false still renamed tab to %q", name)
 	}
 }
+
+func TestNextAttentionKeybind(t *testing.T) {
+	a, term := start(t, func(c *config.Config) {
+		c.Agent.InputAfter = config.Duration(300 * time.Millisecond)
+		c.AutoRename = false
+	})
+
+	// When no pane needs attention, <prefix> A shows a status notice.
+	a.FeedInput([]byte{prefix, 'A'})
+	waitFor(t, term, "no panes need attention", 1)
+
+	// Create a second tab with a pane waiting for input, then return to tab 1.
+	a.FeedInput([]byte{prefix, 'c'})
+	waitFor(t, term, "2:shell", 1)
+	a.FeedInput([]byte("sh -c 'printf \"Continue? [y/N] \"; read answer'\r"))
+	waitFor(t, term, "Continue? [y/N]", 1)
+
+	a.FeedInput([]byte{prefix, 'p'})
+	waitFor(t, term, "2:shell ?", 1)
+
+	// Pressing <prefix> A jumps back to the pane needing attention.
+	a.FeedInput([]byte{prefix, 'A'})
+	waitFor(t, term, "Continue? [y/N]", 1)
+	var activeTab int
+	a.WithManagerForTest(func(m *session.Manager) {
+		activeTab = m.ActiveWorkspace().ActiveTabIdx
+	})
+	if activeTab != 1 {
+		t.Errorf("active tab = %d, want 1", activeTab)
+	}
+
+	// Create a third tab also waiting for input, then return to tab 1.
+	a.FeedInput([]byte{prefix, 'c'})
+	waitFor(t, term, "3:shell", 1)
+	a.FeedInput([]byte("sh -c 'printf \"Confirm? [y/N] \"; read answer'\r"))
+	waitFor(t, term, "Confirm? [y/N]", 1)
+
+	a.FeedInput([]byte{prefix, 'p'})
+	a.FeedInput([]byte{prefix, 'p'})
+	waitFor(t, term, "3:shell ?", 1)
+
+	// With >1 panes needing attention, <prefix> A opens the finder dialog.
+	a.FeedInput([]byte{prefix, 'A'})
+	waitFor(t, term, "attention (2/2)", 1)
+	a.FeedInput([]byte{0x1b}) // Esc closes the finder
+}

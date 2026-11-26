@@ -165,6 +165,7 @@ const (
 	ActionLayoutPicker
 	ActionBreakPane
 	ActionJoinPane
+	ActionNextAttention
 	// Tab management
 	ActionNewTab
 	ActionNextTab
@@ -236,6 +237,7 @@ var Bindings = []Binding{
 	{"stack-mode", "Panes", "Toggle stacked mode", ActionStackMode},
 	{"break-pane", "Panes", "Move pane to tab / new tab", ActionBreakPane},
 	{"join-pane", "Panes", "Join pane into current tab", ActionJoinPane},
+	{"next-attention", "Panes", "Jump to pane needing attention", ActionNextAttention},
 	{"close-pane", "Panes", "Close pane", ActionClosePane},
 	{"scroll-mode", "Panes", "Scroll back (q exits)", ActionScrollMode},
 	{"new-tab", "Tabs", "New tab", ActionNewTab},
