@@ -226,6 +226,18 @@ func DrawPrompt(f *Frame, y int, label, text string) int {
 	return Text(f, x, y, text, styleBadge)
 }
 
+func drawBoxFrame(f *Frame, x0, y0, boxW, boxH int, b BorderSet, st vt.Style) {
+	innerW := max(boxW-2, 0)
+	horiz := strings.Repeat(string(b.Horizontal), innerW)
+	vert := string(b.Vertical)
+	Text(f, x0, y0, string(b.TopLeft)+horiz+string(b.TopRight), st)
+	for y := 1; y < boxH-1; y++ {
+		Text(f, x0, y0+y, vert, st)
+		Text(f, x0+boxW-1, y0+y, vert, st)
+	}
+	Text(f, x0, y0+boxH-1, string(b.BottomLeft)+horiz+string(b.BottomRight), st)
+}
+
 // DrawDialog draws a centered modal input box for renaming sessions, tabs, or
 // workspaces, returning the cursor position (x, y). Falls back to DrawPrompt
 // on tiny terminals.
@@ -240,12 +252,7 @@ func DrawDialog(f *Frame, title, text string) (int, int) {
 	for y := 0; y < boxH; y++ {
 		Fill(f, x0, y0+y, boxW, styleBox)
 	}
-	Text(f, x0, y0, "╭"+strings.Repeat("─", boxW-2)+"╮", styleBox)
-	for y := 1; y < boxH-1; y++ {
-		Text(f, x0, y0+y, "│", styleBox)
-		Text(f, x0+boxW-1, y0+y, "│", styleBox)
-	}
-	Text(f, x0, y0+boxH-1, "╰"+strings.Repeat("─", boxW-2)+"╯", styleBox)
+	drawBoxFrame(f, x0, y0, boxW, boxH, dialogBorderSet, styleBox)
 
 	head := " " + title + " "
 	Text(f, x0+(boxW-vt.StringWidth(head))/2, y0, head, styleBoxHead)
@@ -291,12 +298,7 @@ func DrawTreePicker(f *Frame, title, query string, rows []TreeRow, offset, total
 	for y := 0; y < boxH; y++ {
 		Fill(f, x0, y0+y, boxW, styleFinder)
 	}
-	Text(f, x0, y0, "╭"+strings.Repeat("─", max(boxW-2, 0))+"╮", styleFinder)
-	for y := 1; y < boxH-1; y++ {
-		Text(f, x0, y0+y, "│", styleFinder)
-		Text(f, x0+boxW-1, y0+y, "│", styleFinder)
-	}
-	Text(f, x0, y0+boxH-1, "╰"+strings.Repeat("─", max(boxW-2, 0))+"╯", styleFinder)
+	drawBoxFrame(f, x0, y0, boxW, boxH, finderBorderSet, styleFinder)
 
 	head := fmt.Sprintf(" %s (%d/%d) ", title, len(rows), total)
 	if vt.StringWidth(head) <= boxW-2 {
@@ -315,7 +317,7 @@ func DrawTreePicker(f *Frame, title, query string, rows []TreeRow, offset, total
 	curX := Text(f, ix, y0+1, q, styleFinderKey)
 
 	if boxH > 4 {
-		Text(f, x0, y0+2, "├"+strings.Repeat("─", max(boxW-2, 0))+"┤", styleFinder)
+		Text(f, x0, y0+2, string(finderBorderSet.TeeRight)+strings.Repeat(string(finderBorderSet.Horizontal), max(boxW-2, 0))+string(finderBorderSet.TeeLeft), styleFinder)
 	}
 
 	listY := y0 + 3
@@ -435,20 +437,16 @@ func DrawHelp(f *Frame, title string, entries []HelpEntry) {
 	for y := 0; y < boxH; y++ {
 		Fill(f, x0, y0+y, boxW, styleBox)
 	}
-	Text(f, x0, y0, "╭"+strings.Repeat("─", max(boxW-2, 0))+"╮", styleBox)
-	for y := 1; y < boxH-1; y++ {
-		Text(f, x0, y0+y, "│", styleBox)
-		Text(f, x0+boxW-1, y0+y, "│", styleBox)
-	}
-	Text(f, x0, y0+boxH-1, "╰"+strings.Repeat("─", max(boxW-2, 0))+"╯", styleBox)
+	drawBoxFrame(f, x0, y0, boxW, boxH, helpBorderSet, styleBox)
 	Text(f, x0+max((boxW-vt.StringWidth(title))/2, 1), y0+1, Truncate(title, max(boxW-2, 0)), styleBoxHead)
 
+	hBar := string(helpBorderSet.Horizontal)
 	for ci, col := range columns {
 		cx := x0 + 1 + ci*(colW+1)
 		for i, e := range col {
 			y := y0 + 3 + i
 			if e.Key == "" {
-				Text(f, cx+1, y, Truncate("── "+e.Desc+" "+strings.Repeat("─", colW), colW-2), styleBoxHead)
+				Text(f, cx+1, y, Truncate(hBar+hBar+" "+e.Desc+" "+strings.Repeat(hBar, colW), colW-2), styleBoxHead)
 				continue
 			}
 			Text(f, cx+2, y, e.Key, styleBoxKey)

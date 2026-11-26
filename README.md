@@ -330,7 +330,7 @@ panes = [
 ]
 ```
 
-You can also group tabs under `[[workspaces]]`, using top-level `focus` for the 1-based workspace index and workspace-level `focus` for the 1-based tab index (see [`examples/sessions/workspaces.toml`](examples/sessions/workspaces.toml)).
+You can also set a per-tab `start_directory`, pass `{ cmd = "...", cwd = "..." }` tables in `panes`, or group tabs under `[[workspaces]]`, using top-level `focus` for the 1-based workspace index and workspace-level `focus` for the 1-based tab index (see [`examples/sessions/workspaces.toml`](examples/sessions/workspaces.toml)).
 
 Start or attach to a preconfigured session by name (resolved from
 `~/.config/slat/sessions/<name>.toml`, with shell tab-completion) or by file path:
@@ -470,8 +470,10 @@ name = "catppuccin"       # catppuccin, default, dracula, gruvbox, latte, mono, 
 accent = "#fabd2f"        # override any single colour
 
 [borders]
-style = "rounded"         # sharp, rounded, heavy, double, dashed, none
+style = "rounded"         # sharp, square, rounded, heavy, double, dashed, none
 # vertical = "┃"          # …or set any glyph yourself
+# [borders.help]          # optional overrides for help, finder, and dialog modals (inherit from [borders] or default to rounded)
+# style = "square"
 
 [animation]
 split  = "90ms"           # a new pane appearing; 0 turns it off
@@ -602,7 +604,7 @@ zoom             = ""     # "" unbinds a command
 - An unknown setting, an unknown command name, a key that isn't a single
   character, or two commands on one key is an error, shown when you run `slat`.
 
-[`config.example.toml`](config.example.toml) lists every command with its default.
+[`config.example.toml`](config.example.toml) lists every configurable option and command with its default.
 
 ## How it works
 

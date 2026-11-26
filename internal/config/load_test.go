@@ -247,6 +247,16 @@ func TestBordersAndStatusSettings(t *testing.T) {
 style = "rounded"
 vertical = "┇"
 
+[borders.help]
+style = "square"
+
+[borders.finder]
+style = "double"
+tee_right = "╟"
+
+[borders.dialog]
+style = "heavy"
+
 [status]
 left  = "{prefix} {workspace} {tabs}"
 right = "{time} "
@@ -280,9 +290,11 @@ zoom = ""
 	if cfg.Status.Badges.Prefix != nil {
 		t.Errorf("unset status.badges.prefix = %v, want nil", cfg.Status.Badges.Prefix)
 	}
-	if cfg.Borders["style"] != "rounded" || cfg.Status.Tab != "[{tab_glyph}{index}]" ||
+	if cfg.Borders["style"] != "rounded" || cfg.HelpBorders["style"] != "square" ||
+		cfg.FinderBorders["style"] != "double" || cfg.DialogBorders["style"] != "heavy" ||
+		cfg.Status.Tab != "[{tab_glyph}{index}]" ||
 		cfg.Status.TabActive != "<{tab_glyph}{index}>" || cfg.Status.TabSep != "" {
-		t.Errorf("tables not kept: %v %+v", cfg.Borders, cfg.Status)
+		t.Errorf("tables not kept: %v %v %v %v %+v", cfg.Borders, cfg.HelpBorders, cfg.FinderBorders, cfg.DialogBorders, cfg.Status)
 	}
 	if len(cfg.Status.TabColors) != 3 || len(cfg.Status.PaneGlyphs) != 3 ||
 		len(cfg.Status.TabIndexGlyphs) != 3 || len(cfg.Status.TabIndexZoomGlyphs) != 3 ||
@@ -302,6 +314,9 @@ zoom = ""
 		"[borders]\nstyle = \"fancy\"\n",
 		"[borders]\nvertical = \"too long\"\n",
 		"[borders]\ncorner = \"+\"\n",
+		"[borders.help]\nstyle = \"fancy\"\n",
+		"[borders.finder]\nvertical = \"too long\"\n",
+		"[borders.dialog]\ncorner = \"+\"\n",
 		"[status]\nleft = \"{workspaec}\"\n",
 		"[status]\nmiddle = \"x\"\n",
 		"[status]\ntab_colors = [\"notacolor\"]\n",

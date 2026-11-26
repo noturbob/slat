@@ -11,15 +11,18 @@ import (
 )
 
 type compiledConfig struct {
-	theme   ui.Theme
-	dlg     ui.DialogStyle
-	fnd     ui.FinderStyle
-	stk     ui.StackStyle
-	borders ui.BorderSet
-	status  ui.StatusFormat
-	splash  ui.Splash
-	help    []ui.HelpEntry
-	handler *input.Handler
+	theme         ui.Theme
+	dlg           ui.DialogStyle
+	fnd           ui.FinderStyle
+	stk           ui.StackStyle
+	borders       ui.BorderSet
+	helpBorders   ui.BorderSet
+	finderBorders ui.BorderSet
+	dialogBorders ui.BorderSet
+	status        ui.StatusFormat
+	splash        ui.Splash
+	help          []ui.HelpEntry
+	handler       *input.Handler
 }
 
 func compileConfig(cfg *config.Config) (compiledConfig, error) {
@@ -46,6 +49,18 @@ func compileConfig(cfg *config.Config) (compiledConfig, error) {
 	if err != nil {
 		return compiledConfig{}, err
 	}
+	helpBorders, err := ui.ParseModalBorders(cfg.Borders, cfg.HelpBorders)
+	if err != nil {
+		return compiledConfig{}, fmt.Errorf("borders.help: %w", err)
+	}
+	finderBorders, err := ui.ParseModalBorders(cfg.Borders, cfg.FinderBorders)
+	if err != nil {
+		return compiledConfig{}, fmt.Errorf("borders.finder: %w", err)
+	}
+	dialogBorders, err := ui.ParseModalBorders(cfg.Borders, cfg.DialogBorders)
+	if err != nil {
+		return compiledConfig{}, fmt.Errorf("borders.dialog: %w", err)
+	}
 	status, err := ui.ParseStatusConfigIn(cfg.Status, theme)
 	if err != nil {
 		return compiledConfig{}, err
@@ -68,15 +83,18 @@ func compileConfig(cfg *config.Config) (compiledConfig, error) {
 		return compiledConfig{}, scErr
 	}
 	return compiledConfig{
-		theme:   theme,
-		dlg:     dlg,
-		fnd:     fnd,
-		stk:     stk,
-		borders: borders,
-		status:  status,
-		splash:  splash,
-		help:    helpEntries(cfg),
-		handler: handler,
+		theme:         theme,
+		dlg:           dlg,
+		fnd:           fnd,
+		stk:           stk,
+		borders:       borders,
+		helpBorders:   helpBorders,
+		finderBorders: finderBorders,
+		dialogBorders: dialogBorders,
+		status:        status,
+		splash:        splash,
+		help:          helpEntries(cfg),
+		handler:       handler,
 	}, nil
 }
 
@@ -86,6 +104,9 @@ func (cc compiledConfig) applyStyles() {
 	cc.fnd.Apply()
 	cc.stk.Apply()
 	cc.borders.Apply()
+	cc.helpBorders.ApplyHelp()
+	cc.finderBorders.ApplyFinder()
+	cc.dialogBorders.ApplyDialog()
 }
 
 // ApplyConfig validates and applies cfg to the running App.

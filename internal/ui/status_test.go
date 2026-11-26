@@ -97,6 +97,34 @@ func TestBordersParse(t *testing.T) {
 	if err != nil || b.TopLeft != '╭' {
 		t.Errorf("rounded = %+v, %v", b, err)
 	}
+	sq, err := ParseBorders(map[string]string{"style": "square"})
+	if err != nil || sq.TopLeft != '▪' || sq.Horizontal != '─' || sq.Vertical != '│' {
+		t.Errorf("square = %+v, %v", sq, err)
+	}
+	defModal, err := ParseBordersWithBase("rounded", nil)
+	if err != nil || defModal.TopLeft != '╭' {
+		t.Errorf("rounded base default = %+v, %v", defModal, err)
+	}
+	// Modal borders default to rounded when [borders] is unset.
+	mUnset, err := ParseModalBorders(nil, nil)
+	if err != nil || mUnset.TopLeft != '╭' {
+		t.Errorf("ParseModalBorders(nil, nil) = %+v, %v", mUnset, err)
+	}
+	// Modal borders inherit from [borders] first, then apply their own overrides.
+	mInherit, err := ParseModalBorders(
+		map[string]string{"style": "double", "vertical": "┃"},
+		map[string]string{"top_left": "◈"},
+	)
+	if err != nil || mInherit.TopLeft != '◈' || mInherit.TopRight != '╗' || mInherit.Vertical != '┃' || mInherit.Horizontal != '═' {
+		t.Errorf("ParseModalBorders inherit+override = %+v, %v", mInherit, err)
+	}
+	mOverrideStyle, err := ParseModalBorders(
+		map[string]string{"style": "double"},
+		map[string]string{"style": "square"},
+	)
+	if err != nil || mOverrideStyle.TopLeft != '▪' || mOverrideStyle.Horizontal != '─' {
+		t.Errorf("ParseModalBorders style override = %+v, %v", mOverrideStyle, err)
+	}
 	// A preset with one glyph of your own.
 	b, err = ParseBorders(map[string]string{"style": "heavy", "vertical": "┇"})
 	if err != nil || b.Vertical != '┇' || b.TopLeft != '┏' {
@@ -112,6 +140,59 @@ func TestBordersParse(t *testing.T) {
 		if _, badErr := ParseBorders(bad); badErr == nil {
 			t.Errorf("ParseBorders(%v) should have failed", bad)
 		}
+	}
+}
+
+func TestCustomModalBorders(t *testing.T) {
+	mustBorders := func(style string) BorderSet {
+		b, err := ParseBorders(map[string]string{"style": style})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	t.Cleanup(func() {
+		rounded := mustBorders("rounded")
+		rounded.ApplyHelp()
+		rounded.ApplyFinder()
+		rounded.ApplyDialog()
+	})
+
+	mustBorders("double").ApplyHelp()
+	mustBorders("square").ApplyFinder()
+	mustBorders("heavy").ApplyDialog()
+
+	helpFrame := NewFrame(60, 12)
+	DrawHelp(helpFrame, "slat · keys", []HelpEntry{{Desc: "Panes"}, {Key: "x", Desc: "Close"}})
+	var helpOut strings.Builder
+	for y := 0; y < helpFrame.H; y++ {
+		helpOut.WriteString(row(helpFrame, y))
+		helpOut.WriteByte('\n')
+	}
+	if !strings.Contains(helpOut.String(), "╔══") || !strings.Contains(helpOut.String(), "══ Panes") {
+		t.Errorf("expected double help borders, got:\n%s", helpOut.String())
+	}
+
+	finderFrame := NewFrame(60, 10)
+	DrawTreePicker(finderFrame, "tree", "", []TreeRow{{Label: "1:sh", Selected: true}}, 0, 1)
+	var finderOut strings.Builder
+	for y := 0; y < finderFrame.H; y++ {
+		finderOut.WriteString(row(finderFrame, y))
+		finderOut.WriteByte('\n')
+	}
+	if !strings.Contains(finderOut.String(), "▪──") || !strings.Contains(finderOut.String(), "├──") {
+		t.Errorf("expected square finder borders, got:\n%s", finderOut.String())
+	}
+
+	dlgFrame := NewFrame(60, 12)
+	DrawDialog(dlgFrame, "rename", "dev")
+	var dlgOut strings.Builder
+	for y := 0; y < dlgFrame.H; y++ {
+		dlgOut.WriteString(row(dlgFrame, y))
+		dlgOut.WriteByte('\n')
+	}
+	if !strings.Contains(dlgOut.String(), "┏━━") {
+		t.Errorf("expected heavy dialog borders, got:\n%s", dlgOut.String())
 	}
 }
 

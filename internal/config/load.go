@@ -39,7 +39,10 @@ type Config struct {
 	Theme      map[string]string `toml:"-"`
 	ThemeVars  map[string]string `toml:"-"`
 	UserThemes map[string]ui.Theme `toml:"-"`
-	Borders    map[string]string `toml:"borders"`
+	Borders       map[string]string `toml:"-"`
+	HelpBorders   map[string]string `toml:"-"`
+	FinderBorders map[string]string `toml:"-"`
+	DialogBorders map[string]string `toml:"-"`
 	Status     ui.StatusConfig   `toml:"status"`
 	Copy       Copy              `toml:"copy"`
 	Agent      Agent             `toml:"agent"`
@@ -288,7 +291,34 @@ func LoadFrom(path string) (*Config, error) {
 
 type decodeConfig struct {
 	Config
-	RawTheme map[string]toml.Primitive `toml:"theme"`
+	RawTheme   map[string]toml.Primitive `toml:"theme"`
+	RawBorders map[string]toml.Primitive `toml:"borders"`
+}
+
+func unpackBordersTable(md toml.MetaData, raw map[string]toml.Primitive) (pane, help, finder, dialog map[string]string, err error) {
+	if len(raw) == 0 {
+		return nil, nil, nil, nil, nil
+	}
+	subTables := map[string]*map[string]string{
+		"help":   &help,
+		"finder": &finder,
+		"dialog": &dialog,
+	}
+	pane = make(map[string]string, len(raw))
+	for k, prim := range raw {
+		if dst, isSub := subTables[k]; isSub {
+			if err := md.PrimitiveDecode(prim, dst); err != nil {
+				return nil, nil, nil, nil, fmt.Errorf("borders.%s: %w", k, err)
+			}
+			continue
+		}
+		var s string
+		if err := md.PrimitiveDecode(prim, &s); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("borders.%s: %w", k, err)
+		}
+		pane[k] = s
+	}
+	return pane, help, finder, dialog, nil
 }
 
 func unpackThemeTable(md toml.MetaData, raw map[string]toml.Primitive) (settings, vars map[string]string, err error) {
@@ -337,6 +367,14 @@ func loadFile(path string, allowMissing bool) (*Config, error) {
 	}
 	user.Config.Theme = settings
 	user.Config.ThemeVars = vars
+	paneB, helpB, finderB, dialogB, err := unpackBordersTable(md, user.RawBorders)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	user.Config.Borders = paneB
+	user.Config.HelpBorders = helpB
+	user.Config.FinderBorders = finderB
+	user.Config.DialogBorders = dialogB
 	if mergeErr := cfg.merge(&user.Config, md); mergeErr != nil {
 		return nil, fmt.Errorf("%s: %w", path, mergeErr)
 	}
@@ -380,6 +418,22 @@ func (cfg *Config) merge(user *Config, md toml.MetaData) error {
 			return err
 		}
 		cfg.Borders = user.Borders
+	}
+	for _, b := range []struct {
+		name string
+		src  map[string]string
+		dst  *map[string]string
+	}{
+		{"help", user.HelpBorders, &cfg.HelpBorders},
+		{"finder", user.FinderBorders, &cfg.FinderBorders},
+		{"dialog", user.DialogBorders, &cfg.DialogBorders},
+	} {
+		if len(b.src) > 0 {
+			if _, err := ui.ParseModalBorders(cfg.Borders, b.src); err != nil {
+				return fmt.Errorf("borders.%s: %w", b.name, err)
+			}
+			*b.dst = b.src
+		}
 	}
 	if err := cfg.mergeStatus(user.Status, md, theme); err != nil {
 		return err

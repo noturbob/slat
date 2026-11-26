@@ -22,6 +22,7 @@ scrollback  = 2000        # Lines of history per pane (0 disables scrollback)
 mouse       = true        # Click to focus, drag borders to resize, wheel to scroll
 restore     = true        # Save & restore session layout/output across reboots
 animations  = true        # false disables all animations
+# animate   = "90ms"      # Shorthand: sets both animation.split and animation.move
 # random_session_name = false
 
 # ── 2. Appearance ────────────────────────────────────────────────────────────
@@ -46,13 +47,74 @@ name = "default"
 # tab_fg        = 250
 # tab_active_bg = 25
 # tab_active_fg = "theme.background"
+# prefix_fg        = "theme.dim"
+# prefix_bg        = "theme.tab_bg"
+# prefix_active_fg = "theme.background"
+# prefix_active_bg = "theme.accent"
+# badge_fg         = "theme.background"
+# badge_bg         = "theme.accent"
 
 # Custom palette variables usable anywhere as "theme.<name>" or "{fg=theme.<name>}":
 # [theme.vars]
 # highlight = "#f9e2af"
 
+# Border style variants:
+#   sharp:   ┌───┐   square:  ▪───▪   rounded: ╭───╮   heavy:   ┏━━━┓
+#            │   │            │   │            │   │            ┃   ┃
+#            └───┘            ▪───▪            ╰───╯            ┗━━━┛
+#   double:  ╔═══╗   dashed:  ┌╌╌╌┐   none:    (blank gap)
+#            ║   ║            ╎   ╎
+#            ╚═══╝            └╌╌╌┘
 [borders]
-style = "sharp"           # sharp, rounded, heavy, double, dashed, none
+# style = "sharp"           # sharp, square, rounded, heavy, double, dashed, none
+# Override any individual border glyph:
+vertical     = "│"
+horizontal   = "─"
+top_left     = "┌"
+top_right    = "┐"
+bottom_left  = "└"
+bottom_right = "┘"
+tee_right    = "├"
+tee_left     = "┤"
+tee_down     = "┬"
+tee_up       = "┴"
+cross        = "┼"
+#
+# Optional modal border overrides (inherit from [borders] when set, otherwise default to "rounded"):
+# [borders.help]
+# style = "rounded"
+# [borders.finder]
+# style = "rounded"
+# [borders.dialog]
+# style = "rounded"
+#
+# Example: ASCII-only borders (e.g. for a bare TTY):
+# [borders]
+# vertical     = "|"
+# horizontal   = "-"
+# top_left     = "+"
+# top_right    = "+"
+# bottom_left  = "+"
+# bottom_right = "+"
+# tee_right    = "+"
+# tee_left     = "+"
+# tee_down     = "+"
+# tee_up       = "+"
+# cross        = "+"
+#
+# Example: Fancy ornate borders (double lines with diamond corners & star cross):
+# [borders]
+# vertical     = "║"
+# horizontal   = "═"
+# top_left     = "◈"
+# top_right    = "◈"
+# bottom_left  = "◈"
+# bottom_right = "◈"
+# tee_right    = "╠"
+# tee_left     = "╣"
+# tee_down     = "╦"
+# tee_up       = "╩"
+# cross        = "✦"
 
 [animation]
 split  = "90ms"           # 0ms turns off split reveal
@@ -64,6 +126,7 @@ glyph  = "░"
 [splash]
 enabled  = true
 duration = "700ms"        # "0s" skips the startup banner
+# art      = ["  slat  "] # Custom ASCII/Unicode banner lines
 # subtitle = "terminal multiplexer {version}"
 # hint     = "press {prefix} then ? for help"
 # fg       = "theme.accent"
@@ -73,18 +136,47 @@ duration = "700ms"        # "0s" skips the startup banner
 # Optional modal/finder/stack colour overrides (inherit from [theme] when unset;
 # accept colour names, 0-255, #rrggbb, or theme.<var> references):
 [dialog]
-# fg      = "theme.foreground"
-# head_fg = "theme.accent"
-# bg      = "theme.background"
+# fg        = "theme.foreground"
+# sub_fg    = "theme.dim"
+# head_fg   = "theme.accent"
+# border_fg = "theme.border"
+# bg        = "theme.background"
 [finder]
-# sel_bg   = "theme.tab_active_bg"
-# match_fg = "theme.accent"
+# fg        = "theme.foreground"
+# sub_fg    = "theme.dim"
+# head_fg   = "theme.accent"
+# border_fg = "theme.border"
+# bg        = "theme.background"
+# sel_fg    = "theme.tab_active_fg"
+# sel_bg    = "theme.tab_active_bg"
+# match_fg  = "theme.accent"
+# match_bg  = ""
 [stack]
+# fg            = "theme.dim"
+# bg            = "theme.tab_bg"
+# active_fg     = "theme.background"
 # active_bg     = "theme.accent"
 # icon          = " ▸ "
 # inactive_icon = "   "
 
 # ── 3. Status Bar & Theme Colours ────────────────────────────────────────────
+# Anatomy of the bottom status bar (background: theme.status_bg):
+#
+#   ┌─────────────────────────────── status.left ───────────────────────────────┐     ┌─────────── status.right ────────────┐
+#   │ {prefix} {workspace} │ {tabs}                                             │ ... │ {badge} {workspaces} pane {pane}/{panes} {script:git} │
+#   └────┬───────┬───────────┬──────────────────────────────────────────────────┘     └───┬─────────┬─────────────┬───────────┬─────────┘
+#        │       │           │                                                            │         │             │           │
+#        │       │           ▼                                                            │         │             │           ▼
+#        │       │   [ tab_active ]{tab_sep}[ tab ]{tab_sep}[ tab ]                       │         │             │   [status.scripts.<name>]
+#        │       │     ├─ {index} / {tab_index_glyph}   (tab_index_glyphs)                │         │             ▼
+#        │       │     ├─ {name} / {process_glyph}      ([status.process_glyphs])         │         │   pane_glyphs / current_pane_glyphs
+#        │       │     ├─ {tab_glyph}                   (tab_glyphs / tab_zoom_glyph)     │         ▼
+#        │       │     ├─ {pane_glyph} / {zoom}         (pane_glyphs / zoom)              │   all workspaces indicator
+#        │       │     └─ {alert}                       (status.alert on input wait)      ▼
+#        │       │                                                                  [status.badges] (PREFIX, HELP, SCROLL, COPY, MOVE, ZOOM, STACK)
+#        │       └─ active workspace name (theme.accent)
+#        └─ status.prefix / status.prefix_active (toggles when prefix key is pressed)
+#
 # Inline style tags work in any status string and status script output:
 #   {fg=theme.background,bg=theme.accent,bold}TEXT{/}
 # Colours accept:
@@ -112,11 +204,15 @@ tab            = " {index}:{name}{alert} "
 alert          = "{fg=red,bold} ?{/}"
 # prefix       = "{fg=theme.dim,bg=theme.tab_bg}  {/}"
 # prefix_active= "{fg=theme.background,bg=theme.accent,bold} ⌘ {/}"
-# zoom         = " ▣"
-# pane_id      = "{fg=theme.tab_fg,bg=theme.tab_bg} {id} {/}"   # toggled with <prefix> i
+# zoom           = " ▣"
+# tab_zoom_glyph = " ▣"
+# pane_id        = "{fg=theme.tab_fg,bg=theme.tab_bg} {id} {/}"   # toggled with <prefix> i
 # pane_id_active = "{fg=theme.background,bg=theme.accent,bold} {id} {/}"
 
-# Optional glyph arrays (provide 10 entries 0-9 for multi-digit numbers):
+# Optional colour/glyph arrays (provide 10 entries 0-9 for multi-digit numbers):
+# tab_colors                  = ["cyan", "magenta", "green", "yellow"]
+# pane_colors                 = ["cyan", "magenta", "green", "yellow"]
+# tab_glyphs                  = ["₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"]
 # tab_index_glyphs            = ["⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"]
 # tab_index_zoom_glyphs       = ["⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"]
 # pane_glyphs                 = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"]
@@ -162,6 +258,7 @@ alert          = "{fg=red,bold} ?{/}"
 [keybinds]
 split-vertical   = "v"
 split-horizontal = "h"
+add-pane         = "a"
 next-pane        = "o"
 prev-pane        = "O"
 select-pane-up   = "k"
@@ -170,13 +267,20 @@ select-pane-left = "H"
 select-pane-right= "L"
 swap-pane        = "s"
 move-mode        = "m"
+move-pane-up     = "K"
+move-pane-down   = "J"
+move-pane-left   = "<"
+move-pane-right  = ">"
 resize-grow      = "+"
 resize-shrink    = "-"
 equalize         = "="
+layout-picker    = "l"
 close-pane       = "x"
 zoom             = "z"
 identify-panes   = "i"
 stack-mode       = "t"
+break-pane       = "!"
+join-pane        = "@"
 scroll-mode      = "["
 new-tab          = "c"
 next-tab         = "n"
@@ -193,6 +297,8 @@ session-picker   = "F"
 next-session     = ")"
 prev-session     = "("
 global-tree      = "g"
+save-session     = "E"
+reload-config    = "r"
 toggle-status-bar= "b"
 detach           = "d"
 quit             = "q"
@@ -216,7 +322,12 @@ osc52 = true
 # command = "wl-copy"
 
 [agent]
-settle     = "750ms"
+settle      = "750ms"
 input_after = "10s"
+# input_patterns = [
+#   '\[[yY]/[nN]\]', '\([yY]/[nN]\)', '(?i)press (enter|any key)',
+#   '(?i)\bcontinue\?', '(?i)(password|passphrase).*:\s*$',
+#   '(?i)^\s*(\[\?\]|\?)\s+\S', '\?\s*$',
+# ]
 # on_input = 'notify-send "slat: pane %p needs input" %c'
 # on_idle  = ""
