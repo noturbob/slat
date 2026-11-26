@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -9,33 +10,54 @@ import (
 )
 
 var (
-	styleBar       = vt.Style{Fg: vt.Indexed(252), Bg: vt.Indexed(235)}
-	styleWorkspace = vt.Style{Fg: vt.Indexed(114), Bg: vt.Indexed(235), Attrs: vt.Bold}
-	styleTab       = vt.Style{Fg: vt.Indexed(250), Bg: vt.Indexed(236)}
-	styleTabActive = vt.Style{Fg: vt.Indexed(231), Bg: vt.Indexed(25), Attrs: vt.Bold}
-	styleBadge     = vt.Style{Fg: vt.Indexed(16), Bg: vt.Indexed(114), Attrs: vt.Bold}
-	styleDim       = vt.Style{Fg: vt.Indexed(248), Bg: vt.Indexed(235)} // ≥4.5:1 on 235
-	styleBorder    = vt.Style{Fg: vt.Indexed(240)}
+	styleBar          = vt.Style{Fg: vt.Indexed(252), Bg: vt.Indexed(235)}
+	styleWorkspace    = vt.Style{Fg: vt.Indexed(114), Bg: vt.Indexed(235), Attrs: vt.Bold}
+	styleTab          = vt.Style{Fg: vt.Indexed(250), Bg: vt.Indexed(236)}
+	styleTabActive    = vt.Style{Fg: vt.Indexed(231), Bg: vt.Indexed(25), Attrs: vt.Bold}
+	styleBadge        = vt.Style{Fg: vt.Indexed(16), Bg: vt.Indexed(114), Attrs: vt.Bold}
+	styleDim          = vt.Style{Fg: vt.Indexed(248), Bg: vt.Indexed(235)} // ≥4.5:1 on 235
+	styleAccent       = vt.Indexed(44)
+	stylePrefix       = vt.Style{Fg: vt.Indexed(252), Bg: vt.Indexed(235)}
+	stylePrefixActive = vt.Style{Fg: vt.Indexed(16), Bg: vt.Indexed(114), Attrs: vt.Bold}
+	styleBorder       = vt.Style{Fg: vt.Indexed(240)}
 	styleBorderOn  = vt.Style{Fg: vt.Indexed(44), Attrs: vt.Bold}
 	styleBox       = vt.Style{Fg: vt.Indexed(44), Bg: vt.Indexed(235)}
 	styleBoxKey    = vt.Style{Fg: vt.Indexed(231), Bg: vt.Indexed(235), Attrs: vt.Bold}
 	styleBoxText   = vt.Style{Fg: vt.Indexed(252), Bg: vt.Indexed(235)}
-	styleBoxHead   = vt.Style{Fg: vt.Indexed(44), Bg: vt.Indexed(235), Attrs: vt.Bold}
-	styleBanner    = vt.Style{Fg: vt.Indexed(44), Attrs: vt.Bold}
+	styleBoxHead     = vt.Style{Fg: vt.Indexed(44), Bg: vt.Indexed(235), Attrs: vt.Bold}
+	styleFinder         = styleBox
+	styleFinderKey      = styleBoxKey
+	styleFinderText     = styleBoxText
+	styleFinderHead     = styleBoxHead
+	styleFinderSel      = styleTabActive
+	styleFinderMatch    = vt.Style{Fg: styleAccent, Bg: styleBox.Bg, Attrs: vt.Bold}
+	styleFinderSelMatch = vt.Style{Fg: styleTabActive.Fg, Bg: styleTabActive.Bg, Attrs: vt.Bold | vt.Underline}
+	styleStack        = styleTab
+	styleStackActive  = styleTabActive
+	stackIcon         = " ▸ "
+	stackInactiveIcon = "   "
+	styleBanner      = vt.Style{Fg: vt.Indexed(44), Attrs: vt.Bold}
 	styleBannerSub = vt.Style{Fg: vt.Indexed(244)}
 )
 
 // Text draws s at (x, y), clipped to the frame, and returns the column
 // after it.
 func Text(f *Frame, x, y int, s string, st vt.Style) int {
+	prevX := -1
 	for _, r := range s {
 		switch vt.RuneWidth(r) {
+		case 0:
+			if prevX >= 0 && prevX < f.W && y >= 0 && y < f.H && r >= 0x20 {
+				f.Lines[y][prevX].Comb += string(r)
+			}
 		case 1:
 			f.Set(x, y, vt.Cell{R: r, Style: st})
+			prevX = x
 			x++
 		case 2:
 			f.Set(x, y, vt.Cell{R: r, Wide: vt.WideHead, Style: st})
 			f.Set(x+1, y, vt.Cell{Wide: vt.WideTail, Style: st})
+			prevX = x
 			x += 2
 		}
 	}
@@ -69,6 +91,32 @@ const (
 	left
 	right
 )
+
+// StackHeader describes one row in the stacked-mode header list.
+type StackHeader struct {
+	Index  int
+	Title  string
+	Active bool
+}
+
+// DrawStackHeaders draws 1 row per stacked pane at the top of area.
+func DrawStackHeaders(f *Frame, area layout.Rect, headers []StackHeader) {
+	for i, h := range headers {
+		if i >= area.Rows {
+			break
+		}
+		y := area.Row + i
+		st := styleStack
+		prefix := stackInactiveIcon
+		if h.Active {
+			st = styleStackActive
+			prefix = stackIcon
+		}
+		Fill(f, area.Col, y, area.Cols, st)
+		line := fmt.Sprintf("%s%d: %s", prefix, h.Index, h.Title)
+		Text(f, area.Col, y, Truncate(line, area.Cols), st)
+	}
+}
 
 // DrawBorders draws the separators between panes, joining where they meet,
 // and highlights the ones around the active pane.
@@ -110,51 +158,56 @@ func DrawBorders(f *Frame, borders []layout.Rect, active layout.Rect) {
 
 // Status is what the status bar shows.
 type Status struct {
+	Session        string
 	Workspace      string
 	WorkspaceIndex int // 0-based
 	WorkspaceCount int
 	Tabs           []string
 	TabAlert       []bool // a pane in this tab is waiting for input
-	ActiveTab      int
-	Badge          string // "PREFIX", "ZOOM", ... or ""
-	PaneIndex      int    // 0-based
-	PaneCount      int
-	Message        string // shown instead of the tabs while set
+	TabPaneCount    []int  // number of panes in each tab
+	TabActivePane   []int    // 0-based active pane index in each tab
+	TabActivePaneID []int    // active pane ID in each tab
+	TabProcess      []string // active pane foreground process name in each tab
+	TabZoomed       []bool   // a pane in this tab is zoomed
+	ActiveTab       int
+	Badge           string // "PREFIX", "ZOOM", ... or ""
+	PrefixActive    bool
+	Zoomed          bool
+	PaneID          int    // active pane ID
+	PaneIndex       int    // 0-based
+	PaneCount       int
+	Message         string            // shown instead of the tabs while set
+	Scripts         map[string]string // latest stdout/fallback per status script name
 }
 
 // DrawStatusBar draws the status bar on row y, laid out by f. The right
 // side wins when the two sides don't fit: a bar that hides which pane you
 // are in is worse than one with a truncated tab list.
 func DrawStatusBar(f *Frame, y int, st Status, format StatusFormat) {
+	if st.PrefixActive && format.HasPrefixPlaceholder() {
+		st.Badge = ""
+	}
 	w := f.W
 	Fill(f, 0, y, w, styleBar)
 
-	right := renderStatus(format.Right, st, format)
-	rightW := width(right)
+	rightSink := barSink{}
+	emitStatus(&rightSink, format.Right, st, format)
+	rightW := rightSink.x
 	if rightW > w {
-		right, rightW = nil, 0
+		rightW = 0
 	}
-	left := renderStatus(format.Left, st, format)
+
+	leftSink := barSink{frame: f, x: 0, y: y, budget: w - rightW}
 	if st.Message != "" {
-		left = []segment{{text: " " + st.Message, style: styleBar}}
+		leftSink.emit(" ", styleBar)
+		emitPlainParts(&leftSink, compileDynamicFormat(st.Message), styleBar, styleCtx{})
+	} else {
+		emitStatus(&leftSink, format.Left, st, format)
 	}
 
-	x := 0
-	budget := w - rightW
-	for _, seg := range left {
-		if x >= budget {
-			break
-		}
-		text := seg.text
-		if x+vt.StringWidth(text) > budget {
-			text = Truncate(text, budget-x)
-		}
-		x = Text(f, x, y, text, seg.style)
-	}
-
-	x = w - rightW
-	for _, seg := range right {
-		x = Text(f, x, y, seg.text, seg.style)
+	if rightW > 0 {
+		rightDraw := barSink{frame: f, x: w - rightW, y: y, budget: w}
+		emitStatus(&rightDraw, format.Right, st, format)
 	}
 }
 
@@ -173,6 +226,161 @@ func DrawPrompt(f *Frame, y int, label, text string) int {
 	return Text(f, x, y, text, styleBadge)
 }
 
+func drawBoxFrame(f *Frame, x0, y0, boxW, boxH int, b BorderSet, st vt.Style) {
+	innerW := max(boxW-2, 0)
+	horiz := strings.Repeat(string(b.Horizontal), innerW)
+	vert := string(b.Vertical)
+	Text(f, x0, y0, string(b.TopLeft)+horiz+string(b.TopRight), st)
+	for y := 1; y < boxH-1; y++ {
+		Text(f, x0, y0+y, vert, st)
+		Text(f, x0+boxW-1, y0+y, vert, st)
+	}
+	Text(f, x0, y0+boxH-1, string(b.BottomLeft)+horiz+string(b.BottomRight), st)
+}
+
+// DrawDialog draws a centered modal input box for renaming sessions, tabs, or
+// workspaces, returning the cursor position (x, y). Falls back to DrawPrompt
+// on tiny terminals.
+func DrawDialog(f *Frame, title, text string) (int, int) {
+	if f.W < 24 || f.H < 7 {
+		return DrawPrompt(f, f.H-1, title, text), f.H - 1
+	}
+	boxW := min(max(vt.StringWidth(title)+8, 42), f.W)
+	const boxH = 5
+	x0, y0 := (f.W-boxW)/2, (f.H-boxH)/2
+
+	for y := 0; y < boxH; y++ {
+		Fill(f, x0, y0+y, boxW, styleBox)
+	}
+	drawBoxFrame(f, x0, y0, boxW, boxH, dialogBorderSet, styleBox)
+
+	head := " " + title + " "
+	Text(f, x0+(boxW-vt.StringWidth(head))/2, y0, head, styleBoxHead)
+
+	// Input row with a subtle prompt marker and visible tail of text.
+	const promptMark = "> "
+	innerW := boxW - 4 - len(promptMark) - 1
+	for innerW > 0 && vt.StringWidth(text) > innerW {
+		_, size := utf8.DecodeRuneInString(text)
+		text = text[size:]
+	}
+	ix := Text(f, x0+2, y0+2, promptMark, styleBoxHead)
+	curX := Text(f, ix, y0+2, text, styleBoxKey)
+
+	foot := " Enter save · Esc cancel "
+	if vt.StringWidth(foot) <= boxW-2 {
+		Text(f, x0+(boxW-vt.StringWidth(foot))/2, y0+boxH-1, foot, styleBoxText)
+	}
+	return curX, y0 + 2
+}
+
+// TreeRow is one visible entry in DrawTreePicker.
+type TreeRow struct {
+	Label      string
+	Selected   bool
+	Active     bool
+	MatchSpans [][2]int
+}
+
+// DrawTreePicker draws a centered fuzzy tree picker modal, returning the
+// cursor position (x, y) at the end of the filter query.
+func DrawTreePicker(f *Frame, title, query string, rows []TreeRow, offset, total int) (int, int) {
+	boxW := min(max(f.W-4, 28), 76)
+	if boxW > f.W {
+		boxW = f.W
+	}
+	boxH := min(max(f.H-4, 8), 20)
+	if boxH > f.H {
+		boxH = f.H
+	}
+	x0, y0 := (f.W-boxW)/2, (f.H-boxH)/2
+
+	for y := 0; y < boxH; y++ {
+		Fill(f, x0, y0+y, boxW, styleFinder)
+	}
+	drawBoxFrame(f, x0, y0, boxW, boxH, finderBorderSet, styleFinder)
+
+	head := fmt.Sprintf(" %s (%d/%d) ", title, len(rows), total)
+	if vt.StringWidth(head) <= boxW-2 {
+		Text(f, x0+(boxW-vt.StringWidth(head))/2, y0, head, styleFinderHead)
+	}
+
+	// Input row.
+	const promptMark = "> "
+	innerW := boxW - 4 - len(promptMark) - 1
+	q := query
+	for innerW > 0 && vt.StringWidth(q) > innerW {
+		_, size := utf8.DecodeRuneInString(q)
+		q = q[size:]
+	}
+	ix := Text(f, x0+2, y0+1, promptMark, styleFinderHead)
+	curX := Text(f, ix, y0+1, q, styleFinderKey)
+
+	if boxH > 4 {
+		Text(f, x0, y0+2, string(finderBorderSet.TeeRight)+strings.Repeat(string(finderBorderSet.Horizontal), max(boxW-2, 0))+string(finderBorderSet.TeeLeft), styleFinder)
+	}
+
+	listY := y0 + 3
+	listH := max(boxH-4, 0)
+	for i := 0; i < listH; i++ {
+		idx := offset + i
+		if idx >= len(rows) {
+			break
+		}
+		r := rows[idx]
+		st := styleFinderText
+		matchSt := styleFinderMatch
+		mark := "  "
+		if r.Selected {
+			st = styleFinderSel
+			matchSt = styleFinderSelMatch
+			mark = "▸ "
+		} else if r.Active {
+			st = styleFinderHead
+		}
+		Fill(f, x0+1, listY+i, boxW-2, st)
+		mx := Text(f, x0+2, listY+i, mark, st)
+		drawFinderRowLabel(f, mx, listY+i, boxW-4-vt.StringWidth(mark), r.Label, r.MatchSpans, st, matchSt)
+	}
+
+	foot := " ↑↓/PgUp/PgDn/C-n/C-p move · Enter jump · Esc cancel "
+	if vt.StringWidth(foot) <= boxW-2 {
+		Text(f, x0+(boxW-vt.StringWidth(foot))/2, y0+boxH-1, foot, styleFinderText)
+	}
+	return curX, y0 + 1
+}
+
+func drawFinderRowLabel(f *Frame, x, y, maxW int, label string, spans [][2]int, base, match vt.Style) {
+	if maxW <= 0 || label == "" {
+		return
+	}
+	limitW := maxW
+	truncated := vt.StringWidth(label) > maxW
+	if truncated {
+		limitW = maxW - 1
+	}
+	col := 0
+	spanIdx := 0
+	for runeIdx, r := range []rune(label) {
+		rw := vt.RuneWidth(r)
+		if col+rw > limitW {
+			break
+		}
+		for spanIdx < len(spans) && runeIdx >= spans[spanIdx][1] {
+			spanIdx++
+		}
+		st := base
+		if spanIdx < len(spans) && runeIdx >= spans[spanIdx][0] && runeIdx < spans[spanIdx][1] {
+			st = match
+		}
+		Text(f, x+col, y, string(r), st)
+		col += rw
+	}
+	if truncated && maxW >= 1 {
+		Text(f, x+col, y, "…", base)
+	}
+}
+
 // ─── Help overlay ───────────────────────────────────────────────────────────
 
 // HelpEntry is one line of the help overlay; an entry with no Key is a
@@ -182,11 +390,23 @@ type HelpEntry struct{ Key, Desc string }
 // DrawHelp draws the keybinding reference centered on the screen, in two
 // columns when one doesn't fit.
 func DrawHelp(f *Frame, title string, entries []HelpEntry) {
-	const colW = 34
 	w, h := f.W, f.H
 
+	maxKeyW, maxDescW, maxHeadW := 5, 0, 0
+	for _, e := range entries {
+		if e.Key == "" {
+			maxHeadW = max(maxHeadW, vt.StringWidth(e.Desc)+8)
+			continue
+		}
+		maxKeyW = max(maxKeyW, vt.StringWidth(e.Key))
+		maxDescW = max(maxDescW, vt.StringWidth(e.Desc))
+	}
+	keyOff := 2 + maxKeyW + 2
+	colW := max(34, max(keyOff+maxDescW+2, maxHeadW))
+
 	columns := [][]HelpEntry{entries}
-	if len(entries)+4 > h && w >= 2*colW+3 {
+	if len(entries)+4 > h && w >= 2*28+3 {
+		colW = min(colW, (w-3)/2)
 		// Split at the section heading nearest the middle.
 		cut := len(entries) / 2
 		for d := 0; d < len(entries)/2; d++ {
@@ -200,40 +420,41 @@ func DrawHelp(f *Frame, title string, entries []HelpEntry) {
 			}
 		}
 		columns = [][]HelpEntry{entries[:cut], entries[cut:]}
+	} else {
+		colW = min(colW, max(w-2, 20))
 	}
 	rows := 0
 	for _, c := range columns {
 		rows = max(rows, len(c))
 	}
 	boxW := len(columns)*colW + 2 + (len(columns) - 1)
+	if boxW > w {
+		boxW = w
+	}
 	boxH := rows + 4
 	x0, y0 := max((w-boxW)/2, 0), max((h-boxH)/2, 0)
 
 	for y := 0; y < boxH; y++ {
 		Fill(f, x0, y0+y, boxW, styleBox)
 	}
-	Text(f, x0, y0, "╭"+strings.Repeat("─", boxW-2)+"╮", styleBox)
-	for y := 1; y < boxH-1; y++ {
-		Text(f, x0, y0+y, "│", styleBox)
-		Text(f, x0+boxW-1, y0+y, "│", styleBox)
-	}
-	Text(f, x0, y0+boxH-1, "╰"+strings.Repeat("─", boxW-2)+"╯", styleBox)
-	Text(f, x0+(boxW-vt.StringWidth(title))/2, y0+1, title, styleBoxHead)
+	drawBoxFrame(f, x0, y0, boxW, boxH, helpBorderSet, styleBox)
+	Text(f, x0+max((boxW-vt.StringWidth(title))/2, 1), y0+1, Truncate(title, max(boxW-2, 0)), styleBoxHead)
 
+	hBar := string(helpBorderSet.Horizontal)
 	for ci, col := range columns {
 		cx := x0 + 1 + ci*(colW+1)
 		for i, e := range col {
 			y := y0 + 3 + i
 			if e.Key == "" {
-				Text(f, cx+1, y, Truncate("── "+e.Desc+" "+strings.Repeat("─", colW), colW-2), styleBoxHead)
+				Text(f, cx+1, y, Truncate(hBar+hBar+" "+e.Desc+" "+strings.Repeat(hBar, colW), colW-2), styleBoxHead)
 				continue
 			}
 			Text(f, cx+2, y, e.Key, styleBoxKey)
-			Text(f, cx+9, y, Truncate(e.Desc, colW-10), styleBoxText)
+			Text(f, cx+keyOff, y, Truncate(e.Desc, max(colW-keyOff-1, 0)), styleBoxText)
 		}
 	}
 	foot := "press any key to close"
-	if y0+boxH-1 < h {
+	if y0+boxH-1 < h && len(foot)+2 <= boxW-2 {
 		Text(f, x0+(boxW-len(foot))/2, y0+boxH-1, " "+foot+" ", styleBoxText)
 	}
 }
@@ -248,18 +469,115 @@ var bannerArt = []string{
 	`  /____/_____/ /_/  |_/_/     `,
 }
 
-// DrawBanner clears the screen and draws the startup banner.
+// Splash describes a customized startup splash screen.
+type Splash struct {
+	Art      []string
+	Subtitle string
+	Hint     string
+	Style    vt.Style
+	SubStyle vt.Style
+	Bg       vt.Color
+}
+
+// ParseSplash builds and validates a Splash from config strings against the active theme.
+func ParseSplash(art []string, subtitle, hint, fg, subFg, bg string) (Splash, error) {
+	return ParseSplashIn(art, subtitle, hint, fg, subFg, bg, activeTheme)
+}
+
+// ParseSplashIn builds and validates a Splash from config strings against t.
+// Empty fg/subFg keep the active theme's banner colours; bg accepts ""/"transparent" for default.
+func ParseSplashIn(art []string, subtitle, hint, fg, subFg, bg string, t Theme) (Splash, error) {
+	sp := Splash{
+		Art:      art,
+		Subtitle: subtitle,
+		Hint:     hint,
+		Style:    styleBanner,
+		SubStyle: styleBannerSub,
+	}
+	if len(sp.Art) == 0 && art == nil {
+		sp.Art = bannerArt
+	}
+	if fg != "" {
+		c, err := ParseColorInTheme(fg, t)
+		if err != nil {
+			return sp, fmt.Errorf("splash.fg: %w", err)
+		}
+		sp.Style.Fg = c
+	}
+	if subFg != "" {
+		c, err := ParseColorInTheme(subFg, t)
+		if err != nil {
+			return sp, fmt.Errorf("splash.sub_fg: %w", err)
+		}
+		sp.SubStyle.Fg = c
+	}
+	if bg != "" && !isTransparent(bg) {
+		c, err := ParseColorInTheme(bg, t)
+		if err != nil {
+			return sp, fmt.Errorf("splash.bg: %w", err)
+		}
+		sp.Bg = c
+		sp.Style.Bg = c
+		sp.SubStyle.Bg = c
+	}
+	return sp, nil
+}
+
+// DrawBanner clears the screen and draws the default startup banner.
 func DrawBanner(f *Frame, version, hint string) {
-	clear(f.cells)
+	DrawSplash(f, Splash{
+		Art:      bannerArt,
+		Subtitle: "terminal multiplexer " + version,
+		Hint:     hint,
+		Style:    styleBanner,
+		SubStyle: styleBannerSub,
+	})
+}
+
+// DrawSplash clears the screen and draws sp centered in f.
+func DrawSplash(f *Frame, sp Splash) {
+	if sp.Bg != 0 {
+		bgStyle := vt.Style{Bg: sp.Bg}
+		for y := 0; y < f.H; y++ {
+			Fill(f, 0, y, f.W, bgStyle)
+		}
+	} else {
+		clear(f.cells)
+	}
 	w, h := f.W, f.H
-	y := max((h-len(bannerArt)-3)/2, 0)
-	for _, l := range bannerArt {
-		Text(f, max((w-len(bannerArt[0]))/2, 0), y, l, styleBanner)
+	lines := 0
+	if sp.Subtitle != "" {
+		lines++
+	}
+	if sp.Hint != "" {
+		lines++
+	}
+	totalH := len(sp.Art)
+	if lines > 0 && len(sp.Art) > 0 {
+		totalH += 1 + lines
+	} else {
+		totalH += lines
+	}
+	y := max((h-totalH)/2, 0)
+	maxArtW := 0
+	for _, l := range sp.Art {
+		if lw := vt.StringWidth(l); lw > maxArtW {
+			maxArtW = lw
+		}
+	}
+	xArt := max((w-maxArtW)/2, 0)
+	for _, l := range sp.Art {
+		Text(f, xArt, y, l, sp.Style)
 		y++
 	}
-	y++
-	for _, s := range []string{"terminal multiplexer " + version, hint} {
-		Text(f, max((w-vt.StringWidth(s))/2, 0), y, s, styleBannerSub)
+	if len(sp.Art) > 0 && lines > 0 {
+		y++
+	}
+	for _, s := range []string{sp.Subtitle, sp.Hint} {
+		if s == "" {
+			continue
+		}
+		Text(f, max((w-vt.StringWidth(s))/2, 0), y, s, sp.SubStyle)
 		y++
 	}
 }

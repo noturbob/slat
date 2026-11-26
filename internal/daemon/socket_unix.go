@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"context"
 	"net"
 	"syscall"
 )
@@ -12,5 +13,5 @@ import (
 func listenPrivate(path string) (net.Listener, error) {
 	old := syscall.Umask(0o077)
 	defer syscall.Umask(old)
-	return net.Listen("unix", path)
+	return (&net.ListenConfig{}).Listen(context.Background(), "unix", path)
 }

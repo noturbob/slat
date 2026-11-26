@@ -3,9 +3,9 @@
 package daemon_test
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +25,7 @@ func TestControlLifecycle(t *testing.T) {
 	if len(ls.Panes) != 1 || !ls.Panes[0].Active {
 		t.Fatalf("ls returned %+v", ls.Panes)
 	}
-	first := fmt.Sprint(ls.Panes[0].Pane)
+	first := strconv.Itoa(ls.Panes[0].Pane)
 	statusEventually(t, sock, first, "idle")
 
 	// run: send a command and wait for it to finish.
@@ -44,7 +44,7 @@ func TestControlLifecycle(t *testing.T) {
 	if np.Pane == nil {
 		t.Fatalf("pane new failed: %v", np.Error)
 	}
-	second := fmt.Sprint(np.Pane.Pane)
+	second := strconv.Itoa(np.Pane.Pane)
 	// The reported program settles on sleep, not the sh that forked it.
 	fg := ""
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
@@ -52,19 +52,21 @@ func TestControlLifecycle(t *testing.T) {
 		if fg == "sleep" {
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
 	if fg != "sleep" {
 		t.Errorf("foreground = %q, want sleep", fg)
 	}
-	if ls := do(t, sock, control.Request{Cmd: "ls"}); len(ls.Panes) != 2 || !ls.Panes[0].Active {
-		t.Errorf("pane new stole focus or miscounted: %+v", ls.Panes)
+	if lsAfter := do(t, sock, control.Request{Cmd: "ls"}); len(lsAfter.Panes) != 2 || !lsAfter.Panes[0].Active {
+		t.Errorf("pane new stole focus or miscounted: %+v", lsAfter.Panes)
 	}
 
 	// wait --for text: matches output that arrives later.
 	go func() {
-		time.Sleep(300 * time.Millisecond)
-		control.Do(sock, control.Request{Cmd: "send", Pane: first, Data: "echo the-marker\r"}, 5*time.Second)
+		time.Sleep(50 * time.Millisecond)
+		if _, err := control.Do(sock, control.Request{Cmd: "send", Pane: first, Data: "echo the-marker\r"}, 5*time.Second); err != nil {
+			t.Errorf("send: %v", err)
+		}
 	}()
 	w = do(t, sock, control.Request{Cmd: "wait", Pane: first, For: "text=the-mark\\w+", Timeout: "15s"})
 	if w.Matched == nil || !*w.Matched {
@@ -88,7 +90,7 @@ func TestControlLifecycle(t *testing.T) {
 		if len(do(t, sock, control.Request{Cmd: "ls"}).Panes) == 1 {
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
 	if resp := do(t, sock, control.Request{Cmd: "send", Pane: second, Data: "x"}); resp.Code != control.CodePaneGone {
 		t.Errorf("send to a closed pane: code %d, want %d (%+v)", resp.Code, control.CodePaneGone, resp)
@@ -123,7 +125,7 @@ func TestControlLifecycle(t *testing.T) {
 // the distinction agents need.
 func TestStatusInput(t *testing.T) {
 	sock := session(t, posixShell)
-	first := fmt.Sprint(do(t, sock, control.Request{Cmd: "ls"}).Panes[0].Pane)
+	first := strconv.Itoa(do(t, sock, control.Request{Cmd: "ls"}).Panes[0].Pane)
 	statusEventually(t, sock, first, "idle")
 
 	// A builtin asking a question: the pane's own shell is in the
@@ -163,7 +165,7 @@ func TestInputHookFires(t *testing.T) {
 	sock := session(t, posixShell, func(c *config.Config) {
 		c.Agent.OnInput = "echo pane %p %s >> " + log
 	})
-	first := fmt.Sprint(do(t, sock, control.Request{Cmd: "ls"}).Panes[0].Pane)
+	first := strconv.Itoa(do(t, sock, control.Request{Cmd: "ls"}).Panes[0].Pane)
 	statusEventually(t, sock, first, "idle")
 	do(t, sock, control.Request{Cmd: "send", Pane: first,
 		Data: `sh -c 'printf "Continue? [y/N] "; read a'` + "\r"})
@@ -191,7 +193,7 @@ func TestNewPaneThenWaitForIdle(t *testing.T) {
 	if np.Pane == nil {
 		t.Fatalf("pane new failed: %v", np.Error)
 	}
-	pane := fmt.Sprint(np.Pane.Pane)
+	pane := strconv.Itoa(np.Pane.Pane)
 
 	start := time.Now()
 	w := do(t, sock, control.Request{Cmd: "wait", Pane: pane, For: "idle", Timeout: "30s"})
@@ -205,4 +207,20 @@ func TestNewPaneThenWaitForIdle(t *testing.T) {
 	if !strings.Contains(strings.Join(cap.Lines, "\n"), "done-sleeping") {
 		t.Errorf("the command's output is missing: %q", cap.Lines)
 	}
+}
+
+func TestShutdownControl(t *testing.T) {
+	sock := session(t, posixShell)
+	resp := do(t, sock, control.Request{Cmd: "shutdown"})
+	if resp.Error != "" || resp.Code != 0 {
+		t.Fatalf("shutdown returned error: %+v", resp)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(sock); os.IsNotExist(err) {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Errorf("socket %s still exists after shutdown", sock)
 }

@@ -29,6 +29,7 @@ type BorderSet struct {
 // drawn; "none" leaves the gap between panes blank.
 var borderStyles = map[string]BorderSet{
 	"sharp":   {'│', '─', '┌', '┐', '└', '┘', '├', '┤', '┬', '┴', '┼'},
+	"square":  {'│', '─', '▪', '▪', '▪', '▪', '├', '┤', '┬', '┴', '┼'},
 	"rounded": {'│', '─', '╭', '╮', '╰', '╯', '├', '┤', '┬', '┴', '┼'},
 	"heavy":   {'┃', '━', '┏', '┓', '┗', '┛', '┣', '┫', '┳', '┻', '╋'},
 	"double":  {'║', '═', '╔', '╗', '╚', '╝', '╠', '╣', '╦', '╩', '╬'},
@@ -46,13 +47,50 @@ func BorderStyleNames() []string {
 	return names
 }
 
-// borderSet is the set in use. Apply replaces it.
-var borderSet = borderStyles["sharp"]
+// borderSet is the pane border set in use. Apply replaces it.
+// Modal overlays default to rounded borders unless overridden.
+var (
+	borderSet       = borderStyles["sharp"]
+	helpBorderSet   = borderStyles["rounded"]
+	finderBorderSet = borderStyles["rounded"]
+	dialogBorderSet = borderStyles["rounded"]
+)
 
 // ParseBorders builds a border set from the [borders] table: a "style"
-// naming a built-in set, plus any single glyph overriding it.
+// naming a built-in set (defaulting to "sharp"), plus any single glyph overriding it.
 func ParseBorders(settings map[string]string) (BorderSet, error) {
-	b := borderStyles["sharp"]
+	return ParseBordersWithBase("sharp", settings)
+}
+
+// ParseBordersWithBase builds a border set starting from base (e.g. "sharp" or
+// "rounded"), applying "style" and any individual glyph overrides in settings.
+func ParseBordersWithBase(base string, settings map[string]string) (BorderSet, error) {
+	b, ok := borderStyles[strings.ToLower(strings.TrimSpace(base))]
+	if !ok {
+		b = borderStyles["sharp"]
+	}
+	return ParseBordersFrom(b, settings)
+}
+
+// ParseModalBorders parses a modal border set ([borders.help], [borders.finder],
+// [borders.dialog]). When baseSettings is non-empty, the modal inherits from
+// the parsed base [borders] set first; otherwise it defaults to "rounded".
+func ParseModalBorders(baseSettings, modalSettings map[string]string) (BorderSet, error) {
+	base := borderStyles["rounded"]
+	if len(baseSettings) > 0 {
+		var err error
+		base, err = ParseBorders(baseSettings)
+		if err != nil {
+			return base, err
+		}
+	}
+	return ParseBordersFrom(base, modalSettings)
+}
+
+// ParseBordersFrom builds a border set starting from base, applying "style"
+// and any individual glyph overrides in settings.
+func ParseBordersFrom(base BorderSet, settings map[string]string) (BorderSet, error) {
+	b := base
 	if style, ok := settings["style"]; ok {
 		preset, known := borderStyles[strings.ToLower(strings.TrimSpace(style))]
 		if !known {
@@ -85,8 +123,17 @@ func ParseBorders(settings map[string]string) (BorderSet, error) {
 	return b, nil
 }
 
-// Apply makes b the border set everything drawn from now on uses.
+// Apply makes b the pane border set everything drawn from now on uses.
 func (b BorderSet) Apply() { borderSet = b }
+
+// ApplyHelp makes b the border set used by the help overlay.
+func (b BorderSet) ApplyHelp() { helpBorderSet = b }
+
+// ApplyFinder makes b the border set used by fuzzy finder modals.
+func (b BorderSet) ApplyFinder() { finderBorderSet = b }
+
+// ApplyDialog makes b the border set used by centered input dialogs.
+func (b BorderSet) ApplyDialog() { dialogBorderSet = b }
 
 // glyph returns the character for a border cell, given which of its
 // neighbours are also border cells.

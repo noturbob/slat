@@ -1,6 +1,6 @@
 //go:build !windows
 
-package app
+package app_test
 
 import (
 	"os"
@@ -9,19 +9,25 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/noturbob/slat/internal/app"
+
 	"github.com/noturbob/slat/internal/config"
+	"github.com/noturbob/slat/internal/session"
 	"github.com/noturbob/slat/internal/ui"
 )
 
 // A pane's last line is output from whatever is running in it, so a hook
 // must treat it as text. If it reached /bin/sh unquoted, this would run.
 func TestHookQuotesPaneText(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow hook subprocess test in -short mode")
+	}
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "executed")
 	log := filepath.Join(dir, "log")
 
-	a := &App{cfg: config.DefaultConfig()}
-	a.hook("echo %p %c >> "+log, PaneInfo{
+	a := NewWithConfigForTest(config.DefaultConfig())
+	a.HookForTest("echo %p %c >> "+log, PaneInfo{
 		Pane: 7,
 		Last: `save it'; touch ` + marker + `; echo 'ok? [y/N]`,
 	})()
@@ -43,9 +49,9 @@ func TestHookQuotesPaneText(t *testing.T) {
 }
 
 func TestHookUnsetDoesNothing(t *testing.T) {
-	a := &App{cfg: config.DefaultConfig()}
-	a.hook("", PaneInfo{Pane: 1})() // must not panic or run a shell
-	a.hook("   ", PaneInfo{Pane: 1})()
+	a := NewWithConfigForTest(config.DefaultConfig())
+	a.HookForTest("", PaneInfo{Pane: 1})() // must not panic or run a shell
+	a.HookForTest("   ", PaneInfo{Pane: 1})()
 }
 
 // A pane waiting for input marks its tab in the status bar, so a human
@@ -53,6 +59,7 @@ func TestHookUnsetDoesNothing(t *testing.T) {
 func TestStatusBarMarksTabWaitingForInput(t *testing.T) {
 	a, term := start(t, func(c *config.Config) {
 		c.Agent.InputAfter = config.Duration(300 * time.Millisecond)
+		c.AutoRename = false
 	})
 	a.FeedInput([]byte{prefix, 'c'}) // new tab
 	waitFor(t, term, "2:shell", 1)
@@ -135,7 +142,7 @@ func TestShellPrompt(t *testing.T) {
 		"~/src/slat ❯ ", "user in slat ?1 ❯", "PS1>", "λ ",
 	}
 	for _, p := range prompts {
-		if !shellPrompt(p) {
+		if !ShellPrompt(p) {
 			t.Errorf("shellPrompt(%q) = false, want true", p)
 		}
 	}
@@ -144,7 +151,7 @@ func TestShellPrompt(t *testing.T) {
 		"Press enter to continue", "Delete 3 files?", "",
 	}
 	for _, q := range questions {
-		if shellPrompt(q) {
+		if ShellPrompt(q) {
 			t.Errorf("shellPrompt(%q) = true, want false", q)
 		}
 	}
@@ -230,4 +237,96 @@ func TestMoveMode(t *testing.T) {
 	if strings.Contains(term.String(), "qecho") {
 		t.Error("the q that left move mode reached the shell")
 	}
+}
+
+func TestAutoRenameAndManualPrecedence(t *testing.T) {
+	a, _ := start(t)
+	var (
+		tab *session.Tab
+		id  int
+	)
+	a.WithManagerForTest(func(m *session.Manager) {
+		tab = m.ActiveTab()
+		id = tab.ActivePane.ID
+	})
+
+	changed := a.SyncTabNamesForTest([]PaneInfo{{Pane: id, Foreground: "nvim"}})
+	var name string
+	a.WithManagerForTest(func(*session.Manager) {
+		name = tab.Name
+	})
+	if !changed || name != "nvim" {
+		t.Errorf("autorename = %q (changed=%v), want nvim", name, changed)
+	}
+
+	// Manual rename takes precedence over autorename.
+	a.WithManagerForTest(func(m *session.Manager) {
+		m.RenameTab("custom")
+	})
+	changed = a.SyncTabNamesForTest([]PaneInfo{{Pane: id, Foreground: "htop"}})
+	a.WithManagerForTest(func(*session.Manager) {
+		name = tab.Name
+	})
+	if changed || name != "custom" {
+		t.Errorf("manual rename overwritten: %q (changed=%v)", name, changed)
+	}
+
+	// auto_rename = false disables autorename globally.
+	a.WithManagerForTest(func(*session.Manager) {
+		tab.CustomName = false
+	})
+	a.SetAutoRenameForTest(false)
+	a.ScanStatusForTest()
+	a.WithManagerForTest(func(*session.Manager) {
+		name = tab.Name
+	})
+	if name != "custom" {
+		t.Errorf("auto_rename=false still renamed tab to %q", name)
+	}
+}
+
+func TestNextAttentionKeybind(t *testing.T) {
+	a, term := start(t, func(c *config.Config) {
+		c.Agent.InputAfter = config.Duration(300 * time.Millisecond)
+		c.AutoRename = false
+	})
+
+	// When no pane needs attention, <prefix> A shows a status notice.
+	a.FeedInput([]byte{prefix, 'A'})
+	waitFor(t, term, "no panes need attention", 1)
+
+	// Create a second tab with a pane waiting for input, then return to tab 1.
+	a.FeedInput([]byte{prefix, 'c'})
+	waitFor(t, term, "2:shell", 1)
+	a.FeedInput([]byte("sh -c 'printf \"Continue? [y/N] \"; read answer'\r"))
+	waitFor(t, term, "Continue? [y/N]", 1)
+
+	a.FeedInput([]byte{prefix, 'p'})
+	waitFor(t, term, "2:shell ?", 1)
+
+	// Pressing <prefix> A jumps back to the pane needing attention.
+	a.FeedInput([]byte{prefix, 'A'})
+	waitFor(t, term, "Continue? [y/N]", 1)
+	var activeTab int
+	a.WithManagerForTest(func(m *session.Manager) {
+		activeTab = m.ActiveWorkspace().ActiveTabIdx
+	})
+	if activeTab != 1 {
+		t.Errorf("active tab = %d, want 1", activeTab)
+	}
+
+	// Create a third tab also waiting for input, then return to tab 1.
+	a.FeedInput([]byte{prefix, 'c'})
+	waitFor(t, term, "3:shell", 1)
+	a.FeedInput([]byte("sh -c 'printf \"Confirm? [y/N] \"; read answer'\r"))
+	waitFor(t, term, "Confirm? [y/N]", 1)
+
+	a.FeedInput([]byte{prefix, 'p'})
+	a.FeedInput([]byte{prefix, 'p'})
+	waitFor(t, term, "3:shell ?", 1)
+
+	// With >1 panes needing attention, <prefix> A opens the finder dialog.
+	a.FeedInput([]byte{prefix, 'A'})
+	waitFor(t, term, "attention (2/2)", 1)
+	a.FeedInput([]byte{0x1b}) // Esc closes the finder
 }

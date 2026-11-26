@@ -1,7 +1,10 @@
 package client
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"sync"
@@ -24,11 +27,15 @@ const (
 // Run attaches this terminal to the daemon at sockPath and returns once the
 // client is detached or the session ends. The terminal is always restored.
 func Run(sockPath string) (detached bool, err error) {
-	conn, err := net.Dial("unix", sockPath)
+	conn, err := (&net.Dialer{}).DialContext(context.Background(), "unix", sockPath)
 	if err != nil {
 		return false, fmt.Errorf("connect to daemon: %w", err)
 	}
-	defer conn.Close()
+	defer func() {
+		if closeErr := conn.Close(); closeErr != nil && !errors.Is(closeErr, net.ErrClosed) {
+			log.Printf("slat: close client socket: %v", closeErr)
+		}
+	}()
 
 	fd := int(os.Stdin.Fd())
 	oldState, err := term.MakeRaw(fd)
@@ -36,11 +43,21 @@ func Run(sockPath string) (detached bool, err error) {
 		return false, fmt.Errorf("stdin is not a terminal: %w", err)
 	}
 	restoreOutput := prepareOutput()
-	os.Stdout.WriteString(enterScreen)
-	defer func() {
-		os.Stdout.WriteString(leaveScreen)
+	if _, enterErr := os.Stdout.WriteString(enterScreen); enterErr != nil {
 		restoreOutput()
-		term.Restore(fd, oldState)
+		if rErr := term.Restore(fd, oldState); rErr != nil {
+			log.Printf("slat: restore terminal: %v", rErr)
+		}
+		return false, fmt.Errorf("enter alternate screen: %w", enterErr)
+	}
+	defer func() {
+		if _, leaveErr := os.Stdout.WriteString(leaveScreen); leaveErr != nil {
+			log.Printf("slat: leave alternate screen: %v", leaveErr)
+		}
+		restoreOutput()
+		if restoreErr := term.Restore(fd, oldState); restoreErr != nil {
+			log.Printf("slat: restore terminal: %v", restoreErr)
+		}
 	}()
 
 	// Frames come from two goroutines (stdin and the resize watcher); a
@@ -52,32 +69,42 @@ func Run(sockPath string) (detached bool, err error) {
 		return proto.WriteFrame(conn, t, payload)
 	}
 	size := func() []byte {
-		cols, rows, err := term.GetSize(fd)
-		if err != nil {
+		cols, rows, sizeErr := term.GetSize(fd)
+		if sizeErr != nil {
 			cols, rows = 80, 24
 		}
 		return proto.EncodeSize(cols, rows)
 	}
 
-	if err := send(proto.TypeHello, size()); err != nil {
-		return false, fmt.Errorf("handshake failed: %w", err)
+	if helloErr := send(proto.TypeHello, size()); helloErr != nil {
+		return false, fmt.Errorf("handshake failed: %w", helloErr)
 	}
 
 	stopWatching := watchTerminal(fd,
-		func() { send(proto.TypeResize, size()) },
+		func() {
+			if resizeErr := send(proto.TypeResize, size()); resizeErr != nil {
+				log.Printf("slat: send resize: %v", resizeErr)
+			}
+		},
 		// Unblocks the read loop below; the defers restore the terminal.
-		func() { conn.Close() })
+		func() {
+			if closeErr := conn.Close(); closeErr != nil && !errors.Is(closeErr, net.ErrClosed) {
+				log.Printf("slat: close client socket: %v", closeErr)
+			}
+		})
 	defer stopWatching()
 
 	go func() {
 		buf := make([]byte, 4096)
 		for {
-			n, err := os.Stdin.Read(buf)
+			n, stdinErr := os.Stdin.Read(buf)
 			if n > 0 && send(proto.TypeInput, buf[:n]) != nil {
 				return
 			}
-			if err != nil {
-				conn.Close()
+			if stdinErr != nil {
+				if cErr := conn.Close(); cErr != nil && !errors.Is(cErr, net.ErrClosed) {
+					log.Printf("slat: close client socket: %v", cErr)
+				}
 				return
 			}
 		}
@@ -86,19 +113,24 @@ func Run(sockPath string) (detached bool, err error) {
 	// daemon -> terminal: already fully rendered output.
 	buf := make([]byte, 64*1024)
 	for {
-		n, err := conn.Read(buf)
+		n, readErr := conn.Read(buf)
 		if n > 0 {
-			os.Stdout.Write(buf[:n])
+			if _, wErr := os.Stdout.Write(buf[:n]); wErr != nil {
+				log.Printf("slat: write stdout: %v", wErr)
+				break
+			}
 		}
-		if err != nil {
+		if readErr != nil {
 			break
 		}
 	}
 	// The daemon removes its socket before hanging up when the session
 	// ends, so a socket that still answers means we were only detached.
-	c, err := net.Dial("unix", sockPath)
+	c, err := (&net.Dialer{}).DialContext(context.Background(), "unix", sockPath)
 	if err == nil {
-		c.Close()
+		if cErr := c.Close(); cErr != nil {
+			log.Printf("slat: close probe socket: %v", cErr)
+		}
 	}
 	return err == nil, nil
 }

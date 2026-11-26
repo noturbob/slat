@@ -3,7 +3,10 @@
 package pane
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"runtime"
@@ -29,7 +32,7 @@ func startPTY(shell, dir string, rows, cols int) (ptyProcess, error) {
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	cmd := exec.Command(shell)
+	cmd := exec.CommandContext(context.Background(), shell)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 	cmd.Dir = dir
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
@@ -49,7 +52,12 @@ func (u *unixPTY) Resize(rows, cols int) error {
 }
 
 func (u *unixPTY) Wait() {
-	u.cmd.Wait()
+	if err := u.cmd.Wait(); err != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			log.Printf("slat: pty wait: %v", err)
+		}
+	}
 	u.done.Store(true)
 }
 
@@ -57,10 +65,14 @@ func (u *unixPTY) Wait() {
 // the shell go too. Anything that ignores it gets SIGKILL a moment later.
 func (u *unixPTY) Terminate() {
 	pid := u.cmd.Process.Pid
-	syscall.Kill(-pid, syscall.SIGHUP)
+	if err := syscall.Kill(-pid, syscall.SIGHUP); err != nil && !errors.Is(err, syscall.ESRCH) {
+		log.Printf("slat: SIGHUP process group %d: %v", pid, err)
+	}
 	time.AfterFunc(2*time.Second, func() {
 		if !u.done.Load() {
-			syscall.Kill(-pid, syscall.SIGKILL)
+			if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+				log.Printf("slat: SIGKILL process group %d: %v", pid, err)
+			}
 		}
 	})
 }

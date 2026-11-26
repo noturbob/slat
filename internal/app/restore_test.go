@@ -1,12 +1,15 @@
 //go:build !windows
 
-package app
+package app_test
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	. "github.com/noturbob/slat/internal/app"
 
 	"github.com/noturbob/slat/internal/config"
 	"github.com/noturbob/slat/internal/session"
@@ -31,8 +34,8 @@ func TestSessionSurvivesTheDaemon(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("no session was saved: %v", err)
+	if _, statErr := os.Stat(path); statErr != nil {
+		t.Fatalf("no session was saved: %v", statErr)
 	}
 
 	b, term2 := start(t)
@@ -52,7 +55,7 @@ func TestQuitForgetsTheSession(t *testing.T) {
 	a, term := start(t)
 	a.FeedInput([]byte("echo doomed\r"))
 	waitFor(t, term, "doomed", 1)
-	a.saveSession() // as the ticker would have
+	a.SaveSessionForTest() // as the ticker would have
 
 	path, _ := session.StatePath()
 	if _, err := os.Stat(path); err != nil {
@@ -98,12 +101,12 @@ func TestUnreadableStateStartsCleanly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(strings.TrimSuffix(path, "/session.json"), 0o700); err != nil {
-		t.Fatal(err)
+	if mkdirErr := os.MkdirAll(filepath.Dir(path), 0o700); mkdirErr != nil {
+		t.Fatal(mkdirErr)
 	}
 	for _, content := range []string{`{"version":99,"workspaces":[{}]}`, `not json at all`, `{}`} {
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
+		if writeErr := os.WriteFile(path, []byte(content), 0o600); writeErr != nil {
+			t.Fatal(writeErr)
 		}
 		a, _ := start(t)
 		if n := len(activePanes(a)); n != 1 {
@@ -162,11 +165,11 @@ func TestAgo(t *testing.T) {
 		{72 * time.Hour, "3 days ago"},
 	}
 	for _, c := range cases {
-		if got := ago(time.Now().Add(-c.d)); got != c.want {
+		if got := Ago(time.Now().Add(-c.d)); got != c.want {
 			t.Errorf("ago(%s) = %q, want %q", c.d, got, c.want)
 		}
 	}
-	if got := ago(time.Time{}); got != "an earlier session" {
+	if got := Ago(time.Time{}); got != "an earlier session" {
 		t.Errorf("ago(zero) = %q", got)
 	}
 }

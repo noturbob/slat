@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/noturbob/slat/internal/layout"
 	"github.com/noturbob/slat/internal/pane"
@@ -100,6 +101,16 @@ func (a *App) mouseKey(buf []byte, i int) int {
 	if !ok {
 		return i
 	}
+	if tab := a.manager.ActiveTab(); a.scroll == nil && tab != nil && tab.Zoomed == nil && tab.Stacked {
+		panes := a.manager.ActivePanes()
+		if len(panes) > 1 {
+			headerRows := min(len(panes), max(a.paneArea().Rows-1, 0))
+			if ev.press && ev.button == 0 && !ev.motion && ev.y >= 1 && ev.y <= headerRows {
+				a.manager.FocusPane(panes[ev.y-1])
+				return i + n - 1
+			}
+		}
+	}
 	target := a.paneAt(ev.x, ev.y)
 
 	// A border being dragged owns the mouse until the button comes up, so
@@ -159,7 +170,9 @@ func (a *App) forwardMouse(p *pane.Pane, ev mouseEvent) bool {
 	}
 	row, col, _, _ := p.Rect()
 	if out := encodeMouse(ev, sgr, ev.x-col, ev.y-row); out != nil {
-		p.Write(out)
+		if _, err := p.Write(out); err != nil {
+			log.Printf("slat: write mouse to pane %d: %v", p.ID, err)
+		}
 	}
 	return true
 }
@@ -204,7 +217,7 @@ func encodeMouse(ev mouseEvent, sgr bool, x, y int) []byte {
 // whether it did.
 func (a *App) startDrag(ev mouseEvent) bool {
 	// A zoomed pane covers the layout: there are no borders to pull.
-	if a.zoomed != nil || a.scroll != nil {
+	if a.zoomedPane() != nil || a.scroll != nil {
 		return false
 	}
 	tab := a.manager.ActiveTab()

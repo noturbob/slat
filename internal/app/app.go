@@ -5,7 +5,11 @@ package app
 import (
 	"fmt"
 	"io"
+	"log"
+	"os"
+	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -40,6 +44,7 @@ const (
 type App struct {
 	cfg      *config.Config
 	status   ui.StatusFormat
+	splash   ui.Splash
 	help     []ui.HelpEntry
 	quit     chan struct{}
 	quitOnce sync.Once
@@ -57,61 +62,80 @@ type App struct {
 	handler     *input.Handler
 	screen      *ui.Screen
 	cols, rows  int
-	zoomed      *pane.Pane
 	scroll      *scroll // scroll mode, or nil
 	showHelp    bool
+	showPaneIDs bool
 	prompt      *prompt
+	tree        *treeState
 	message     string
 	messageEnd  time.Time
 	bannerEnd   time.Time
 	bannerShown bool
 	attached    bool
 
-	statePath     string    // where the session is saved between runs
-	restoredFrom  time.Time // when the restored session was saved
-	restoredPanes int
+	statePath       string                // where the session is saved between runs
+	sessionDir      string                // canonical working directory for this session
+	listSessions    func() []SessionSummary // lists all running daemons
+	listGlobalTree  func() []RemoteTreeNode
+	focusRemote     func(sock string, wsIdx, tabIdx, paneID int)
+	switchTarget    string // target socket for cross-session switch
+	lastSavedSig    sessionSig            // skips idle 15s snapshots when nothing changed
+	restoredFrom    time.Time             // when the restored session was saved
+	restoredPanes   int
+	statusTabs            []string
+	statusAlert           []bool
+	statusPaneCount       []int
+	statusTabActivePane   []int
+	statusTabActivePaneID []int
+	statusTabProcess      []string
+	statusTabZoomed       []bool
+	scriptOutputs         map[string]string
+	statusScripts         map[string]string
+	preset                *session.Preset
 }
 
 type prompt struct {
-	label string
-	text  []byte
-	apply func(string)
+	label     string
+	text      []byte
+	apply     func(string)
+	confirm   bool
+	onConfirm func()
 }
 
 // New creates a new App from the given config.
 func New(cfg *config.Config) (*App, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("config must not be nil")
-	}
-	theme, err := ui.ParseTheme(cfg.Theme)
+	cc, err := compileConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
-	theme.Apply()
-	borders, err := ui.ParseBorders(cfg.Borders)
-	if err != nil {
-		return nil, err
-	}
-	borders.Apply()
-	status, err := ui.ParseStatusFormat(cfg.Status)
-	if err != nil {
-		return nil, err
-	}
+	cc.applyStyles()
+	sessionDir := session.CanonicalDir("")
 	a := &App{
-		cfg:      cfg,
-		status:   status,
-		help:     helpEntries(cfg),
-		quit:     make(chan struct{}),
-		detachCh: make(chan struct{}, 1),
-		dirty:    make(chan struct{}, 1),
-		handler:  input.NewHandler(cfg.PrefixByte, cfg.Keybinds),
-		screen:   ui.NewScreen(io.Discard),
+		cfg:        cfg,
+		status:     cc.status,
+		splash:     cc.splash,
+		help:       cc.help,
+		quit:       make(chan struct{}),
+		detachCh:   make(chan struct{}, 1),
+		dirty:      make(chan struct{}, 1),
+		handler:    cc.handler,
+		screen:     ui.NewScreen(io.Discard),
+		sessionDir: sessionDir,
 	}
 	a.manager = session.NewManager(cfg.Shell, cfg.Scrollback, a.markDirty)
+	if cfg.RandomSessionName {
+		a.manager.SessionName = session.RandomSessionName(nil)
+	} else {
+		base := filepath.Base(sessionDir)
+		if base == "" || base == "." || base == string(filepath.Separator) {
+			base = "slat"
+		}
+		a.manager.SessionName = base + "-" + time.Now().Format("150405")
+	}
 	if cfg.Restore {
 		// A path we cannot work out only means this session will not be
 		// saved; it is no reason to refuse to start.
-		if path, err := session.StatePath(); err == nil {
+		if path, stateErr := session.StatePathForDir(sessionDir); stateErr == nil {
 			a.statePath = path
 		}
 	}
@@ -125,18 +149,32 @@ func (a *App) SetOutput(w io.Writer) {
 	a.screen = ui.NewScreen(w)
 }
 
+// SetPreset configures a preconfigured session to load on Start. Call before Start.
+func (a *App) SetPreset(p session.Preset) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cp := p
+	a.preset = &cp
+}
+
 // Start creates the first workspace and starts rendering. It doesn't block.
 func (a *App) Start(cols, rows int) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.cols, a.rows = max(cols, 1), max(rows, 1)
-	if !a.restoreSession() {
+	switch {
+	case a.preset != nil:
+		if err := a.manager.ApplyPreset(*a.preset, a.paneArea()); err != nil {
+			return err
+		}
+	case !a.restoreSession():
 		if err := a.manager.AddWorkspace(a.paneArea()); err != nil {
 			return err
 		}
 	}
 	go a.renderLoop()
 	go a.watch()
+	go a.statusScriptLoop()
 	go a.saveLoop()
 	return nil
 }
@@ -152,8 +190,11 @@ func (a *App) Attach(cols, rows int) {
 	a.screen.Invalidate()
 	if !a.bannerShown {
 		a.bannerShown = true
-		a.bannerEnd = time.Now().Add(bannerTime)
-		time.AfterFunc(bannerTime, a.markDirty)
+		if a.cfg.Splash.Enabled && a.cfg.Splash.Duration.D() > 0 {
+			dur := a.cfg.Splash.Duration.D()
+			a.bannerEnd = time.Now().Add(dur)
+			time.AfterFunc(dur, a.markDirty)
+		}
 	}
 	// Say so once, on the first attach: output that predates the reboot
 	// looks like output from this one otherwise.
@@ -178,6 +219,96 @@ func (a *App) HandleResize(cols, rows int) {
 	defer a.mu.Unlock()
 	a.cols, a.rows = max(cols, 1), max(rows, 1)
 	a.markDirty()
+}
+
+// SessionSummary describes a running session for `slat sessions`.
+type SessionSummary struct {
+	Name     string `json:"name"`
+	Dir      string `json:"dir"`
+	Tabs     int    `json:"tabs"`
+	Panes    int    `json:"panes"`
+	Attached bool   `json:"attached"`
+	Socket   string `json:"socket,omitempty"`
+}
+
+// SetSessionLister configures the callback used to discover other running
+// sessions for <prefix> F and collision-free random session naming.
+func (a *App) SetSessionLister(fn func() []SessionSummary) {
+	a.mu.Lock()
+	a.listSessions = fn
+	needReroll := a.cfg.RandomSessionName && a.restoredPanes == 0
+	a.mu.Unlock()
+	if needReroll && fn != nil {
+		sessions := fn()
+		inUse := make(map[string]bool, len(sessions))
+		for _, s := range sessions {
+			if s.Name != "" {
+				inUse[s.Name] = true
+			}
+		}
+		a.mu.Lock()
+		if inUse[a.manager.SessionName] {
+			a.manager.SessionName = session.RandomSessionName(inUse)
+		}
+		a.mu.Unlock()
+	}
+}
+
+// SetGlobalTreeLister configures the callback used to collect tree nodes from
+// other running sessions for <prefix> g.
+func (a *App) SetGlobalTreeLister(fn func() []RemoteTreeNode) {
+	a.mu.Lock()
+	a.listGlobalTree = fn
+	a.mu.Unlock()
+}
+
+// SetRemoteFocuser configures the callback used to focus a workspace/tab/pane
+// on another daemon before switching to it.
+func (a *App) SetRemoteFocuser(fn func(sock string, wsIdx, tabIdx, paneID int)) {
+	a.mu.Lock()
+	a.focusRemote = fn
+	a.mu.Unlock()
+}
+
+// PopSwitchTarget returns and clears any pending cross-session switch socket.
+func (a *App) PopSwitchTarget() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	t := a.switchTarget
+	a.switchTarget = ""
+	return t
+}
+
+func (a *App) requestSwitch(sock string) {
+	a.switchTarget = sock
+	select {
+	case a.detachCh <- struct{}{}:
+	default:
+	}
+}
+
+// SessionInfo returns a snapshot of the session's metadata.
+func (a *App) SessionInfo() SessionSummary {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.sessionInfoLocked()
+}
+
+func (a *App) sessionInfoLocked() SessionSummary {
+	tabs, panes := 0, 0
+	for _, ws := range a.manager.Workspaces {
+		tabs += len(ws.Tabs)
+		for _, t := range ws.Tabs {
+			panes += layout.CountPanes(t.Layout)
+		}
+	}
+	return SessionSummary{
+		Name:     a.manager.SessionName,
+		Dir:      a.sessionDir,
+		Tabs:     tabs,
+		Panes:    panes,
+		Attached: a.attached,
+	}
 }
 
 // Done is closed when the session has ended (quit, or the last pane died).
@@ -210,9 +341,24 @@ func (a *App) markDirty() {
 
 // notify shows msg in the status bar for a few seconds.
 func (a *App) notify(msg string) {
+	a.notifyFor(msg, messageTime)
+}
+
+func (a *App) notifyFor(msg string, dur time.Duration) {
 	a.message = msg
-	a.messageEnd = time.Now().Add(messageTime)
-	time.AfterFunc(messageTime, a.markDirty)
+	a.messageEnd = time.Now().Add(dur)
+	time.AfterFunc(dur, a.markDirty)
+}
+
+// Display shows msg in the status bar for dur (defaulting to 2s when <= 0).
+func (a *App) Display(msg string, dur time.Duration) {
+	if dur <= 0 {
+		dur = 2 * time.Second
+	}
+	a.mu.Lock()
+	a.notifyFor(msg, dur)
+	a.mu.Unlock()
+	a.markDirty()
 }
 
 // paneArea is the screen minus the status bar row.
@@ -249,19 +395,32 @@ func (a *App) render() {
 		return
 	}
 	visible := a.manager.ActivePanes()
-	if !slices.Contains(visible, a.zoomed) {
-		a.zoomed = nil // closed, or on another tab
+	tab := a.manager.ActiveTab()
+	var zoomed *pane.Pane
+	if tab != nil {
+		if tab.Zoomed != nil && (!slices.Contains(visible, tab.Zoomed) || len(visible) <= 1) {
+			tab.Zoomed = nil // closed, or only pane left
+		}
+		zoomed = tab.Zoomed
 	}
 	if a.scroll != nil && a.scroll.pane != a.manager.ActivePane() {
 		a.scroll = nil // closed, or focus moved
 	}
 	area := a.paneArea()
 	var borders []layout.Rect
-	if a.zoomed != nil {
-		visible = []*pane.Pane{a.zoomed}
-		a.zoomed.SetRect(area.Row, area.Col, area.Rows, area.Cols)
+	allPanes := visible
+	stacked := zoomed == nil && tab != nil && tab.Stacked && len(visible) > 1
+	headerRows := 0
+	if zoomed != nil {
+		visible = []*pane.Pane{zoomed}
+		zoomed.SetRect(area.Row, area.Col, area.Rows, area.Cols)
+	} else if stacked {
+		headerRows = min(len(visible), max(area.Rows-1, 0))
+		ap := a.manager.ActivePane()
+		visible = []*pane.Pane{ap}
+		ap.SetRect(area.Row+headerRows, area.Col, area.Rows-headerRows, area.Cols)
 	} else {
-		borders = layout.Apply(a.manager.ActiveTab().Layout, area)
+		borders = layout.Apply(tab.Layout, area)
 	}
 	if !a.attached {
 		return
@@ -270,9 +429,10 @@ func (a *App) render() {
 	frame := a.screen.NextFrame(a.cols, a.rows)
 	now := time.Now()
 	if now.Before(a.bannerEnd) {
-		hint := fmt.Sprintf("press %s then ? for help", input.PrefixName(a.cfg.PrefixByte))
-		ui.DrawBanner(frame, Version, hint)
-		a.screen.Render(frame, ui.Cursor{}, ui.Modes{})
+		ui.DrawSplash(frame, a.splash)
+		if err := a.screen.Render(frame, ui.Cursor{}, ui.Modes{}); err != nil {
+			log.Printf("slat: render splash: %v", err)
+		}
 		return
 	}
 
@@ -292,8 +452,26 @@ func (a *App) render() {
 	}
 	ar, ac, arows, acols := active.Rect()
 	ui.DrawBorders(frame, borders, layout.Rect{Row: ar, Col: ac, Rows: arows, Cols: acols})
+	if stacked && headerRows > 0 {
+		headers := make([]ui.StackHeader, len(allPanes))
+		for i, p := range allPanes {
+			_, title, _ := p.Foreground()
+			if title == "" {
+				title = "pane"
+			}
+			headers[i] = ui.StackHeader{Index: i + 1, Title: title, Active: p == active}
+		}
+		ui.DrawStackHeaders(frame, layout.Rect{Row: area.Row, Col: area.Col, Rows: headerRows, Cols: area.Cols}, headers)
+	}
 	if a.anim != nil && !a.drawAnim(frame, visible, now) {
 		a.anim = nil
+	}
+	if a.showPaneIDs {
+		for _, p := range visible {
+			pr, pc, _, pcols := p.Rect()
+			idx := slices.Index(allPanes, p)
+			ui.DrawPaneIDBadge(frame, pr, pc, pcols, p.ID, idx+1, p == active, zoomed != nil, a.status)
+		}
 	}
 
 	x, y, vis, style := active.Cursor()
@@ -311,45 +489,100 @@ func (a *App) render() {
 		ui.DrawStatusBar(frame, a.rows-1, a.statusOfBar(now), a.status)
 	}
 	if a.prompt != nil {
-		x := ui.DrawPrompt(frame, a.rows-1, a.prompt.label, string(a.prompt.text))
-		cur = ui.Cursor{X: x, Y: a.rows - 1, Visible: true}
+		dx, dy := ui.DrawDialog(frame, a.prompt.label, string(a.prompt.text))
+		cur = ui.Cursor{X: dx, Y: dy, Visible: true}
 	}
 	if a.showHelp {
-		ui.DrawHelp(frame, "slat · keys after "+input.PrefixName(a.cfg.PrefixByte), a.help)
+		ui.DrawHelp(frame, "slat · keys after "+a.cfg.PrefixKey.Name, a.help)
 		cur.Visible = false
 	}
-	a.screen.Render(frame, cur, modes)
+	if a.tree != nil {
+		tx, ty := a.drawTree(frame)
+		cur = ui.Cursor{X: tx, Y: ty, Visible: true}
+	}
+	if err := a.screen.Render(frame, cur, modes); err != nil {
+		log.Printf("slat: render frame: %v", err)
+	}
 }
 
 func (a *App) statusOfBar(now time.Time) ui.Status {
 	ws := a.manager.ActiveWorkspace()
 	st := ui.Status{
+		Session:        a.manager.SessionName,
 		Workspace:      ws.Name,
 		WorkspaceIndex: a.manager.ActiveWorkspaceIdx,
 		WorkspaceCount: len(a.manager.Workspaces),
 		ActiveTab:      ws.ActiveTabIdx,
 	}
-	for ti, t := range ws.Tabs {
-		st.Tabs = append(st.Tabs, t.Name)
-		st.TabAlert = append(st.TabAlert, a.tabNeedsInput(ws.Name, ti+1))
+	a.statusTabs = a.statusTabs[:0]
+	a.statusAlert = a.statusAlert[:0]
+	a.statusPaneCount = a.statusPaneCount[:0]
+	a.statusTabActivePane = a.statusTabActivePane[:0]
+	a.statusTabActivePaneID = a.statusTabActivePaneID[:0]
+	a.statusTabProcess = a.statusTabProcess[:0]
+	a.statusTabZoomed = a.statusTabZoomed[:0]
+	for _, t := range ws.Tabs {
+		a.statusTabs = append(a.statusTabs, t.Name)
+		a.statusPaneCount = append(a.statusPaneCount, layout.CountPanes(t.Layout))
+		a.statusTabActivePane = append(a.statusTabActivePane, max(layout.PaneIndex(t.Layout, t.ActivePane), 0))
+		activeID := 0
+		activeProc := ""
+		if t.ActivePane != nil {
+			activeID = t.ActivePane.ID
+			_, activeProc, _ = t.ActivePane.Foreground()
+		}
+		a.statusTabActivePaneID = append(a.statusTabActivePaneID, activeID)
+		a.statusTabProcess = append(a.statusTabProcess, activeProc)
+		a.statusTabZoomed = append(a.statusTabZoomed, t.Zoomed != nil)
+		alert := len(a.attention) > 0 && layout.AnyPane(t.Layout, func(p *pane.Pane) bool {
+			return a.attention[p.ID]
+		})
+		a.statusAlert = append(a.statusAlert, alert)
 	}
+	st.Tabs = a.statusTabs
+	st.TabAlert = a.statusAlert
+	st.TabPaneCount = a.statusPaneCount
+	st.TabActivePane = a.statusTabActivePane
+	st.TabActivePaneID = a.statusTabActivePaneID
+	st.TabProcess = a.statusTabProcess
+	st.TabZoomed = a.statusTabZoomed
 	panes := a.manager.ActivePanes()
-	st.PaneIndex = slices.Index(panes, a.manager.ActivePane())
+	ap := a.manager.ActivePane()
+	if ap != nil {
+		st.PaneID = ap.ID
+	}
+	st.PaneIndex = slices.Index(panes, ap)
 	st.PaneCount = len(panes)
+	st.PrefixActive = a.handler.IsPrefixActive()
+	zoomed := a.zoomedPane() != nil
+	st.Zoomed = zoomed
 	switch {
 	case a.handler.IsPrefixActive():
-		st.Badge = "PREFIX"
+		st.Badge = a.status.Badges.Prefix
 	case a.showHelp:
-		st.Badge = "HELP"
+		st.Badge = a.status.Badges.Help
 	case a.scroll != nil:
 		st.Badge = a.scrollBadge()
 	case a.moving:
-		st.Badge = "MOVE"
-	case a.zoomed != nil:
-		st.Badge = "ZOOM"
+		st.Badge = a.status.Badges.Move
+	case zoomed:
+		st.Badge = a.status.Badges.Zoom
+	case a.manager.ActiveTab() != nil && a.manager.ActiveTab().Stacked && len(panes) > 1:
+		st.Badge = a.status.Badges.Stack
 	}
 	if now.Before(a.messageEnd) {
 		st.Message = a.message
+	}
+	if len(a.scriptOutputs) > 0 {
+		if a.statusScripts == nil {
+			a.statusScripts = make(map[string]string, len(a.scriptOutputs))
+		} else {
+			clear(a.statusScripts)
+		}
+		for k, v := range a.scriptOutputs {
+			a.statusScripts[k] = v
+		}
+		st.Scripts = a.statusScripts
 	}
 	return st
 }
@@ -378,6 +611,10 @@ func (a *App) FeedInput(buf []byte) {
 			}
 			continue
 		}
+		if a.tree != nil {
+			i = a.treeKey(buf, i)
+			continue
+		}
 		if a.showHelp {
 			// Any key closes help. Drop the rest of the chunk so that a
 			// multi-byte key (an arrow is ESC [ A) doesn't leak into the shell.
@@ -386,14 +623,14 @@ func (a *App) FeedInput(buf []byte) {
 		}
 
 		if a.scroll != nil {
-			if b != a.handler.PrefixByte() {
+			if a.handler.MatchPrefix(buf[i:]) == 0 {
 				i = a.scrollKey(buf, i)
 				continue
 			}
 			a.scroll = nil // any command leaves scroll mode
 		}
 
-		if a.moving && b != a.handler.PrefixByte() {
+		if a.moving && a.handler.MatchPrefix(buf[i:]) == 0 {
 			if dir, ok := moveKeys[b]; ok {
 				a.movePane(dir)
 				continue
@@ -415,6 +652,17 @@ func (a *App) FeedInput(buf []byte) {
 			}
 		}
 
+		// Match multi-byte (and single-byte) prefix before the 0x1b prefix+arrow
+		// handler, so pressing a multi-byte prefix twice triggers ActionSendPrefix.
+		if plen := a.handler.MatchPrefix(buf[i:]); plen > 0 {
+			action := a.handler.ProcessPrefix()
+			i += plen - 1
+			if !a.do(action) {
+				return
+			}
+			continue
+		}
+
 		if b == 0x1b && a.handler.IsPrefixActive() {
 			// prefix + arrow key selects a pane in that direction;
 			// prefix + PageUp scrolls back.
@@ -428,7 +676,7 @@ func (a *App) FeedInput(buf []byte) {
 			}
 			if i+2 < len(buf) && (buf[i+1] == '[' || buf[i+1] == 'O') {
 				if act, ok := arrowActions[buf[i+2]]; ok {
-					a.do(act, b)
+					a.do(act)
 					i += 2
 					continue
 				}
@@ -436,18 +684,31 @@ func (a *App) FeedInput(buf []byte) {
 			return // some other escape sequence: swallow it whole
 		}
 
+		if !a.handler.IsPrefixActive() {
+			if cmd, n := a.handler.MatchShortcut(buf[i:]); n > 0 {
+				a.runShortcut(cmd)
+				i += n - 1
+				continue
+			}
+			if dir, n := matchNavigation(buf[i:], a.cfg.Navigation.Keys); n > 0 {
+				if a.isNavigationPassthrough() {
+					a.forward(buf[i : i+n])
+				} else {
+					a.selectPane(dir)
+				}
+				i += n - 1
+				continue
+			}
+		}
+
 		action := a.handler.ProcessByte(b)
 		if action == input.ActionForwardInput {
-			// Forward everything up to the next prefix byte in one write.
-			j := i
-			for j < len(buf) && buf[j] != a.handler.PrefixByte() {
-				j++
-			}
-			a.forward(buf[i:j])
-			i = j - 1
+			n := a.handler.ForwardLen(buf[i:])
+			a.forward(buf[i : i+n])
+			i += n - 1
 			continue
 		}
-		if !a.do(action, b) {
+		if !a.do(action) {
 			return
 		}
 	}
@@ -467,16 +728,18 @@ var arrowActions = map[byte]input.Action{
 
 func (a *App) forward(data []byte) {
 	if p := a.manager.ActivePane(); p != nil && len(data) > 0 {
-		p.Write(data)
+		if _, err := p.Write(data); err != nil {
+			log.Printf("slat: write pane %d: %v", p.ID, err)
+		}
 	}
 }
 
 // do runs a command. It returns false when input processing should stop
 // because the client is leaving.
-func (a *App) do(action input.Action, b byte) bool {
+func (a *App) do(action input.Action) bool {
 	switch action {
 	case input.ActionSendPrefix:
-		a.forward([]byte{b})
+		a.forward(a.handler.PrefixBytes())
 
 	// ── Panes
 	case input.ActionSplitVertical, input.ActionSplitHorizontal:
@@ -484,17 +747,18 @@ func (a *App) do(action input.Action, b byte) bool {
 		if action == input.ActionSplitHorizontal {
 			dir = pane.SplitHorizontal
 		}
-		a.zoomed = nil
 		if err := a.manager.SplitPane(dir); err != nil {
 			a.notify(err.Error())
 		} else {
 			a.startAnim(a.manager.ActivePane(), dir)
 		}
+	case input.ActionAddPane:
+		if err := a.manager.AddPane(a.paneArea()); err != nil {
+			a.notify(err.Error())
+		}
 	case input.ActionNextPane:
-		a.zoomed = nil
 		a.manager.NextPane()
 	case input.ActionPrevPane:
-		a.zoomed = nil
 		a.manager.PrevPane()
 	case input.ActionSelectPaneUp:
 		a.selectPane("up")
@@ -516,23 +780,33 @@ func (a *App) do(action input.Action, b byte) bool {
 	case input.ActionSelectPaneRight:
 		a.selectPane("right")
 	case input.ActionSwapPane:
-		a.zoomed = nil
 		a.manager.SwapPanes()
 	case input.ActionResizeGrow:
-		a.zoomed = nil
 		a.manager.ResizeRatio(0.05)
 	case input.ActionResizeShrink:
-		a.zoomed = nil
 		a.manager.ResizeRatio(-0.05)
 	case input.ActionEqualizeLayout:
-		a.zoomed = nil
 		a.manager.EqualizeLayout()
+	case input.ActionLayoutPicker:
+		a.openLayoutPicker()
 	case input.ActionZoom:
-		if a.zoomed != nil {
-			a.zoomed = nil
-		} else if len(a.manager.ActivePanes()) > 1 {
-			a.zoomed = a.manager.ActivePane()
+		if tab := a.manager.ActiveTab(); tab != nil {
+			if tab.Zoomed != nil {
+				tab.Zoomed = nil
+			} else if len(a.manager.ActivePanes()) > 1 {
+				tab.Zoomed = a.manager.ActivePane()
+			}
 		}
+	case input.ActionIdentifyPanes:
+		a.showPaneIDs = !a.showPaneIDs
+	case input.ActionStackMode:
+		a.manager.ToggleStack()
+	case input.ActionBreakPane:
+		a.openBreakPanePicker()
+	case input.ActionJoinPane:
+		a.openJoinPanePicker()
+	case input.ActionNextAttention:
+		a.focusNextAttention()
 	case input.ActionClosePane:
 		if a.manager.KillActivePane() {
 			a.doQuit()
@@ -569,12 +843,35 @@ func (a *App) do(action input.Action, b byte) bool {
 		a.startPrompt("rename workspace", a.manager.ActiveWorkspace().Name, a.manager.RenameWorkspace)
 
 	case input.ActionScrollMode:
-		a.zoomed = nil
+		a.unzoom()
 		a.enterScroll()
 
 	// ── Session
 	case input.ActionShowHelp:
 		a.showHelp = true
+	case input.ActionRenameSession:
+		a.startPrompt("rename session", a.manager.SessionName, a.manager.RenameSession)
+	case input.ActionTreePicker:
+		a.openTree()
+	case input.ActionSessionPicker:
+		a.openSessionPicker()
+	case input.ActionNextSession:
+		a.switchSession(1)
+	case input.ActionPrevSession:
+		a.switchSession(-1)
+	case input.ActionGlobalTreePicker:
+		a.openGlobalTreePicker()
+	case input.ActionSaveSession:
+		a.startSaveSession()
+	case input.ActionReloadConfig:
+		if err := a.reloadConfigLocked(); err != nil {
+			a.notify("config reload failed: " + err.Error())
+		} else {
+			a.notify("config reloaded")
+		}
+	case input.ActionToggleStatusBar:
+		a.cfg.StatusBar = !a.cfg.StatusBar
+		a.screen.Invalidate()
 	case input.ActionDetach:
 		select {
 		case a.detachCh <- struct{}{}:
@@ -595,9 +892,108 @@ func (a *App) do(action input.Action, b byte) bool {
 	return true
 }
 
+func (a *App) focusNextAttention() {
+	if len(a.attention) == 0 {
+		a.notify("no panes need attention")
+		return
+	}
+	var candidates []treeNode
+	for _, n := range a.buildTree() {
+		if n.pane != nil && a.attention[n.pane.ID] {
+			candidates = append(candidates, n)
+		}
+	}
+	switch len(candidates) {
+	case 0:
+		a.notify("no panes need attention")
+	case 1:
+		a.jumpToTreeNode(candidates[0])
+	default:
+		ts := &treeState{title: "attention", all: candidates}
+		ts.refilter()
+		a.tree = ts
+	}
+}
+
+func (a *App) zoomedPane() *pane.Pane {
+	if tab := a.manager.ActiveTab(); tab != nil {
+		return tab.Zoomed
+	}
+	return nil
+}
+
+func (a *App) unzoom() {
+	if tab := a.manager.ActiveTab(); tab != nil {
+		tab.Zoomed = nil
+	}
+}
+
 func (a *App) selectPane(dir string) {
-	a.zoomed = nil
+	a.unzoom()
+	if tab := a.manager.ActiveTab(); tab != nil && tab.Stacked && len(a.manager.ActivePanes()) > 1 {
+		switch dir {
+		case "down", "right":
+			a.manager.NextPane()
+		case "up", "left":
+			a.manager.PrevPane()
+		}
+		return
+	}
 	a.manager.SelectPaneInDirection(dir)
+}
+
+func matchNavigation(buf []byte, mode string) (dir string, consumed int) {
+	if len(buf) == 0 {
+		return "", 0
+	}
+	switch mode {
+	case "alt":
+		if len(buf) >= 2 && buf[0] == 0x1b {
+			switch buf[1] {
+			case 'h':
+				return "left", 2
+			case 'j':
+				return "down", 2
+			case 'k':
+				return "up", 2
+			case 'l':
+				return "right", 2
+			}
+		}
+	case "ctrl":
+		switch buf[0] {
+		case 0x08: // Ctrl-H
+			return "left", 1
+		case 0x0a: // Ctrl-J
+			return "down", 1
+		case 0x0b: // Ctrl-K
+			return "up", 1
+		case 0x0c: // Ctrl-L
+			return "right", 1
+		}
+	}
+	return "", 0
+}
+
+func (a *App) isNavigationPassthrough() bool {
+	if len(a.cfg.Navigation.Apps) == 0 {
+		return false
+	}
+	p := a.manager.ActivePane()
+	if p == nil {
+		return false
+	}
+	_, fg, _ := p.Foreground()
+	if fg == "" {
+		return false
+	}
+	base := filepath.Base(fg)
+	for _, appName := range a.cfg.Navigation.Apps {
+		if base == appName || fg == appName {
+			return true
+		}
+	}
+	return false
 }
 
 // ─── Prompt ─────────────────────────────────────────────────────────────────
@@ -606,10 +1002,50 @@ func (a *App) startPrompt(label, current string, apply func(string)) {
 	a.prompt = &prompt{label: label, text: []byte(current), apply: apply}
 }
 
+func (a *App) startConfirm(label string, onConfirm func()) {
+	a.prompt = &prompt{label: label, confirm: true, onConfirm: onConfirm}
+}
+
+func (a *App) startSaveSession() {
+	a.startPrompt("save session as", a.manager.SessionName, func(name string) {
+		path, err := session.PresetPathForName(name)
+		if err != nil {
+			a.notify(err.Error())
+			return
+		}
+		writePreset := func() {
+			p := a.manager.ExportPreset()
+			p.SessionName = name
+			if saveErr := session.SavePreset(path, p); saveErr != nil {
+				a.notify(saveErr.Error())
+				return
+			}
+			a.notify("saved session " + name)
+		}
+		if _, statErr := os.Stat(path); statErr == nil {
+			a.startConfirm(fmt.Sprintf("overwrite %s.toml? [y/N]", name), writePreset)
+			return
+		}
+		writePreset()
+	})
+}
+
 // promptKey handles one byte typed into the prompt. It returns false when
 // the rest of the input chunk must be discarded.
 func (a *App) promptKey(b byte) bool {
 	p := a.prompt
+	if p.confirm {
+		a.prompt = nil
+		if b == 'y' || b == 'Y' {
+			p.onConfirm()
+			return true
+		}
+		if b == 0x1b {
+			return false
+		}
+		a.notify("save canceled")
+		return true
+	}
 	switch b {
 	case '\r', '\n':
 		a.prompt = nil
@@ -623,6 +1059,8 @@ func (a *App) promptKey(b byte) bool {
 		a.prompt = nil
 	case 0x15: // Ctrl-U
 		p.text = p.text[:0]
+	case 0x17: // Ctrl-W
+		p.text = deleteLastWord(p.text)
 	case 0x7f, 0x08: // Backspace: remove a whole UTF-8 character
 		if len(p.text) > 0 {
 			_, size := utf8.DecodeLastRune(p.text)
@@ -648,7 +1086,7 @@ func helpEntries(cfg *config.Config) []ui.HelpEntry {
 			if group == "Session" {
 				out = append(out,
 					ui.HelpEntry{Key: "?", Desc: "This help"},
-					ui.HelpEntry{Key: input.PrefixName(cfg.PrefixByte), Desc: "Send prefix to shell"})
+					ui.HelpEntry{Key: cfg.PrefixKey.Name, Desc: "Send prefix to shell"})
 			}
 		}
 		if key := cfg.Keybinds[b.Name]; key != "" {
@@ -656,6 +1094,17 @@ func helpEntries(cfg *config.Config) []ui.HelpEntry {
 		}
 		if b.Name == "prev-tab" {
 			out = append(out, ui.HelpEntry{Key: "1-9", Desc: "Go to tab N"})
+		}
+	}
+	if len(cfg.Shortcuts) > 0 {
+		out = append(out, ui.HelpEntry{Desc: "Shortcuts"})
+		keys := make([]string, 0, len(cfg.Shortcuts))
+		for k := range cfg.Shortcuts {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			out = append(out, ui.HelpEntry{Key: k, Desc: cfg.Shortcuts[k]})
 		}
 	}
 	return out

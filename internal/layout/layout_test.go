@@ -1,8 +1,9 @@
-package layout
+package layout_test
 
 import (
 	"testing"
 
+	. "github.com/noturbob/slat/internal/layout"
 	"github.com/noturbob/slat/internal/pane"
 )
 
@@ -43,10 +44,10 @@ func TestDividerAt(t *testing.T) {
 		t.Fatalf("DividerAt on the border = %v, %v, %v", n, got, ok)
 	}
 	// A cell inside a child is not a divider.
-	if _, _, ok := DividerAt(root, area, 5, 2); ok {
+	if _, _, hit1 := DividerAt(root, area, 5, 2); hit1 {
 		t.Error("a cell inside the left pane was reported as a divider")
 	}
-	if _, _, ok := DividerAt(root, area, 5, border.Col+3); ok {
+	if _, _, hit2 := DividerAt(root, area, 5, border.Col+3); hit2 {
 		t.Error("a cell inside the right pane was reported as a divider")
 	}
 }
@@ -85,5 +86,126 @@ func TestRatioAt(t *testing.T) {
 	}
 	if got := RatioAt(v, area, 0, 79); got != 0.9 {
 		t.Errorf("ratio at the far right = %v, want it clamped to 0.9", got)
+	}
+}
+
+func TestEqualize(t *testing.T) {
+	// 3 sequential vertical splits: [p1 | [p2 | p3]] should become 1/3 each.
+	p1, p2, p3 := &pane.Pane{ID: 1}, &pane.Pane{ID: 2}, &pane.Pane{ID: 3}
+	root := &Node{
+		Split: pane.SplitVertical,
+		Ratio: 0.5,
+		Children: [2]*Node{
+			NewLeaf(p1),
+			{
+				Split:    pane.SplitVertical,
+				Ratio:    0.5,
+				Children: [2]*Node{NewLeaf(p2), NewLeaf(p3)},
+			},
+		},
+	}
+	Equalize(root)
+	a1, b1, _ := Split(Rect{Rows: 24, Cols: 92}, root.Split, root.Ratio)
+	a2, b2, _ := Split(b1, root.Children[1].Split, root.Children[1].Ratio)
+	if a1.Cols != 30 || a2.Cols != 30 || b2.Cols != 30 {
+		t.Errorf("3-pane equalize cols = %d, %d, %d; want 30, 30, 30", a1.Cols, a2.Cols, b2.Cols)
+	}
+
+	// Mixed split: [p1 | [p2 / p3]] -> p1 gets half width; p2 and p3 share the other half vertically.
+	mix := &Node{
+		Split: pane.SplitVertical,
+		Ratio: 0.2,
+		Children: [2]*Node{
+			NewLeaf(p1),
+			{
+				Split:    pane.SplitHorizontal,
+				Ratio:    0.2,
+				Children: [2]*Node{NewLeaf(p2), NewLeaf(p3)},
+			},
+		},
+	}
+	Equalize(mix)
+	ma, mb, _ := Split(Rect{Rows: 21, Cols: 81}, mix.Split, mix.Ratio)
+	m2, m3, _ := Split(mb, mix.Children[1].Split, mix.Children[1].Ratio)
+	if ma.Cols != 40 || mb.Cols != 40 || m2.Rows != 10 || m3.Rows != 10 {
+		t.Errorf("mixed equalize got p1_c=%d p2=(%d,%d) p3=(%d,%d)", ma.Cols, m2.Rows, m2.Cols, m3.Rows, m3.Cols)
+	}
+}
+
+func TestParseMode(t *testing.T) {
+	cases := []struct {
+		in   string
+		want Mode
+		ok   bool
+	}{
+		{"master-left", ModeMasterLeft, true},
+		{"master_right", ModeMasterRight, true},
+		{"MASTER TOP", ModeMasterTop, true},
+		{"master-bottom", ModeMasterBottom, true},
+		{"even-horizontal", ModeEvenHorizontal, true},
+		{"even_vertical", ModeEvenVertical, true},
+		{"grid", ModeGrid, true},
+		{"stack", ModeStack, true},
+		{"unknown", "", false},
+	}
+	for _, tc := range cases {
+		got, ok := ParseMode(tc.in)
+		if ok != tc.ok || got != tc.want {
+			t.Errorf("ParseMode(%q) = (%q, %v), want (%q, %v)", tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+	if len(AllModes()) != 8 {
+		t.Errorf("AllModes() len = %d, want 8", len(AllModes()))
+	}
+}
+
+func collectRects(n *Node, area Rect) ([]Rect, []Rect) {
+	if n == nil {
+		return nil, nil
+	}
+	if n.Pane != nil {
+		return []Rect{area}, nil
+	}
+	a, b, border := Split(area, n.Split, n.Ratio)
+	borders := []Rect{border}
+	ra, ba := collectRects(n.Children[0], a)
+	rb, bb := collectRects(n.Children[1], b)
+	rects := append(ra, rb...)
+	borders = append(borders, ba...)
+	borders = append(borders, bb...)
+	return rects, borders
+}
+
+func TestArrangeModes(t *testing.T) {
+	area := Rect{Row: 0, Col: 0, Rows: 40, Cols: 120}
+	for _, info := range AllModes() {
+		for count := 1; count <= 5; count++ {
+			panes := make([]*pane.Pane, count)
+			for i := range panes {
+				panes[i] = &pane.Pane{ID: i + 1}
+			}
+			root := Arrange(panes, info.Mode)
+			got := CollectPanes(root)
+			if len(got) != count {
+				t.Fatalf("mode %s count %d: CollectPanes = %d", info.Mode, count, len(got))
+			}
+			rects, borders := collectRects(root, area)
+			if len(rects) != count {
+				t.Fatalf("mode %s count %d: rects = %d", info.Mode, count, len(rects))
+			}
+			cells := 0
+			for i, r := range rects {
+				if r.Rows < 1 || r.Cols < 1 {
+					t.Fatalf("mode %s count %d: pane %d empty rect %+v", info.Mode, count, i, r)
+				}
+				cells += r.Rows * r.Cols
+			}
+			for _, b := range borders {
+				cells += b.Rows * b.Cols
+			}
+			if cells != area.Rows*area.Cols {
+				t.Fatalf("mode %s count %d: covered %d != %d", info.Mode, count, cells, area.Rows*area.Cols)
+			}
+		}
 	}
 }

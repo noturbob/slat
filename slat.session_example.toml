@@ -1,0 +1,35 @@
+session_name = "sample-session"
+start_directory = "~/code/10-apps/project"
+# focus = 1 # 1-based tab index (or workspace index when [[workspaces]] is used) to focus when the session starts
+
+[[tabs]]
+name = "doc"
+layout = "stack" # defaults to "even-vertical"
+# start_directory = "~/code/10-apps/project/docs" # optional per-tab working directory override
+panes = [
+  "nvim README.md",
+]
+
+[[tabs]]
+name = "editor"
+# focus = 1 # 1-based pane index to focus when the session starts
+# Each pane can be a command string or a { cmd = "...", cwd = "..." } table:
+panes = [
+  "nvim -S session.vim",
+  # { cmd = "go test ./...", cwd = "~/code/10-apps/project/api" },
+]
+
+# Alternatively, group tabs under [[workspaces]] (see examples/sessions/workspaces.toml):
+# [[workspaces]]
+# name = "backend"
+# focus = 1 # 1-based tab index to focus in this workspace
+#
+# [[workspaces.tabs]]
+# name = "api"
+# layout = "even-horizontal"
+# start_directory = "~/code/10-apps/project/api"
+# focus = 1 # 1-based pane index to focus in this tab
+# panes = [
+#   { cmd = "go test ./...", cwd = "~/code/10-apps/project/api" },
+#   "nvim .",
+# ]

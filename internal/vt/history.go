@@ -54,13 +54,20 @@ func (t *Terminal) pushHistory(line []Cell) {
 		}
 		n--
 	}
-	saved := append([]Cell(nil), line[:n]...)
 	switch {
 	case t.histLen < t.histMax:
+		saved := append([]Cell(nil), line[:n]...)
 		t.hist = append(t.hist, saved)
 		t.histLen++
-	default: // full: overwrite the oldest
-		t.hist[t.histStart] = saved
+	default: // full: overwrite the oldest, reusing its backing array when large enough
+		old := t.hist[t.histStart]
+		if cap(old) >= n {
+			dst := old[:n]
+			copy(dst, line[:n])
+			t.hist[t.histStart] = dst
+		} else {
+			t.hist[t.histStart] = append([]Cell(nil), line[:n]...)
+		}
 		t.histStart = (t.histStart + 1) % t.histMax
 	}
 	t.pushed++
@@ -86,9 +93,13 @@ func (t *Terminal) Search(query string, from, dir int) (abs, col, width int, ok 
 	if len(q) == 0 {
 		return 0, 0, 0, false
 	}
+	var textBuf [256]rune
+	var colBuf [256]int
+	text := textBuf[:0]
+	cols := colBuf[:0]
 	for abs = from; abs >= t.FirstLine() && abs < t.pushed+t.rows; abs += dir {
-		var text []rune
-		var cols []int
+		text = text[:0]
+		cols = cols[:0]
 		for x, c := range t.LineAt(abs) {
 			if c.Wide == WideTail {
 				continue

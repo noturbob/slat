@@ -273,11 +273,19 @@ func (a *App) scrollBadge() string {
 	s := a.scroll
 	first, screenTop, _ := s.pane.History()
 	if s.sel != nil {
+		label := a.status.Badges.Copy
+		if label == "" {
+			return ""
+		}
 		fromAbs, _, toAbs, _ := s.ordered()
 		if s.sel.byLine || toAbs > fromAbs {
-			return "COPY " + plural(toAbs-fromAbs+1, "line")
+			return label + " " + plural(toAbs-fromAbs+1, "line")
 		}
-		return "COPY"
+		return label
 	}
-	return fmt.Sprintf("SCROLL %d/%d", screenTop-s.top, screenTop-first)
+	label := a.status.Badges.Scroll
+	if label == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s %d/%d", label, screenTop-s.top, screenTop-first)
 }

@@ -1,6 +1,7 @@
 package pane
 
 import (
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -84,12 +85,18 @@ func (p *Pane) seed(history []string) {
 		return
 	}
 	for _, line := range history {
-		p.term.Write([]byte(line))
-		p.term.Write([]byte("\r\n"))
+		if _, err := p.term.Write([]byte(line)); err != nil {
+			log.Printf("slat: seed pane %d: %v", p.ID, err)
+		}
+		if _, err := p.term.Write([]byte("\r\n")); err != nil {
+			log.Printf("slat: seed pane %d: %v", p.ID, err)
+		}
 	}
 	cols, _ := p.term.Size()
 	rule := strings.Repeat("\u2500", max(min(cols, 60)-12, 3))
-	p.term.Write([]byte("\x1b[2m" + rule + " restored \x1b[0m\r\n"))
+	if _, err := p.term.Write([]byte("\x1b[2m" + rule + " restored \x1b[0m\r\n")); err != nil {
+		log.Printf("slat: seed pane %d: %v", p.ID, err)
+	}
 	p.term.Replies() // the saved text cannot ask the terminal questions
 }
 
@@ -99,7 +106,9 @@ func (p *Pane) readLoop() {
 		n, err := p.proc.Read(buf)
 		if n > 0 {
 			p.mu.Lock()
-			p.term.Write(buf[:n])
+			if _, wErr := p.term.Write(buf[:n]); wErr != nil {
+				log.Printf("slat: pane %d vt write: %v", p.ID, wErr)
+			}
 			replies := p.term.Replies()
 			p.lastOut = time.Now()
 			// Output means something started or finished, so the cached
@@ -107,7 +116,9 @@ func (p *Pane) readLoop() {
 			p.fgAt = time.Time{}
 			p.mu.Unlock()
 			if len(replies) > 0 {
-				p.proc.Write(replies) // answers to cursor-position/device queries
+				if _, wErr := p.proc.Write(replies); wErr != nil { // answers to cursor-position/device queries
+					log.Printf("slat: pane %d reply write: %v", p.ID, wErr)
+				}
 			}
 			p.onChange()
 		}
@@ -130,7 +141,9 @@ func (p *Pane) markDead() {
 		p.mu.Lock()
 		p.dead = true
 		p.mu.Unlock()
-		p.proc.Close()
+		if err := p.proc.Close(); err != nil {
+			log.Printf("slat: close pane %d pty: %v", p.ID, err)
+		}
 		p.onChange()
 	})
 }
@@ -171,14 +184,16 @@ func (p *Pane) SetRect(row, col, rows, cols int) {
 		return
 	}
 	p.term.Resize(cols, rows)
-	p.proc.Resize(rows, cols)
+	if err := p.proc.Resize(rows, cols); err != nil {
+		log.Printf("slat: resize pane %d pty: %v", p.ID, err)
+	}
 }
 
 // Rect returns the pane's position (0-based) and size.
-func (p *Pane) Rect() (row, col, rows, cols int) {
+func (p *Pane) Rect() (int, int, int, int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	cols, rows = p.term.Size()
+	cols, rows := p.term.Size()
 	return p.row, p.col, rows, cols
 }
 
@@ -233,14 +248,14 @@ func (p *Pane) LineText(abs int) string {
 // History reports the absolute line indexes of the oldest line kept and of
 // the screen's first row, and whether a full-screen program is using the
 // alternate screen (which has no history).
-func (p *Pane) History() (first, screenTop int, alt bool) {
+func (p *Pane) History() (int, int, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.term.FirstLine(), p.term.Pushed(), p.term.AltScreen()
 }
 
 // Search finds query in the pane's history and screen; see vt.Search.
-func (p *Pane) Search(query string, from, dir int) (abs, col, width int, ok bool) {
+func (p *Pane) Search(query string, from, dir int) (int, int, int, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.term.Search(query, from, dir)
@@ -248,16 +263,16 @@ func (p *Pane) Search(query string, from, dir int) (abs, col, width int, ok bool
 
 // Cursor returns where the pane's cursor is (relative to the pane) and
 // how it should look.
-func (p *Pane) Cursor() (x, y int, visible bool, style int) {
+func (p *Pane) Cursor() (int, int, bool, int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	x, y = p.term.Cursor()
+	x, y := p.term.Cursor()
 	return x, y, p.term.CursorVisible() && !p.dead, p.term.CursorStyle()
 }
 
 // Modes reports the input modes the program has enabled: application
 // cursor keys (DECCKM) and bracketed paste.
-func (p *Pane) Modes() (appCursor, bracketedPaste bool) {
+func (p *Pane) Modes() (bool, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.term.AppCursor(), p.term.BracketedPaste()
@@ -265,7 +280,7 @@ func (p *Pane) Modes() (appCursor, bracketedPaste bool) {
 
 // MouseMode reports the mouse tracking the pane's program turned on: the
 // DECSET mode (0 for none) and whether it wants SGR-encoded coordinates.
-func (p *Pane) MouseMode() (mode int, sgr bool) {
+func (p *Pane) MouseMode() (int, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.dead {
@@ -287,16 +302,16 @@ const fgCacheFor = 700 * time.Millisecond
 // Foreground reports the program the pane's terminal is currently giving
 // input to, and whether that is just the pane's shell (so: nothing is
 // running). name is "" where the platform can't tell (Windows).
-func (p *Pane) Foreground() (pid int, name string, isShell bool) {
+func (p *Pane) Foreground() (int, string, bool) {
 	p.mu.Lock()
 	dead := p.dead
 	if !dead && time.Since(p.fgAt) > fgCacheFor {
 		p.mu.Unlock()
-		pid, name = p.proc.Foreground() // no lock: this can read /proc or run ps
+		pid, name := p.proc.Foreground() // no lock: this can read /proc or run ps
 		p.mu.Lock()
 		p.fgPID, p.fgName, p.fgAt = pid, name, time.Now()
 	}
-	pid, name = p.fgPID, p.fgName
+	pid, name := p.fgPID, p.fgName
 	p.mu.Unlock()
 
 	if dead {
@@ -335,14 +350,62 @@ func (p *Pane) Capture(n int, history bool) []string {
 	return out
 }
 
-func lineText(cells []vt.Cell) string {
-	var b strings.Builder
-	for _, c := range cells {
-		if c.Wide != vt.WideTail {
-			b.WriteString(c.String())
+// LastLine returns the last non-blank line on the visible screen, avoiding
+// allocating the rest of the screen when only the prompt line is needed.
+func (p *Pane) LastLine() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	_, rows := p.term.Size()
+	first := p.term.Pushed()
+	for abs := first + rows - 1; abs >= first; abs-- {
+		cells := p.term.LineAt(abs)
+		if rowHasNonSpace(cells) {
+			return lineText(cells)
 		}
 	}
-	return strings.TrimRight(b.String(), " ")
+	return ""
+}
+
+func rowHasNonSpace(cells []vt.Cell) bool {
+	for _, c := range cells {
+		if c.Wide == vt.WideTail {
+			continue
+		}
+		if (c.R != 0 && c.R != ' ') || c.Comb != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func lineText(cells []vt.Cell) string {
+	end := len(cells)
+	for end > 0 {
+		c := cells[end-1]
+		if c.Wide != vt.WideTail && ((c.R != 0 && c.R != ' ') || c.Comb != "") {
+			break
+		}
+		end--
+	}
+	if end == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(end)
+	for _, c := range cells[:end] {
+		if c.Wide == vt.WideTail {
+			continue
+		}
+		if c.R == 0 {
+			b.WriteByte(' ')
+		} else {
+			b.WriteRune(c.R)
+		}
+		if c.Comb != "" {
+			b.WriteString(c.Comb)
+		}
+	}
+	return b.String()
 }
 
 // Cwd returns the working directory of the pane's shell, or "" where the

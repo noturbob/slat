@@ -1,0 +1,104 @@
+# Cyberpunk — high-contrast Night City neon (yellow, cyan, hot magenta).
+# Copy to ~/.config/slat/config.toml to use.
+
+prefix      = "C-s"
+status_bar  = true
+auto_rename = true
+animations  = true
+
+[animation]
+split  = "75ms"
+move   = "95ms"
+easing = "out-cubic"
+reveal = "curtain"
+glyph  = "▓"
+
+[splash]
+enabled  = true
+duration = "650ms"
+subtitle = "NIGHT CITY // SLAT {version}"
+hint     = "{prefix} ? keys · {prefix} i pane IDs"
+
+[theme]
+name = "cyberpunk"
+
+[borders]
+style = "sharp"
+
+[status]
+left           = "{prefix} {fg=theme.background,bg=theme.accent,bold} {workspace} {/} {tabs}"
+right          = "{script:git} {badge}{workspaces} {fg=theme.accent}#{pane}/{panes}{/} {fg=theme.dim}{seconds}{/} "
+tab            = " {index}:{name} {current_pane_glyph}{alert} "
+tab_active     = "{fg=theme.tab_active_fg,bg=theme.tab_active_bg,bold} {index}:{name} {current_pane_id_glyph}{alert} {/}"
+tab_sep        = "{fg=theme.border}╱{/}"
+alert          = "{fg=theme.accent,bold} ⚡{/}"
+prefix         = "{fg=theme.tab_fg,bg=theme.tab_bg} // {/}"
+prefix_active  = "{fg=theme.background,bg=theme.accent,bold} >> {/}"
+pane_id        = "{fg=theme.tab_fg,bg=theme.tab_bg} [{id}] {/}"
+pane_id_active = "{fg=theme.background,bg=theme.accent,bold} [{id}] {/}"
+current_pane_glyphs         = ["𝟶", "𝟷", "𝟸", "𝟹", "𝟺", "𝟻", "𝟼", "𝟽", "𝟾", "𝟿"]
+current_pane_zoom_glyphs    = ["𝟬", "𝟭", "𝟮", "𝟯", "𝟰", "𝟱", "𝟲", "𝟳", "𝟴", "𝟵"]
+current_pane_id_glyphs      = ["𝟘", "𝟙", "𝟚", "𝟛", "𝟜", "𝟝", "𝟞", "𝟟", "𝟠", "𝟡"]
+current_pane_id_zoom_glyphs = ["⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"]
+
+[status.zoom_glyphs]
+current_pane    = true
+current_pane_id = true
+
+[status.scripts.git]
+command  = "git -C \"$SLAT_PANE_CWD\" branch --show-current 2>/dev/null | sed 's/.*/{fg=accent,bold}git:&{\\/}/'"
+interval = "5s"
+timeout  = "2s"
+fallback = ""
+
+[shortcuts]
+"Alt+1" = "~/.config/slat/scripts/save-note.sh"
+
+[keybinds]
+split-vertical    = "v"
+split-horizontal  = "h"
+add-pane          = "a"
+next-pane         = "o"
+prev-pane         = "O"
+select-pane-up    = "k"
+select-pane-down  = "j"
+select-pane-left  = "H"
+select-pane-right = "L"
+swap-pane         = "s"
+move-mode         = "m"
+move-pane-up      = "K"
+move-pane-down    = "J"
+move-pane-left    = "<"
+move-pane-right   = ">"
+resize-grow       = "+"
+resize-shrink     = "-"
+equalize          = "="
+layout-picker     = "l"
+close-pane        = "x"
+zoom              = "z"
+identify-panes    = "i"
+stack-mode        = "t"
+break-pane        = "!"
+join-pane         = "@"
+next-attention    = "A"
+scroll-mode       = "["
+new-tab           = "c"
+next-tab          = "n"
+prev-tab          = "p"
+rename-tab        = ","
+close-tab         = "X"
+new-workspace     = "W"
+next-workspace    = "w"
+prev-workspace    = "P"
+rename-workspace  = "$"
+rename-session    = "S"
+tree-picker       = "f"
+session-picker    = "F"
+next-session      = ")"
+prev-session      = "("
+global-tree       = "g"
+save-session      = "E"
+reload-config     = "r"
+toggle-status-bar = "b"
+detach            = "d"
+quit              = "q"

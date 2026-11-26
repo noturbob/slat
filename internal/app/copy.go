@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/base64"
 	"fmt"
+	"log"
 	"strings"
 )
 
@@ -14,19 +15,19 @@ type selection struct {
 }
 
 // ordered returns the selection's two ends with the earlier one first.
-func (s *scroll) ordered() (fromAbs, fromCol, toAbs, toCol int) {
+func (s *scroll) ordered() (int, int, int, int) {
 	sel := s.sel
-	fromAbs, fromCol = sel.anchorAbs, sel.anchorCol
-	toAbs, toCol = s.curAbs, s.curCol
+	fromAbs, fromCol := sel.anchorAbs, sel.anchorCol
+	toAbs, toCol := s.curAbs, s.curCol
 	if toAbs < fromAbs || (toAbs == fromAbs && toCol < fromCol) {
 		fromAbs, fromCol, toAbs, toCol = toAbs, toCol, fromAbs, fromCol
 	}
-	return
+	return fromAbs, fromCol, toAbs, toCol
 }
 
 // selectedSpan reports which columns of the line with absolute index abs
 // are selected. ok is false when the line is outside the selection.
-func (s *scroll) selectedSpan(abs, cols int) (from, to int, ok bool) {
+func (s *scroll) selectedSpan(abs, cols int) (int, int, bool) {
 	if s.sel == nil {
 		return 0, 0, false
 	}
@@ -37,7 +38,7 @@ func (s *scroll) selectedSpan(abs, cols int) (from, to int, ok bool) {
 	if s.sel.byLine {
 		return 0, cols - 1, true
 	}
-	from, to = 0, cols-1
+	from, to := 0, cols-1
 	if abs == fromAbs {
 		from = fromCol
 	}
@@ -99,7 +100,9 @@ func (a *App) yank() {
 	}
 
 	if a.cfg.Copy.OSC52 {
-		a.screen.WriteRaw(osc52(text))
+		if err := a.screen.WriteRaw(osc52(text)); err != nil {
+			log.Printf("slat: write OSC 52: %v", err)
+		}
 	}
 	// A terminal that refuses OSC 52 (many do, for good reasons) can be
 	// worked around with a local command — wl-copy, xclip, pbcopy.
@@ -140,5 +143,9 @@ func (a *App) pipeTo(command, text string) {
 		a.notify("copy command: " + err.Error())
 		return
 	}
-	go c.Wait()
+	go func() {
+		if err := c.Wait(); err != nil {
+			log.Printf("slat: copy command %q: %v", command, err)
+		}
+	}()
 }

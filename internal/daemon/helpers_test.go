@@ -30,10 +30,19 @@ func session(t *testing.T, tweak ...func(*config.Config)) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
+	t.Cleanup(func() {
+		if rmErr := os.RemoveAll(dir); rmErr != nil {
+			t.Errorf("RemoveAll(%s): %v", dir, rmErr)
+		}
+	})
 	sock := filepath.Join(dir, "s.sock")
 
+	if testing.Short() {
+		t.Skip("skipping slow daemon integration test in -short mode")
+	}
 	cfg := config.DefaultConfig()
+	cfg.Shell = "/bin/sh"
+	cfg.Splash.Enabled = false
 	cfg.StatusBar = false
 	cfg.Agent.InputAfter = config.Duration(400 * time.Millisecond)
 	for _, f := range tweak {
@@ -44,7 +53,12 @@ func session(t *testing.T, tweak ...func(*config.Config)) string {
 		t.Fatal(err)
 	}
 	done := make(chan struct{})
-	go func() { srv.Run(); close(done) }()
+	go func() {
+		if runErr := srv.Run(); runErr != nil {
+			t.Errorf("srv.Run: %v", runErr)
+		}
+		close(done)
+	}()
 	servers.Store(sock, &running{srv: srv, done: done})
 	t.Cleanup(func() {
 		srv.Stop()
@@ -57,11 +71,13 @@ func session(t *testing.T, tweak ...func(*config.Config)) string {
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if c, err := net.Dial("unix", sock); err == nil {
-			c.Close()
+		if c, dialErr := net.Dial("unix", sock); dialErr == nil {
+			if closeErr := c.Close(); closeErr != nil {
+				t.Fatal(closeErr)
+			}
 			return sock
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("daemon did not start")
 	return ""
@@ -87,7 +103,7 @@ func statusEventually(t *testing.T, sock, pane, want string) control.Response {
 		if last.Pane != nil && last.Pane.Status == want {
 			return last
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
 	if last.Pane != nil {
 		t.Fatalf("pane %s: status %q (%s), want %q", pane, last.Pane.Status, last.Pane.Reason, want)
@@ -113,7 +129,10 @@ func stopSession(t *testing.T, sock string) {
 	if !ok {
 		t.Fatalf("no daemon for %s", sock)
 	}
-	r := v.(*running)
+	r, ok := v.(*running)
+	if !ok {
+		t.Fatalf("unexpected running entry type %T", v)
+	}
 	r.srv.Stop()
 	select {
 	case <-r.done:

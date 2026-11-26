@@ -1,7 +1,10 @@
 package session
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,11 +25,12 @@ const stateVersion = 1
 // running program, so a restored pane is a fresh shell in the same
 // directory, showing the output the old one left behind.
 type State struct {
-	Version    int              `json:"version"`
-	SavedAt    time.Time        `json:"saved_at"`
-	NextPane   int              `json:"next_pane"`
-	Active     int              `json:"active"`
-	Workspaces []WorkspaceState `json:"workspaces"`
+	Version     int              `json:"version"`
+	SavedAt     time.Time        `json:"saved_at"`
+	SessionName string           `json:"session_name,omitempty"`
+	NextPane    int              `json:"next_pane"`
+	Active      int              `json:"active"`
+	Workspaces  []WorkspaceState `json:"workspaces"`
 }
 
 type WorkspaceState struct {
@@ -36,8 +40,11 @@ type WorkspaceState struct {
 }
 
 type TabState struct {
-	Name   string     `json:"name"`
-	Layout *NodeState `json:"layout"`
+	Name       string      `json:"name"`
+	CustomName bool        `json:"custom_name,omitempty"`
+	Stacked    bool        `json:"stacked,omitempty"`
+	LayoutMode layout.Mode `json:"layout_mode,omitempty"`
+	Layout     *NodeState  `json:"layout"`
 }
 
 // NodeState mirrors layout.Node: either a pane or a split with two children.
@@ -58,17 +65,21 @@ type PaneState struct {
 // pane's output.
 func (m *Manager) Snapshot(history int) State {
 	st := State{
-		Version:  stateVersion,
-		SavedAt:  time.Now(),
-		NextPane: m.nextPane,
-		Active:   m.ActiveWorkspaceIdx,
+		Version:     stateVersion,
+		SavedAt:     time.Now(),
+		SessionName: m.SessionName,
+		NextPane:    m.nextPane,
+		Active:      m.ActiveWorkspaceIdx,
 	}
 	for _, ws := range m.Workspaces {
 		w := WorkspaceState{Name: ws.Name, Active: ws.ActiveTabIdx}
 		for _, tab := range ws.Tabs {
 			w.Tabs = append(w.Tabs, TabState{
-				Name:   tab.Name,
-				Layout: snapshotNode(tab.Layout, tab.ActivePane, history),
+				Name:       tab.Name,
+				CustomName: tab.CustomName,
+				Stacked:    tab.Stacked,
+				LayoutMode: tab.LayoutMode,
+				Layout:     snapshotNode(tab.Layout, tab.ActivePane, history),
 			})
 		}
 		st.Workspaces = append(st.Workspaces, w)
@@ -103,15 +114,26 @@ func (m *Manager) Restore(st State, area layout.Rect) (int, error) {
 		return 0, fmt.Errorf("saved session is version %d, this slat writes %d", st.Version, stateVersion)
 	}
 	if len(st.Workspaces) == 0 {
-		return 0, fmt.Errorf("saved session has no workspaces")
+		return 0, errors.New("saved session has no workspaces")
 	}
 	m.Workspaces = nil
 	m.nextPane = 0
+	if st.SessionName != "" {
+		m.SessionName = st.SessionName
+	}
 	count := 0
 	for _, w := range st.Workspaces {
 		ws := &Workspace{Name: w.Name, ActiveTabIdx: w.Active}
 		for _, t := range w.Tabs {
-			tab := &Tab{Name: t.Name}
+			mode := t.LayoutMode
+			if mode == "" {
+				if t.Stacked {
+					mode = layout.ModeStack
+				} else {
+					mode = layout.ModeEvenVertical
+				}
+			}
+			tab := &Tab{Name: t.Name, CustomName: t.CustomName, Stacked: t.Stacked, LayoutMode: mode}
 			node, active, n, err := m.restoreNode(t.Layout, area)
 			if err != nil {
 				return count, err
@@ -131,7 +153,7 @@ func (m *Manager) Restore(st State, area layout.Rect) (int, error) {
 		m.Workspaces = append(m.Workspaces, ws)
 	}
 	if len(m.Workspaces) == 0 {
-		return count, fmt.Errorf("saved session held no tabs")
+		return count, errors.New("saved session held no tabs")
 	}
 	m.ActiveWorkspaceIdx = clampIdx(st.Active, len(m.Workspaces))
 	// Ids carry on from the old session so that a pane number a script
@@ -146,7 +168,7 @@ func (m *Manager) Restore(st State, area layout.Rect) (int, error) {
 // a resize a moment later.
 func (m *Manager) restoreNode(n *NodeState, area layout.Rect) (*layout.Node, *pane.Pane, int, error) {
 	if n == nil {
-		return nil, nil, 0, fmt.Errorf("saved layout has an empty node")
+		return nil, nil, 0, errors.New("saved layout has an empty node")
 	}
 	if n.Pane != nil {
 		m.nextPane++
@@ -202,10 +224,38 @@ func clampIdx(i, n int) int {
 	return i
 }
 
-// StatePath is where the session is kept between runs. It is deliberately
-// not next to the socket: $XDG_RUNTIME_DIR is cleared on reboot, which is
-// the one event this file exists to survive.
+// CanonicalDir resolves dir to a clean absolute path (following symlinks when
+// possible), falling back to the current working directory when dir is empty.
+func CanonicalDir(dir string) string {
+	if dir == "" {
+		if wd, err := os.Getwd(); err == nil {
+			dir = wd
+		}
+	}
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
+	}
+	return filepath.Clean(dir)
+}
+
+// DirHash returns a short 8-hex-char identifier for dir.
+func DirHash(dir string) string {
+	sum := sha256.Sum256([]byte(CanonicalDir(dir)))
+	return hex.EncodeToString(sum[:4])
+}
+
+// StatePath is where the current directory's session is kept between runs.
 func StatePath() (string, error) {
+	return StatePathForDir("")
+}
+
+// StatePathForDir is where the session for dir is kept between runs. It is
+// deliberately not next to the socket: $XDG_RUNTIME_DIR is cleared on reboot,
+// which is the one event this file exists to survive.
+func StatePathForDir(sessionDir string) (string, error) {
 	dir := os.Getenv("XDG_STATE_HOME")
 	if dir == "" {
 		home, err := os.UserHomeDir()
@@ -214,7 +264,7 @@ func StatePath() (string, error) {
 		}
 		dir = filepath.Join(home, ".local", "state")
 	}
-	return filepath.Join(dir, "slat", "session.json"), nil
+	return filepath.Join(dir, "slat", "sessions", DirHash(sessionDir)+".json"), nil
 }
 
 // SaveState writes the session, replacing any previous one atomically so a
@@ -231,24 +281,44 @@ func SaveState(path string, st State) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
+	defer func() {
+		if rErr := os.Remove(tmp.Name()); rErr != nil && !os.IsNotExist(rErr) {
+			fmt.Fprintf(os.Stderr, "slat: remove temp state %s: %v\n", tmp.Name(), rErr)
+		}
+	}()
+	if chmodErr := tmp.Chmod(0o600); chmodErr != nil {
+		if cErr := tmp.Close(); cErr != nil {
+			return errors.Join(chmodErr, fmt.Errorf("close: %w", cErr))
+		}
+		return chmodErr
 	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
+	if _, writeErr := tmp.Write(data); writeErr != nil {
+		if cErr := tmp.Close(); cErr != nil {
+			return errors.Join(writeErr, fmt.Errorf("close: %w", cErr))
+		}
+		return writeErr
 	}
-	if err := tmp.Close(); err != nil {
-		return err
+	if closeErr := tmp.Close(); closeErr != nil {
+		return closeErr
 	}
 	return os.Rename(tmp.Name(), path)
 }
 
+const maxStateFileSize = 64 << 20 // 64 MiB safety cap on session.json
+
 // LoadState reads a saved session. A missing file is not an error: it only
 // means there is nothing to come back to.
 func LoadState(path string) (State, bool, error) {
+	fi, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return State{}, false, nil
+	}
+	if err != nil {
+		return State{}, false, err
+	}
+	if fi.Size() > maxStateFileSize {
+		return State{}, false, fmt.Errorf("saved session is too large (%d bytes)", fi.Size())
+	}
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return State{}, false, nil
@@ -257,8 +327,8 @@ func LoadState(path string) (State, bool, error) {
 		return State{}, false, err
 	}
 	var st State
-	if err := json.Unmarshal(data, &st); err != nil {
-		return State{}, false, err
+	if jsonErr := json.Unmarshal(data, &st); jsonErr != nil {
+		return State{}, false, jsonErr
 	}
 	return st, st.Version == stateVersion && len(st.Workspaces) > 0, nil
 }

@@ -1,0 +1,10 @@
+# Light/monochrome terminals
+bg            = "15"
+fg            = "0"
+dim           = "8"
+accent        = "0"
+border        = "8"
+tab_bg        = "7"
+tab_fg        = "0"
+tab_active_bg = "0"
+tab_active_fg = "15"

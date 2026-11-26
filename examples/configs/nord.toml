@@ -1,0 +1,107 @@
+# Nord Arctic — cool Nordic palette, rounded borders, and distinct glyph sets.
+# Copy to ~/.config/slat/config.toml to use.
+
+prefix      = "C-s"
+status_bar  = true
+auto_rename = true
+mouse       = true
+restore     = true
+animations  = true
+
+[animation]
+split  = "95ms"
+move   = "115ms"
+easing = "out-quad"
+reveal = "curtain"
+glyph  = "·"
+
+[splash]
+enabled  = true
+duration = "600ms"
+subtitle = "nord arctic · {version}"
+hint     = "{prefix} ? keys · {prefix} i pane IDs"
+
+[theme]
+name = "nord"
+
+[borders]
+style = "rounded"
+
+[status]
+left           = "{prefix} {fg=bg,bg=accent,bold} {workspace} {/} {tabs}"
+right          = "{script:git} {badge}{workspaces} {fg=dim}{pane}/{panes}{/} {fg=accent}{time}{/} "
+tab            = " {tab_index_glyph} {name} {current_pane_glyph}{alert} "
+tab_active     = "{fg=tab_active_fg,bg=tab_active_bg,bold} {tab_index_glyph} {name} {current_pane_id_glyph}{alert} {/}"
+tab_sep        = " "
+alert          = "{fg=red,bold} ●{/}"
+prefix         = "{fg=dim,bg=tab_bg}  {/}"
+prefix_active  = "{fg=bg,bg=accent,bold} ❄ {/}"
+pane_id        = "{fg=tab_fg,bg=tab_bg} #{id} {/}"
+pane_id_active = "{fg=bg,bg=accent,bold} #{id} {/}"
+tab_index_glyphs            = ["0", "ⅰ", "ⅱ", "ⅲ", "ⅳ", "ⅴ", "ⅵ", "ⅶ", "ⅷ", "ⅸ"]
+current_pane_glyphs         = ["𝟢", "𝟣", "𝟤", "𝟥", "𝟦", "𝟧", "𝟨", "𝟩", "𝟪", "𝟫"]
+current_pane_zoom_glyphs    = ["0", "⑴", "⑵", "⑶", "⑷", "⑸", "⑹", "⑺", "⑻", "⑼"]
+current_pane_id_glyphs      = ["0", "⒈", "⒉", "⒊", "⒋", "⒌", "⒍", "⒎", "⒏", "⒐"]
+current_pane_id_zoom_glyphs = ["𝟶", "𝟷", "𝟸", "𝟹", "𝟺", "𝟻", "𝟼", "𝟽", "𝟾", "𝟿"]
+
+[status.zoom_glyphs]
+current_pane    = true
+current_pane_id = true
+
+[status.scripts.git]
+command  = "git -C \"$SLAT_PANE_CWD\" branch --show-current 2>/dev/null | sed 's/.*/{fg=accent}⌥ &{\\/}/'"
+interval = "5s"
+timeout  = "2s"
+fallback = ""
+
+[shortcuts]
+"Alt+1" = "~/.config/slat/scripts/save-note.sh"
+
+[keybinds]
+split-vertical    = "v"
+split-horizontal  = "h"
+add-pane          = "a"
+next-pane         = "o"
+prev-pane         = "O"
+select-pane-up    = "k"
+select-pane-down  = "j"
+select-pane-left  = "H"
+select-pane-right = "L"
+swap-pane         = "s"
+move-mode         = "m"
+move-pane-up      = "K"
+move-pane-down    = "J"
+move-pane-left    = "<"
+move-pane-right   = ">"
+resize-grow       = "+"
+resize-shrink     = "-"
+equalize          = "="
+layout-picker     = "l"
+close-pane        = "x"
+zoom              = "z"
+identify-panes    = "i"
+stack-mode        = "t"
+break-pane        = "!"
+join-pane         = "@"
+next-attention    = "A"
+scroll-mode       = "["
+new-tab           = "c"
+next-tab          = "n"
+prev-tab          = "p"
+rename-tab        = ","
+close-tab         = "X"
+new-workspace     = "W"
+next-workspace    = "w"
+prev-workspace    = "P"
+rename-workspace  = "$"
+rename-session    = "S"
+tree-picker       = "f"
+session-picker    = "F"
+next-session      = ")"
+prev-session      = "("
+global-tree       = "g"
+save-session      = "E"
+reload-config     = "r"
+toggle-status-bar = "b"
+detach            = "d"
+quit              = "q"

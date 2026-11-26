@@ -182,6 +182,7 @@ every key inside slat.
 | Key | Action |
 | --- | --- |
 | `v` / `h` | Split left / right, top / bottom |
+| `a` | Add a pane (honoring the active tab's layout) |
 | `o` / `O` | Next / previous pane |
 | arrows, or `k` `j` `H` `L` | Pane above / below / left / right |
 | `s` | Swap with the next pane |
@@ -189,7 +190,12 @@ every key inside slat.
 | `<` `>` `K` `J` | Move the pane left / right / up / down |
 | `+` / `-` | Grow / shrink the pane |
 | `=` | Equalize all sizes |
-| `z` | Zoom the pane to full size (toggle) |
+| `l` | Choose layout (picker menu) |
+| `z` | Zoom the pane to full size per tab (toggle) |
+| `t` | Toggle stacked mode (jump elements with `o`/`O`/`j`/`k` or click) |
+| `!` | Move active pane to an existing tab or a new tab (fuzzy picker) |
+| `@` | Join a pane from another tab into the current tab (fuzzy picker) |
+| `A` | Jump to the first/next pane needing attention |
 | `x` | Close the pane |
 | `[` or PageUp | Scroll and copy mode (see below) |
 
@@ -215,9 +221,19 @@ every key inside slat.
 
 | Key | Action |
 | --- | --- |
+| `S` | Rename the session |
+| `f` | Tree picker (session / workspaces / tabs / panes; `PageUp`/`PageDown` scrolls by page) |
+| `F` | Switch between running sessions |
+| `)` / `(` | Switch to next / previous running session |
+| `g` | Global tree picker across all sessions, tabs & panes |
+| `E` | Save current session as a preconfigured TOML (asks before overwriting) |
+| `r` | Reload configuration (`config.toml` and themes) |
+| `b` | Toggle the bottom status bar |
 | `d` | Detach — the session keeps running |
 | `q` | Quit — ends every shell |
 | `?` | Show all keys |
+
+Picker dialogs (`l`, `!`, `@`, `f`, `F`, `g`) filter by **word-prefix** with `fzf`-style extended search: space-separated terms are `AND`ed, `|` is `OR`, `(...)` groups expressions, `^term` matches the start, `term$` matches the end, `'term` matches any exact substring, `!term` excludes matches, `\` escapes special characters (`(`, `)`, `$`, `^`, `'`, `!`, `|`, space, `\`), and smart-case is used (case-insensitive unless uppercase is typed). Use `Ctrl+W` to delete the last word and `Ctrl+U` to clear the input.
 
 ### Scroll and copy mode
 
@@ -274,6 +290,79 @@ the way out, and keeps up to 2000 lines per pane.
 restore = false     # start clean every time
 ```
 
+### Layouts
+
+Press <kbd>Ctrl</kbd>+<kbd>s</kbd> then <kbd>l</kbd> to open the fuzzy layout
+picker and switch the active tab between 8 built-in layouts:
+
+| Layout | Description |
+| --- | --- |
+| `master-left` | Master pane on the left, stack on the right |
+| `master-right` | Master pane on the right, stack on the left |
+| `master-top` | Master pane on the top, stack on the bottom |
+| `master-bottom` | Master pane on the bottom, stack on the top |
+| `even-horizontal` | All panes side-by-side in equal columns |
+| `even-vertical` | All panes stacked top-to-bottom in equal rows (default) |
+| `grid` | Every pane equal in a balanced grid |
+| `stack` | Active pane full-screen with clickable header tabs |
+
+### Preconfigured sessions
+
+Save reusable session definitions as TOML files in `~/.config/slat/sessions/`
+(or anywhere on disk — see [`slat.session_example.toml`](slat.session_example.toml)):
+
+```toml
+session_name = "sample-session"
+start_directory = "~/code/10-apps/project"
+# focus = 1 # 1-based tab index (or workspace index when [[workspaces]] is used) to focus when the session starts
+
+[[tabs]]
+name = "doc"
+layout = "stack" # defaults to "even-vertical"
+panes = [
+  "nvim README.md",
+]
+
+[[tabs]]
+name = "editor"
+# focus = 1 # 1-based pane index to focus when the session starts
+panes = [
+  "nvim -S session.vim",
+]
+```
+
+You can also set a per-tab `start_directory`, pass `{ cmd = "...", cwd = "..." }` tables in `panes`, or group tabs under `[[workspaces]]`, using top-level `focus` for the 1-based workspace index and workspace-level `focus` for the 1-based tab index (see [`examples/sessions/workspaces.toml`](examples/sessions/workspaces.toml)).
+
+Start or attach to a preconfigured session by name (resolved from
+`~/.config/slat/sessions/<name>.toml`, with shell tab-completion) or by file path:
+
+```bash
+slat session slat.session_example
+slat session ./slat.session_example.toml
+```
+
+Inside slat, press <kbd>Ctrl</kbd>+<kbd>s</kbd> then <kbd>E</kbd> to save the
+running session to `~/.config/slat/sessions/<name>.toml`. If a file with that
+name already exists, slat asks for confirmation before overwriting.
+
+#### Shell extensions (`bash`, `zsh`, `fish`)
+
+Source the extension for your shell to get `slat-session`, an `fzf` menu over
+all `.toml` files in `~/.config/slat/sessions/` with a live file preview:
+
+```bash
+# bash (~/.bashrc)
+source /path/to/slat/shell/slat.bash
+
+# zsh (~/.zshrc)
+source /path/to/slat/shell/slat.zsh
+```
+
+```fish
+# fish (~/.config/fish/config.fish)
+source /path/to/slat/shell/slat.fish
+```
+
 ### Mouse
 
 Click a pane to focus it, drag a border to resize, and the wheel scrolls
@@ -309,13 +398,22 @@ $ slat capture 3 --lines 20             # read what it printed
 | Command | What it does |
 | --- | --- |
 | `slat ls` | every pane, with what each one is doing |
+| `slat sessions [--json]` | list running directory-based sessions |
+| `slat session [NAME\|PATH]` | start or attach to a preconfigured session TOML (tab-completes saved sessions in `~/.config/slat/sessions/`) |
+| `slat attach [NAME\|DIR]` | attach to a session by name or directory (tab-completes running session names; falls back to current directory when omitted) |
+| `slat shutdown [--all] [--session NAME\|DIR] [--json]` | shut down the active session, or all running sessions with `--all` |
 | `slat status [PANE]` | one pane's status |
 | `slat pane new [--split v\|h] [--cwd D] [--cmd C] [--target P] [--focus]` | split a pane |
 | `slat pane close PANE` | close a pane |
-| `slat send PANE TEXT [--enter] [--key KEY]` | type into a pane |
+| `slat send PANE TEXT... [--enter] [--key KEY]` | type into a pane (supports `--session`, `--workspace`, `--tab`, or `[SESSION:][WORKSPACE/[TAB/]]PANE`, e.g. `work:dev/active`) |
+| `slat focus TARGET\|left\|down\|up\|right` | focus a pane/workspace/tab (same syntax as `slat send`) or move in a direction |
+| `slat display MESSAGE [--duration 2s]` | show a temporary alert in the status bar (supports `{fg=...}` tags and `--session`) |
 | `slat run PANE COMMAND...` | send a command and press Enter |
 | `slat capture PANE [--lines N] [--history]` | read a pane's text |
 | `slat wait PANE --for idle\|input\|exit\|text=REGEX [--timeout 60s]` | block until something happens |
+| `slat theme ls [--json]` | list built-in and user themes |
+| `slat theme show [NAME]` | print a theme's TOML definition to stdout |
+| `slat theme export [NAME] [-o PATH] [-f]` | export a theme TOML file for customization (and show where to place it) |
 
 `PANE` is an id from `slat ls`, or `active` (the default). `--json` on any
 command prints one object with a `schema` field. Exit codes: **0** ok,
@@ -350,13 +448,15 @@ Tune the detection under `[agent]` in the config; see
 
 ## Configuration
 
-slat reads `~/.config/slat/config.toml` (or `$XDG_CONFIG_HOME/slat/config.toml`).
+slat reads `~/.config/slat/config.toml` (or `$XDG_CONFIG_HOME/slat/config.toml`), or pass `-c` / `--config PATH` (for example, `slat --config examples/configs/cyberpunk.toml`). Press <kbd>Ctrl</kbd>+<kbd>s</kbd> then <kbd>r</kbd> (`reload-config`) to reload `config.toml` and theme files in `~/.config/slat/themes/` while running.
 Every setting is optional:
 
 ```toml
-prefix     = "C-a"        # Ctrl + a letter, or C-\ C-] C-^ C-_
+prefix     = "C-a"        # Ctrl + a letter, C-\ C-] C-^ C-_, "F13"–"F24", or '\e[25~'
 shell      = "/bin/zsh"   # default: $SHELL
 status_bar = true
+auto_rename = true        # rename tabs after the active pane's program (manual rename wins)
+# random_session_name = false  # true picks <prefix>-<suffix> from 40x40 dictionaries (re-rolls on collision)
 scrollback = 5000         # lines kept per pane; 0 turns it off
 mouse      = true         # false hands the mouse back to your terminal
 restore    = true         # bring the session back after a reboot
@@ -371,8 +471,10 @@ name = "catppuccin"       # catppuccin, default, dracula, gruvbox, latte, mono, 
 accent = "#fabd2f"        # override any single colour
 
 [borders]
-style = "rounded"         # sharp, rounded, heavy, double, dashed, none
+style = "rounded"         # sharp, square, rounded, heavy, double, dashed, none
 # vertical = "┃"          # …or set any glyph yourself
+# [borders.help]          # optional overrides for help, finder, and dialog modals (inherit from [borders] or default to rounded)
+# style = "square"
 
 [animation]
 split  = "90ms"           # a new pane appearing; 0 turns it off
@@ -381,11 +483,50 @@ easing = "out-cubic"      # linear, out-quad, out-cubic, out-back
 reveal = "curtain"        # curtain or none
 glyph  = "░"
 
+[splash]
+enabled  = true           # false (or duration = "0s") skips the startup banner
+duration = "700ms"
+# art    = ["..."]        # custom ASCII/Unicode lines
+# subtitle = "slat {version}"
+# hint     = "press {prefix} then ? for help"
+# fg / sub_fg / bg        # customize splash colours
+
+[dialog]
+# fg / sub_fg / head_fg / border_fg / bg   # customize modal dialog & help overlay colours
+
+[finder]
+# fg / sub_fg / head_fg / border_fg / bg / sel_fg / sel_bg / match_fg / match_bg  # picker colours
+
+[stack]
+# fg / bg / active_fg / active_bg          # stacked pane header colours
+# icon = " ▸ "                             # active stacked pane icon (inactive_icon defaults to matching spaces)
+
 [status]
 left  = " {workspace} │ {tabs}"
 right = "{badge} pane {pane}/{panes}  {time} "
 tab   = " {index}:{name}{alert} "
 alert = " ●"
+
+[status.badges]
+# prefix / help / scroll / copy / move / zoom / stack  # customize or "" to hide {badge} labels
+
+# Example: 3-glyph tabs (icon, 1-based window index, 1-based pane count + zoomed set; 10-entry 0-9 arrays render multi-digit numbers > 9):
+# [status]
+# left             = "{prefix} {workspace} │ {tabs}"
+# right            = "{badge}{workspaces} {pane}/{panes} "
+# tab              = " {tab_glyph} {tab_index_glyph} {pane_glyph} {name}{alert} "
+# alert            = "{fg=bright-red,bold} ●{/}"
+# prefix           = "{fg=cyan,bg=236}  {/}"
+# prefix_active    = "{fg=#1e1e2e,bg=#f9e2af,bold}   {/}"
+# tab_glyphs       = ["■"]
+# tab_zoom_glyph   = "▣"
+# tab_index_glyphs         = ["⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"]
+# pane_glyphs              = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"]
+# pane_zoom_glyphs         = ["⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"]
+# current_pane_glyphs      = ["₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"]
+# current_pane_id_glyphs   = ["𝟘", "𝟙", "𝟚", "𝟛", "𝟜", "𝟝", "𝟞", "𝟟", "𝟠", "𝟡"]
+# tab_colors       = ["cyan", "magenta", "yellow", "green", "blue"]
+# pane_colors      = ["208", "44", "#a6e3a1"]
 
 [keybinds]
 split-vertical   = "|"
@@ -394,31 +535,77 @@ resize-shrink    = "_"    # "-" was given away above
 zoom             = ""     # "" unbinds a command
 ```
 
-- `[theme]` colours are `bg`, `fg`, `dim`, `accent`, `border`, `tab_bg`,
-  `tab_fg`, `tab_active_bg` and `tab_active_fg`, written as a colour name, a
-  palette index (0-255) or `#rrggbb`. Only what slat draws is themed — pane
-  contents keep whatever colours the programs in them use.
-- `[status]` takes `left`, `right`, `tab` and `alert`. The sides accept
-  `{workspace}` `{workspace_index}` `{workspace_count}` `{workspaces}` `{tabs}`
-  `{tab}` `{tabs_count}` `{pane}` `{panes}` `{badge}` `{time}` `{seconds}`
-  `{date}`; `tab` accepts `{index}` `{name}` `{alert}`. Everything else is
-  literal text, so a Nerd Font glyph goes straight in — and each placeholder is
-  drawn in the colour that suits it, so there's no colour markup to write.
+- `[theme]` picks a built-in palette (loaded from externalized theme TOML files)
+  or a custom theme file from `~/.config/slat/themes/<name>.toml` (which can
+  add new themes or override built-in ones). Colours are `bg` (alias
+  `background`), `status_bg`, `fg` (alias `foreground`), `dim`, `accent`,
+  `border`, `tab_bg`, `tab_fg`, `tab_active_bg`, `tab_active_fg`, `prefix_fg`,
+  `prefix_bg`, `prefix_active_fg`, `prefix_active_bg`, `badge_fg`, and
+  `badge_bg`, written as a colour
+  name, a palette index (0-255), `#rrggbb`, or a `theme.<var>` reference
+  (`status_bg` and `*_bg` also accept `""` or `"transparent"` for the
+  terminal's default background). You can also define custom palette variables
+  under `[theme.vars]` (or `[vars]` in a `~/.config/slat/themes/<name>.toml`
+  file) and reference them anywhere as `theme.<name>` — including in `[dialog]`,
+  `[finder]`, `[stack]`, `[splash]`, `status.tab_colors`/`pane_colors`, and
+  status tags like `{fg=theme.background,bg=theme.accent}`. Only what slat draws
+  is themed — pane contents keep whatever colours the programs in them use.
+- `[status]` takes `left`, `right`, `tab`, `tab_active`, `tab_sep`, `alert`,
+  `prefix`, `prefix_active`, `zoom`, `tab_zoom_glyph`, `pane_id`,
+  `pane_id_active`, `tab_colors`, `pane_colors`, `tab_glyphs`,
+  `tab_index_glyphs`, `tab_index_zoom_glyphs`, `pane_glyphs`,
+  `pane_zoom_glyphs`, `current_pane_glyphs`, `current_pane_zoom_glyphs`,
+  `current_pane_id_glyphs` and `current_pane_id_zoom_glyphs` (each placeholder
+  uses only its own glyph array, with no fallback to `pane_glyphs`), plus
+  `[status.zoom_glyphs]` (`tab`, `tab_index`, `pane`, `current_pane`,
+  `current_pane_id` — all `false` by default, set to `true` to enable zoomed
+  glyph replacement for that glyph type, persisting on inactive zoomed tabs) and `[status.process_glyphs]`
+  (a `process = "glyph"` map that overrides `{tab_glyph}` — and populates
+  `{process_glyph}` — when the tab's active pane is running that process,
+  taking precedence over `tab_zoom_glyph` and `tab_glyphs`). The sides accept `{prefix}` `{session}`
+  `{workspace}` `{workspace_index}` `{workspace_count}` `{workspaces}`
+  `{tabs}` `{tab}` `{tabs_count}` `{pane}` `{panes}` `{pane_glyph}`
+  `{pane_glyph_current}` `{current_pane_glyph}` `{current_pane_id_glyph}`
+  `{zoom}` `{badge}` `{time}` `{seconds}` `{date}`; `tab` and `tab_active`
+  accept `{index}` `{name}` `{alert}` `{tab_glyph}` `{tab_index_glyph}`
+  `{process_glyph}` `{pane_glyph}` `{pane_glyph_current}` `{current_pane_glyph}`
+  `{current_pane_id_glyph}` `{zoom}`; `pane_id` and `pane_id_active` (toggled
+  in the top-right corner of each pane with `identify-panes`, default `prefix`
+  + `i`) accept `{id}` `{index}` `{pane_glyph}` `{current_pane_id_glyph}`; and
+  `tab_sep` (default `" "`, set to `""` to remove space between tabs) is drawn
+  between tabs. Inline style tags like `{fg=cyan,bg=236,bold}🐟{/}` or `{fg=theme.background,bg=theme.accent}●{/}` colour any Unicode glyph or span (using a colour name, 0–255 index, `#rrggbb`
+  hex, an active `[theme]` variable such as `theme.background` / `bg`, `theme.foreground` / `fg`, `theme.accent`, `theme.dim`, `theme.status_bg`, `theme.tab_bg`, `theme.tab_fg`, `theme.tab_active_bg`, `theme.tab_active_fg`, `theme.badge_fg`, `theme.badge_bg`, any `[theme.vars]` key, or `tab`/`pane` to pick from `tab_colors`/`pane_colors` by index). When
+  `{prefix}` is used, `{badge}` omits `"PREFIX"`; `"ZOOM"` remains visible in `{badge}` whenever the current tab is zoomed (like `"MOVE"`), and `{badge}` can be styled via `badge_fg`/`badge_bg` or inline style tags.
+- Session presets (`~/.config/slat/sessions/<name>.toml`) accept top-level `focus = N` (1-based tab index, or workspace index when `[[workspaces]]` is used), workspace-level `focus = N` (1-based tab index), and `[[tabs]]` `focus = N` (1-based pane index) to choose what starts focused.
+- `[status.scripts.<name>]` runs a shell command on an `interval` (default
+  `5s`, `0s` to run once) with a `timeout` (default `2s`), and renders its
+  `stdout` wherever `{script:<name>}` appears in `status.left` or
+  `status.right`. Script output supports `{fg=red}VAL{/}` inline style tags
+  (unrecognized `{...}` sequences in stdout are rendered literally) and shows
+  `fallback` (default `{fg=red}[err]{/}`, or `""` to hide) on error/timeout.
+- `[shortcuts]` binds direct (non-prefix) keys like `"Alt+1"`, `"M-s"`, or
+  `"F13"` to shell commands (e.g. `"Alt+1" = "~/.config/slat/scripts/save.sh"`).
+  Both shortcut scripts and status scripts receive `SLAT_SESSION`,
+  `SLAT_SESSION_DIR`, `SLAT_WORKSPACE`, `SLAT_WORKSPACE_INDEX`,
+  `SLAT_WORKSPACE_COUNT`, `SLAT_TAB`, `SLAT_TAB_INDEX`, `SLAT_TAB_COUNT`,
+  `SLAT_PANE`, `SLAT_PANE_INDEX`, `SLAT_PANE_COUNT`, `SLAT_PANE_CWD`,
+  `SLAT_PANE_FG`, `SLAT_PANE_PID`, `SLAT_PANE_ROWS`, `SLAT_PANE_COLS`,
+  `SLAT_PANE_ZOOMED`, and (for shortcuts) `SLAT_STATE_JSON`.
 - A mistake anywhere — an unknown colour, a glyph two columns wide, a
   placeholder that doesn't exist, an easing curve that doesn't either — is
   reported when you run `slat`, never quietly drawn.
 - **Fonts belong to your terminal, not to slat.** slat draws characters; which
   font paints them is Kitty's, Alacritty's or WezTerm's business. Point that at
   a Nerd Font and its glyphs work here like any other character.
-- Ready-made setups live in [`docs/rices/`](docs/rices/) — copy one and edit it,
-  or send yours in.
+- Ready-made setups live in [`docs/rices/`](docs/rices/) and [`examples/configs/`](examples/configs/) (`minimal`, `catppuccin-studio`, `tokyo-power`, `tokyonight-storm`, `cyberpunk`, `vice-city`, `nord`, `gruvbox-blocks`, `dracula-squares`) — copy one and edit it,
+  or send yours in. Example helper scripts for `slat send`, `[shortcuts]`, and `[status.scripts]` live in [`examples/scripts/`](examples/scripts/), and the Neovim extension (`slat.nvim`) lives in [`examples/nvim/slat.nvim/`](examples/nvim/slat.nvim/).
 - Keybinds you don't set keep their defaults.
 - Giving a default key to another command takes it away from the default
   command, so bindings never silently collide.
 - An unknown setting, an unknown command name, a key that isn't a single
   character, or two commands on one key is an error, shown when you run `slat`.
 
-[`config.example.toml`](config.example.toml) lists every command with its default.
+[`config.example.toml`](config.example.toml) lists every configurable option and command with its default.
 
 ## How it works
 
@@ -451,7 +638,7 @@ zoom             = ""     # "" unbinds a command
 ### Source layout
 
 ```text
-cmd/slat/        entry point: starts or attaches to the daemon
+cmd/slat/        entry point & mcli-based CLI: starts or attaches to the daemon (run `slat help <cmd>` for per-command flags)
 internal/
   daemon/        socket server, attach / detach, session lifetime
   client/        raw mode, alternate screen, stdin/stdout ⇄ daemon
@@ -480,9 +667,11 @@ binaries, `.deb`, `.rpm` and Arch packages for Linux and macOS on amd64 and arm6
 The release then republishes the website and the apt repository to GitHub Pages
 ([`pages.yml`](.github/workflows/pages.yml)), signed with the `APT_GPG_PRIVATE_KEY` secret.
 
-`make test` runs `go vet` and the tests with the race detector. The tests in
-`internal/app` drive real shells through splits, closes, overlays and
-workspace changes and check what a terminal would display.
+`make test-fast` runs `go test -short ./...` (sub-second unit tests, skipping slow
+PTY and daemon integration tests). `make test` runs `go vet` and the full test
+suite with the race detector. The tests in `internal/app` drive real shells
+through splits, closes, overlays and workspace changes and check what a
+terminal would display.
 
 ## Limitations
 

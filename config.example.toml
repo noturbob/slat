@@ -1,165 +1,357 @@
-# Slat Configuration
-# Place this file at ~/.config/slat/config.toml
+# ============================================================================
+# Slat Configuration — Quick Start & Full Reference
+# ============================================================================
+# Copy this file to: ~/.config/slat/config.toml
+# Ready-to-use style presets live in: examples/configs/
+# Example helper scripts live in:     examples/scripts/
+#
+# Mistakes in this file (typos, unknown colours, bad placeholders) are
+# reported immediately when you run `slat`.
+# ============================================================================
 
-# The main prefix key for all commands.
-# Use "C-a", "C-b", "C-s", etc. for Ctrl key combinations.
-# Mistakes in this file are reported when you run slat.
+# ── 1. Basics ────────────────────────────────────────────────────────────────
+# Prefix key pressed before built-in commands (e.g. "C-s", "C-a", "F13", '\e[25~').
 prefix = "C-s"
 
-# Shell to launch (defaults to $SHELL or /bin/sh)
-shell = "/bin/bash"
+# Shell to launch in new panes (defaults to $SHELL or /bin/sh).
+# shell = "/bin/bash"
 
-# Show the status bar at the bottom
-status_bar = true
+status_bar  = true        # Show the bottom status bar
+auto_rename = true        # Rename tabs after the active pane's foreground program
+scrollback  = 2000        # Lines of history per pane (0 disables scrollback)
+mouse       = true        # Click to focus, drag borders to resize, wheel to scroll
+restore     = true        # Save & restore session layout/output across reboots
+animations  = true        # false disables all animations
+# animate   = "90ms"      # Shorthand: sets both animation.split and animation.move
+# random_session_name = false
 
-# Lines of output each pane keeps for scroll mode (0 turns it off)
-scrollback = 2000
-
-# The mouse: click a pane to focus it, drag a border to resize it, and the
-# wheel scrolls its history.
-# Programs that ask for the mouse themselves (vim, htop, less) get the
-# events instead, with the coordinates translated to their pane.
-#
-# While this is on, your terminal gives its clicks to slat, so its own
-# click-drag selection is unavailable -- hold Shift to get it back in most
-# terminals, or set this to false and use copy mode instead.
-mouse = true
-
-# Bring the session back after a reboot. slat saves the shape of the
-# session -- workspaces, tabs, layout, each pane's directory -- and what
-# each pane had printed, then restores it the next time it starts.
-#
-# What comes back is the output, not the programs: nothing portable can
-# restore a running process, so each pane is a fresh shell in the same
-# directory with its old output above the prompt. Quitting with q clears
-# the saved session; detaching and rebooting do not.
-restore = true
-
-# Animations. Only the drawing is animated — panes are their final size
-# throughout, so no program is resized more than once.
-animations = true         # false turns every animation off
-[animation]
-split  = "90ms"           # a new pane appearing; 0 turns it off
-move   = "120ms"          # two panes trading places
-easing = "out-cubic"      # linear, out-quad, out-cubic, out-back
-reveal = "curtain"        # how a new pane appears: curtain or none
-glyph  = "░"              # the curtain's character
-
-# What happens to text you copy in scroll mode with `y`.
-[copy]
-# Ask the terminal to put it on the system clipboard (OSC 52). This is the
-# only method that works over ssh, because the clipboard is on your
-# machine, not on the one slat runs on.
-osc52 = true
-# Optionally pipe it to a local program as well, for terminals that refuse
-# OSC 52: "wl-copy", "xclip -selection clipboard", "pbcopy".
-# command = ""
-
-# Colours for the parts slat draws: the status bar, pane borders and
-# overlays. Programs running in panes keep their own colours.
+# ── 2. Appearance ────────────────────────────────────────────────────────────
+# Theme colour cascade:
+#   [theme] base palette + [theme.vars]
+#     ├─► [status]  (status_bg, tab_*, prefix_*, badge_*, {fg=theme.<var>})
+#     ├─► [splash]  (fg, sub_fg, bg)
+#     ├─► [dialog]  (fg, sub_fg, head_fg, border_fg, bg)
+#     ├─► [finder]  (fg, sub_fg, head_fg, border_fg, bg, sel_*, match_*)
+#     └─► [stack]   (fg, bg, active_fg, active_bg)
 [theme]
-# A palette to start from:
-#   catppuccin, default, dracula, gruvbox, latte, mono, nord, rose-pine, solarized, tokyo-night
-# latte and mono are the two for a light terminal.
+# Built-in palettes (embedded TOML themes):
+#   catppuccin, cyberpunk, default, dracula, gruvbox, latte, mono, nord,
+#   rose-pine, solarized, tokyo-night, tokyonight-storm, vice-city
+# ("latte" and "mono" are designed for light terminals.)
+#
+# Custom or overridden themes can also be placed in:
+#   ~/.config/slat/themes/<name>.toml
 name = "default"
-# Override any single colour: a name (red, bright-blue), a palette index
-# (0-255) or #rrggbb.
-# bg            = 235
-# fg            = 252
+
+# Override any individual colour (name, 0-255 index, "#rrggbb", or "theme.<var>"):
+# bg            = 235         # alias: background
+# status_bg     = ""          # "" or "transparent" uses terminal default bg
+# fg            = 252         # alias: foreground
 # dim           = 248
-# accent        = "#00d7d7"   # workspace name, focused border, badges
+# accent        = "#00d7d7"
 # border        = 240
 # tab_bg        = 236
 # tab_fg        = 250
 # tab_active_bg = 25
-# tab_active_fg = 231
+# tab_active_fg = "theme.background"
+# prefix_fg        = "theme.dim"
+# prefix_bg        = "theme.tab_bg"
+# prefix_active_fg = "theme.background"
+# prefix_active_bg = "theme.accent"
+# badge_fg         = "theme.background"
+# badge_bg         = "theme.accent"
 
-# The lines between panes.
+# Custom palette variables usable anywhere as "theme.<name>" or "{fg=theme.<name>}":
+# [theme.vars]
+# highlight = "#f9e2af"
+
+# Border style variants:
+#   sharp:   ┌───┐   square:  ▪───▪   rounded: ╭───╮   heavy:   ┏━━━┓
+#            │   │            │   │            │   │            ┃   ┃
+#            └───┘            ▪───▪            ╰───╯            ┗━━━┛
+#   double:  ╔═══╗   dashed:  ┌╌╌╌┐   none:    (blank gap)
+#            ║   ║            ╎   ╎
+#            ╚═══╝            └╌╌╌┘
 [borders]
-style = "sharp"           # sharp, rounded, heavy, double, dashed, none
-# Or set any glyph yourself; each must be one column wide.
-# vertical = "┃"
-# horizontal = "━"
-# top_left = "┏"
-# top_right = "┓"
-# bottom_left = "┗"
-# bottom_right = "┛"
-# tee_right = "┣"
-# tee_left = "┫"
-# tee_down = "┳"
-# tee_up = "┻"
-# cross = "╋"
+# style = "sharp"           # sharp, square, rounded, heavy, double, dashed, none
+# Override any individual border glyph:
+vertical     = "│"
+horizontal   = "─"
+top_left     = "┌"
+top_right    = "┐"
+bottom_left  = "└"
+bottom_right = "┘"
+tee_right    = "├"
+tee_left     = "┤"
+tee_down     = "┬"
+tee_up       = "┴"
+cross        = "┼"
+#
+# Optional modal border overrides (inherit from [borders] when set, otherwise default to "rounded"):
+# [borders.help]
+# style = "rounded"
+# [borders.finder]
+# style = "rounded"
+# [borders.dialog]
+# style = "rounded"
+#
+# Example: ASCII-only borders (e.g. for a bare TTY):
+# [borders]
+# vertical     = "|"
+# horizontal   = "-"
+# top_left     = "+"
+# top_right    = "+"
+# bottom_left  = "+"
+# bottom_right = "+"
+# tee_right    = "+"
+# tee_left     = "+"
+# tee_down     = "+"
+# tee_up       = "+"
+# cross        = "+"
+#
+# Example: Fancy ornate borders (double lines with diamond corners & star cross):
+# [borders]
+# vertical     = "║"
+# horizontal   = "═"
+# top_left     = "◈"
+# top_right    = "◈"
+# bottom_left  = "◈"
+# bottom_right = "◈"
+# tee_right    = "╠"
+# tee_left     = "╣"
+# tee_down     = "╦"
+# tee_up       = "╩"
+# cross        = "✦"
 
-# The status bar's layout. Placeholders for left and right: {workspace}
-# {workspace_index} {workspace_count} {workspaces} {tabs} {tab} {tabs_count}
-# {pane} {panes} {badge} {time} {seconds} {date}. In tab: {index} {name}
-# {alert}. Everything else is literal text — put a Nerd Font glyph in if
-# your terminal's font has one.
+[animation]
+split  = "90ms"           # 0ms turns off split reveal
+move   = "120ms"          # pane swap slide duration
+easing = "out-cubic"      # linear, out-quad, out-cubic, out-back
+reveal = "curtain"        # curtain or none
+glyph  = "░"
+
+[splash]
+enabled  = true
+duration = "700ms"        # "0s" skips the startup banner
+# art      = ["  slat  "] # Custom ASCII/Unicode banner lines
+# subtitle = "terminal multiplexer {version}"
+# hint     = "press {prefix} then ? for help"
+# fg       = "theme.accent"
+# sub_fg   = "theme.dim"
+# bg       = "theme.background"
+
+# Optional modal/finder/stack colour overrides (inherit from [theme] when unset;
+# accept colour names, 0-255, #rrggbb, or theme.<var> references):
+#
+# Modal & stacked pane anatomy:
+#   [dialog] / [finder]                         [stack]
+#   ╭────── head_fg (title) ──────╮  ◄─ border_fg   ┌───────────────────────────┐
+#   │ > query / input (fg)        │  ◄─ bg          │ ▸ 1:nvim (active_fg/bg)   │ ◄─ icon
+#   ├─────────────────────────────┤                 │   2:zsh  (fg/bg)          │ ◄─ inactive_icon
+#   │ ▸ selected (sel_fg/sel_bg)  │  ◄─ match_fg/bg ├───────────────────────────┤
+#   │   other row (sub_fg)        │                 │ (active pane contents)    │
+#   ╰────── hint / footer ────────╯  ◄─ sub_fg      └───────────────────────────┘
+[dialog]
+# fg        = "theme.foreground"
+# sub_fg    = "theme.dim"
+# head_fg   = "theme.accent"
+# border_fg = "theme.border"
+# bg        = "theme.background"
+[finder]
+# fg        = "theme.foreground"
+# sub_fg    = "theme.dim"
+# head_fg   = "theme.accent"
+# border_fg = "theme.border"
+# bg        = "theme.background"
+# sel_fg    = "theme.tab_active_fg"
+# sel_bg    = "theme.tab_active_bg"
+# match_fg  = "theme.accent"
+# match_bg  = ""
+[stack]
+# fg            = "theme.dim"
+# bg            = "theme.tab_bg"
+# active_fg     = "theme.background"
+# active_bg     = "theme.accent"
+# icon          = " ▸ "
+# inactive_icon = "   "
+
+# ── 3. Status Bar & Theme Colours ────────────────────────────────────────────
+# Anatomy of the bottom status bar (background: theme.status_bg):
+#
+#   ┌─────────────────────────────── status.left ───────────────────────────────┐     ┌─────────── status.right ────────────┐
+#   │ {prefix} {workspace} │ {tabs}                                             │ ... │ {badge} {workspaces} pane {pane}/{panes} {script:git} │
+#   └────┬───────┬───────────┬──────────────────────────────────────────────────┘     └───┬─────────┬─────────────┬───────────┬─────────┘
+#        │       │           │                                                            │         │             │           │
+#        │       │           ▼                                                            │         │             │           ▼
+#        │       │   [ tab_active ]{tab_sep}[ tab ]{tab_sep}[ tab ]                       │         │             │   [status.scripts.<name>]
+#        │       │     ├─ {index} / {tab_index_glyph}   (tab_index_glyphs)                │         │             ▼
+#        │       │     ├─ {name} / {process_glyph}      ([status.process_glyphs])         │         │   pane_glyphs / current_pane_glyphs
+#        │       │     ├─ {tab_glyph}                   (tab_glyphs / tab_zoom_glyph)     │         ▼
+#        │       │     ├─ {pane_glyph} / {zoom}         (pane_glyphs / zoom)              │   all workspaces indicator
+#        │       │     └─ {alert}                       (status.alert on input wait)      ▼
+#        │       │                                                                  [status.badges] (PREFIX, HELP, SCROLL, COPY, MOVE, ZOOM, STACK)
+#        │       └─ active workspace name (theme.accent)
+#        └─ status.prefix / status.prefix_active (toggles when prefix key is pressed)
+#
+# Inline style tags work in any status string and status script output:
+#   {fg=theme.background,bg=theme.accent,bold}TEXT{/}
+# Colours accept:
+#   - Standard names / 0-255 / #rrggbb: red, bright-cyan, 208, #f9e2af
+#   - Active [theme] variables (with or without the "theme." prefix):
+#     theme.background (bg), theme.foreground (fg), theme.dim, theme.accent,
+#     theme.border, theme.status_bg, theme.tab_bg, theme.tab_fg,
+#     theme.tab_active_bg, theme.tab_active_fg, theme.prefix_fg,
+#     theme.prefix_bg, theme.prefix_active_fg, theme.prefix_active_bg,
+#     theme.badge_fg, theme.badge_bg, plus any custom keys from [theme.vars] / [vars]
+#   - Dynamic indices: tab, pane, default
+#
+# Common placeholders for left/right:
+#   {prefix} {session} {workspace} {workspaces} {tabs} {pane} {panes}
+#   {current_pane_glyph} {current_pane_id_glyph} {zoom} {badge} {time} {date}
+# Common placeholders for tab/tab_active:
+#   {index} {name} {alert} {tab_glyph} {tab_index_glyph}
+#   {pane_glyph} {current_pane_glyph} {current_pane_id_glyph} {zoom}
 [status]
-left  = " {workspace} │ {tabs}"
-right = "{badge}{workspaces} pane {pane}/{panes} "
-tab   = " {index}:{name}{alert} "
-alert = " ?"               # marks a tab whose pane is waiting for input
+left           = " {fg=theme.accent,bold}{workspace}{/} │ {tabs}"
+right          = "{badge}{workspaces} {fg=theme.dim}pane {pane}/{panes}{/} "
+tab            = " {index}:{name}{alert} "
+# tab_active   = "{fg=theme.tab_active_fg,bg=theme.tab_active_bg,bold} {index}:{name}{alert} {/}"
+# tab_sep      = " "
+alert          = "{fg=red,bold} ?{/}"
+# prefix       = "{fg=theme.dim,bg=theme.tab_bg}  {/}"
+# prefix_active= "{fg=theme.background,bg=theme.accent,bold} ⌘ {/}"
+# zoom           = " ▣"
+# tab_zoom_glyph = " ▣"
+# pane_id        = "{fg=theme.tab_fg,bg=theme.tab_bg} {id} {/}"   # toggled with <prefix> i
+# pane_id_active = "{fg=theme.background,bg=theme.accent,bold} {id} {/}"
 
-# How `slat status`, `slat ls` and `slat wait` read a pane, for scripts and
-# AI agents. See the README's "Scripting and agents" section.
-[agent]
-# A pane whose shell has been quiet this long is reported as idle.
-settle = "750ms"
-# A running program quiet this long on a prompt is reported as waiting
-# for input.
-input_after = "10s"
-# Run a command when a pane starts waiting for input, or goes idle.
-# %p pane id, %t tab, %s status, %c the pane's last line — all shell-quoted.
-# on_input = 'notify-send "slat: pane %p needs input" %c'
-# on_idle  = ""
+# Optional colour/glyph arrays (provide 10 entries 0-9 for multi-digit numbers):
+# tab_colors                  = ["cyan", "magenta", "green", "yellow"]
+# pane_colors                 = ["cyan", "magenta", "green", "yellow"]
+# tab_glyphs                  = ["₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"]
+# tab_index_glyphs            = ["⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"]
+# tab_index_zoom_glyphs       = ["⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"]
+# pane_glyphs                 = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"]
+# pane_zoom_glyphs            = ["⓿", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"]
+# current_pane_glyphs         = ["₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"]
+# current_pane_zoom_glyphs    = ["𝟎", "𝟏", "𝟐", "𝟑", "𝟒", "𝟓", "𝟔", "𝟕", "𝟖", "𝟗"]
+# current_pane_id_glyphs      = ["𝟘", "𝟙", "𝟚", "𝟛", "𝟜", "𝟝", "𝟞", "𝟟", "𝟠", "𝟡"]
+# current_pane_id_zoom_glyphs = ["𝟬", "𝟭", "𝟮", "𝟯", "𝟰", "𝟱", "𝟲", "𝟳", "𝟴", "𝟵"]
 
-# The prompts that count: regular expressions matched against the
-# pane's last line. Setting this replaces the built-in list.
-# input_patterns = ['\[[yY]/[nN]\]', '(?i)press enter', '\?\s*$']
+# Per-glyph-type zoomed glyph overrides (all false by default):
+# [status.zoom_glyphs]
+# tab             = false
+# tab_index       = false
+# pane            = false
+# current_pane    = false
+# current_pane_id = false
 
-# Keybindings (activated after pressing the prefix key)
-# All keybinds are single characters pressed AFTER the prefix key.
-# Set only the ones you want to change; the rest keep their defaults.
-# Giving a default's key to another command unbinds the default.
-# "" unbinds a command. 1-9 jump to tab N, ? shows help, and the
-# arrow keys select panes.
+# Override {tab_glyph} (or render {process_glyph}) based on the active pane's foreground process:
+# [status.process_glyphs]
+# ssh  = "{fg=yellow}󰣀{/}"
+# nvim = ""
+# vim  = ""
+
+# Customize {badge} labels per mode (set to "" to hide a badge):
+# [status.badges]
+# prefix = "󰌌 PREFIX"
+# help   = "󰋖 HELP"
+# scroll = "󰹹 SCROLL"
+# copy   = "󰆏 COPY"
+# move   = "󰆾 MOVE"
+# zoom   = "󰊓 ZOOM"
+# stack  = "󰓩 STACK"
+
+# Live status-line scripts (referenced as {script:git} in left/right):
+# [status.scripts.git]
+# command  = "~/.config/slat/scripts/status-git.sh"
+# interval = "5s"            # re-run interval (default 5s; 0s = run once)
+# timeout  = "2s"            # max execution time (default 2s)
+# fallback = ""              # shown on error/timeout (default "{fg=red}[err]{/}")
+
+# ── 4. Keybinds & Direct Shortcuts ───────────────────────────────────────────
+# Keys pressed AFTER the prefix key (single character, "" unbinds):
 [keybinds]
-# ── Panes ──
-split-vertical   = "v"    # Split pane left/right
-split-horizontal = "h"    # Split pane top/bottom
-next-pane        = "o"    # Cycle focus to next pane
-prev-pane        = "O"    # Cycle focus to previous pane
-select-pane-up   = "k"    # Focus pane above
-select-pane-down = "j"    # Focus pane below
-select-pane-left = "H"    # Focus pane to the left
-select-pane-right= "L"    # Focus pane to the right
-swap-pane        = "s"    # Swap active pane with the next one
-move-mode        = "m"    # Walk the pane around with hjkl (q leaves)
-move-pane-left   = "<"    # Swap with the neighbour on that side
-move-pane-right  = ">"
+split-vertical   = "v"
+split-horizontal = "h"
+add-pane         = "a"
+next-pane        = "o"
+prev-pane        = "O"
+select-pane-up   = "k"
+select-pane-down = "j"
+select-pane-left = "H"
+select-pane-right= "L"
+swap-pane        = "s"
+move-mode        = "m"
 move-pane-up     = "K"
 move-pane-down   = "J"
-resize-grow      = "+"    # Grow the active pane
-resize-shrink    = "-"    # Shrink the active pane
-equalize         = "="    # Reset all pane sizes to equal
-close-pane       = "x"    # Close the active pane
-zoom             = "z"    # Toggle zoom (fullscreen) for active pane
-scroll-mode      = "["    # Scroll back through output (q to leave)
+move-pane-left   = "<"
+move-pane-right  = ">"
+resize-grow      = "+"
+resize-shrink    = "-"
+equalize         = "="
+layout-picker    = "l"
+close-pane       = "x"
+zoom             = "z"
+identify-panes   = "i"
+stack-mode       = "t"
+break-pane       = "!"
+join-pane        = "@"
+next-attention   = "A"
+scroll-mode      = "["
+new-tab          = "c"
+next-tab         = "n"
+prev-tab         = "p"
+rename-tab       = ","
+close-tab        = "X"
+new-workspace    = "W"
+next-workspace   = "w"
+prev-workspace   = "P"
+rename-workspace = "$"
+rename-session   = "S"
+tree-picker      = "f"
+session-picker   = "F"
+next-session     = ")"
+prev-session     = "("
+global-tree      = "g"
+save-session     = "E"
+reload-config    = "r"
+toggle-status-bar= "b"
+detach           = "d"
+quit             = "q"
 
-# ── Tabs ──
-new-tab          = "c"    # Create a new tab
-next-tab         = "n"    # Switch to next tab
-prev-tab         = "p"    # Switch to previous tab
-rename-tab       = ","    # Rename the current tab
-close-tab        = "X"    # Close the entire tab (all panes)
+# Direct shortcuts (triggered WITHOUT pressing the prefix key first).
+# Scripts receive SLAT_SESSION, SLAT_WORKSPACE, SLAT_TAB, SLAT_PANE,
+# SLAT_PANE_CWD, SLAT_STATE_JSON, etc. (see examples/scripts/save-note.sh).
+# [shortcuts]
+# "Alt+1" = "~/.config/slat/scripts/save-note.sh"
 
-# ── Workspaces ──
-new-workspace    = "W"    # Create a new workspace
-next-workspace   = "w"    # Switch to next workspace
-prev-workspace   = "P"    # Switch to previous workspace
-rename-workspace = "$"    # Rename the current workspace
+# Seamless Neovim/Vim split & pane navigation (prefix-less, single keystroke):
+#
+#   Alt+h/j/k/l (or Ctrl+...)
+#     ├─ foreground app in navigation.apps? ──yes──► pass key to app (e.g. nvim split)
+#     │                                                └─ at split edge? ─► `slat focus`
+#     └─ otherwise ──────────────────────────────────► switch slat pane directly
+[navigation]
+keys = "alt"               # "alt" (Alt+h/j/k/l, default), "ctrl" (Ctrl+h/j/k/l), or "off"
+apps = ["nvim", "vim"]     # foreground programs to pass navigation keys through to
 
-# ── Session ──
-quit             = "q"    # Quit slat
-detach           = "d"    # Detach: disconnect, keep the session running
+# ── 5. Clipboard & Agent Hooks ───────────────────────────────────────────────
+[copy]
+osc52 = true
+# command = "wl-copy"
+
+# Agent activity & notification hooks (`slat status`, `slat wait`):
+#
+#   pane output ──► quiet for `settle` (750ms) at shell prompt ────► idle  ──► `on_idle`
+#               └─► quiet for `input_after` (10s) + `input_patterns` ─► input ──► `on_input` + {alert}
+[agent]
+settle      = "750ms"
+input_after = "10s"
+# input_patterns = [
+#   '\[[yY]/[nN]\]', '\([yY]/[nN]\)', '(?i)press (enter|any key)',
+#   '(?i)\bcontinue\?', '(?i)(password|passphrase).*:\s*$',
+#   '(?i)^\s*(\[\?\]|\?)\s+\S', '\?\s*$',
+# ]
+# on_input = 'notify-send "slat: pane %p needs input" %c'
+# on_idle  = ""
