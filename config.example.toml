@@ -26,6 +26,13 @@ animations  = true        # false disables all animations
 # random_session_name = false
 
 # ── 2. Appearance ────────────────────────────────────────────────────────────
+# Theme colour cascade:
+#   [theme] base palette + [theme.vars]
+#     ├─► [status]  (status_bg, tab_*, prefix_*, badge_*, {fg=theme.<var>})
+#     ├─► [splash]  (fg, sub_fg, bg)
+#     ├─► [dialog]  (fg, sub_fg, head_fg, border_fg, bg)
+#     ├─► [finder]  (fg, sub_fg, head_fg, border_fg, bg, sel_*, match_*)
+#     └─► [stack]   (fg, bg, active_fg, active_bg)
 [theme]
 # Built-in palettes (embedded TOML themes):
 #   catppuccin, cyberpunk, default, dracula, gruvbox, latte, mono, nord,
@@ -135,6 +142,15 @@ duration = "700ms"        # "0s" skips the startup banner
 
 # Optional modal/finder/stack colour overrides (inherit from [theme] when unset;
 # accept colour names, 0-255, #rrggbb, or theme.<var> references):
+#
+# Modal & stacked pane anatomy:
+#   [dialog] / [finder]                         [stack]
+#   ╭────── head_fg (title) ──────╮  ◄─ border_fg   ┌───────────────────────────┐
+#   │ > query / input (fg)        │  ◄─ bg          │ ▸ 1:nvim (active_fg/bg)   │ ◄─ icon
+#   ├─────────────────────────────┤                 │   2:zsh  (fg/bg)          │ ◄─ inactive_icon
+#   │ ▸ selected (sel_fg/sel_bg)  │  ◄─ match_fg/bg ├───────────────────────────┤
+#   │   other row (sub_fg)        │                 │ (active pane contents)    │
+#   ╰────── hint / footer ────────╯  ◄─ sub_fg      └───────────────────────────┘
 [dialog]
 # fg        = "theme.foreground"
 # sub_fg    = "theme.dim"
@@ -309,9 +325,12 @@ quit             = "q"
 # [shortcuts]
 # "Alt+1" = "~/.config/slat/scripts/save-note.sh"
 
-# Seamless Neovim/Vim split & pane navigation (prefix-less, single keystroke).
-# In normal panes, switches slat pane; when inside nvim/vim, passes the key
-# through so Neovim switches splits first and calls `slat focus` at the edge.
+# Seamless Neovim/Vim split & pane navigation (prefix-less, single keystroke):
+#
+#   Alt+h/j/k/l (or Ctrl+...)
+#     ├─ foreground app in navigation.apps? ──yes──► pass key to app (e.g. nvim split)
+#     │                                                └─ at split edge? ─► `slat focus`
+#     └─ otherwise ──────────────────────────────────► switch slat pane directly
 [navigation]
 keys = "alt"               # "alt" (Alt+h/j/k/l, default), "ctrl" (Ctrl+h/j/k/l), or "off"
 apps = ["nvim", "vim"]     # foreground programs to pass navigation keys through to
@@ -321,6 +340,10 @@ apps = ["nvim", "vim"]     # foreground programs to pass navigation keys through
 osc52 = true
 # command = "wl-copy"
 
+# Agent activity & notification hooks (`slat status`, `slat wait`):
+#
+#   pane output ──► quiet for `settle` (750ms) at shell prompt ────► idle  ──► `on_idle`
+#               └─► quiet for `input_after` (10s) + `input_patterns` ─► input ──► `on_input` + {alert}
 [agent]
 settle      = "750ms"
 input_after = "10s"
